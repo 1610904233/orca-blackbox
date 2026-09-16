@@ -4,6 +4,11 @@
 （2026-09-02 port），行为与原机等价。`vm_setup` 仍是 live origin——两边当前
 都能用；改任何一边记得同步。
 
+> **装机脚本另立**：把客机从零装起来的那套（启用 Hyper-V → 下 ISO → 建 VM →
+> 装 Win11 → 部署环境）在 [`vm_setup/`](vm_setup/)，步骤说明见
+> [`../docs/VM_SETUP_HYPERV.md`](../docs/VM_SETUP_HYPERV.md)。那套脚本**未参数化**
+> （路径/VM 名硬编码），与本目录风格不同，注意区分。
+
 ## 拓扑
 
 ```

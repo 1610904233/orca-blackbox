@@ -1,0 +1,11 @@
+create vdisk file="C:\coil\vm_setup\win11.vhdx" maximum=102400 type=expandable
+select vdisk file="C:\coil\vm_setup\win11.vhdx"
+attach vdisk
+convert gpt
+create partition efi size=200
+format quick fs=fat32 label=System
+assign letter=S
+create partition msr size=16
+create partition primary
+format quick fs=ntfs label=Windows
+assign letter=W

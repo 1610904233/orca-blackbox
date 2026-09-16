@@ -1,0 +1,5 @@
+Invoke-Command -VMName win11-test -Credential (New-Object System.Management.Automation.PSCredential("test",(ConvertTo-SecureString "123456" -AsPlainText -Force))) -ScriptBlock {
+  "task: " + (Get-ScheduledTask rerun -ErrorAction SilentlyContinue).State
+  if (Test-Path C:\coil\regress_summary.txt) { Get-Content C:\coil\regress_summary.txt }
+  elseif (Test-Path C:\coil\regress_progress.txt) { (Get-Content C:\coil\regress_progress.txt | Select-String "GREEN|RED" | Out-String).Trim(); "now: " + (Get-Content C:\coil\regress_progress.txt -Tail 1) }
+}
