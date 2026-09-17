@@ -175,6 +175,59 @@ gcode/3mf 断言、模板骨架）。工具栏槽位 = 画布内 tooltip 悬停�
 MANUAL/OUT-OF-SCOPE（联机 #25–#38、更新 #65–#67、热重启 #10、主流程-用例设备段、
 主流程-模板 #90–108/#110/#111、模型站 #201–#220）：见 FEISHU_MAINFLOW.md。
 
+### 基线用例（m8，2026-09-17 批次：飞书「基线用例」表 tblvh0eGrID9JQ02）
+
+> Base `EDUAbYWcbaL2HOsgFM1cXmBpn5f`（107 条，全部登记时为「未覆盖」）。
+> 全量逐条映射（COVERED/PARTIAL/MANUAL/SKIP）见 **FEISHU_BASELINE.md**；
+> 本批只新增 6 例，覆盖其中 24 条 GUI 可自动化记录。
+> 被测 build 升级到 09-16（新增 Fit 相机钮 / FilamentColorDialog / 净化器
+> 模板 / 高流量喷嘴 UI）。基建变化见下方「09-17 基建事实」。
+
+| 用例 | 飞书记录 | 外部断言 | 脚本 | 状态 |
+|---|---|---|---|---|
+| Fit 视图（单选/全选/切盘） | #16/#17/#18/#19 | zoom_to_selection 后色块面积 ≥1.5× 且质心居中；Select All 后 Fit 视角回拉；切盘 + Fit 帧差显著 | m8a_fit_view | ✅ |
+| 官方颜色弹窗 | #44/#46/#47/#48 | FilamentColorDialog 出现 + 模态 + 选色卡 OK/Cancel 后 swatch 像素变/不变 + OCR SKU 证据 | m8b_official_color | 🔵🟡 |
+| 渐变耗材链 | #55/#56/#58 | 槽 combo 切 'PLA Rainbow' 文本回读 + swatch 色度 + 清场 cube 切片导出 | （m8b 内） | 🔵🟡 |
+| 高低温混用门 | #111/#112 | 低+低共存放行切片 done；槽切 ABS 后 Slice 拒绝 + 横幅证据；恢复后切片恢复 | m8c_temp_mix_gate | 🔵🟡 |
+| 净化器强冷→保温 | #113/#122/#126/#127/#128 | PLA(vitr45) 导出 MODE=1+ALARM_TEMP=45 → 槽切 ABS 后 MODE=3 DESIRE_TEMP=45 无 ALARM → PC 同保温分支 | m8d_purifier_gcode | 🔵🟡 |
+| 净化器弱冷 | #114/#129 | PETG(vitr70) 导出 MODE=3 DESIRE_TEMP=0 无 ALARM_TEMP DELAY_OFF=180 | m8e_purifier_weakcool | ✅ |
+| 高流量喷嘴 | #133/#135/#136 | U1 0.4 工程 Diameter=0.4mm/Flow=Standard；Standard vs High Flow gcode diff；重切字节一致 | m8f_nozzle_flow | 🔵🟡 |
+
+✅ = 客机 suite 实测 GREEN（09-17）。🔵🟡 = 脚本实现完毕、到达/前置全通、
+各剩一个已定位断言点待专项 diag（当日通道劣化暂停迭代）：
+- m8b：clr_picker 真实点击后 FilamentColorDialog 未被 wait_toplevel 捕获
+  （需弹窗类名/时序采样，截图 artifacts/m8_probe/color_dialog_first.png）。
+- m8c：#111 断言需换耗材重映射生效的第二次确认（Change Filament 行真实
+  点击后 remap 未生效——菜单行点击成功但对象仍在 PETG 槽）。
+- m8d：依赖 m8c 同款 Change Filament 重映射；combo 切 ABS 已 PASS。
+- m8f：Flow combo 弹出行点击后值未翻转（弹窗行距/锚点待采样）。
+
+🔵 = 脚本实现完毕，随 m8 burst 在客机 suite 通道取证据中（当日在跑）。
+PARTIAL 备注：#59 预览主色=视觉冒烟；#91 TD 值文案、#106 组合遍历、#123
+预设管理器改软化温度、#125 多盘全局辅材冲突（用例步骤自含矛盾）、#137
+flow 标志参数遍历 —— 处置理由逐条见 FEISHU_BASELINE.md。
+
+#### 09-17 基建事实（新增，编码进 harness 的坑）
+
+1. **'Customized Preset' 模态阻塞夹具加载**：3mf 内嵌预设与 staged vendor
+   预设不匹配时（VALIDATE_PRESETS_FILAMENTS_NOT_FOUND，Plater.cpp:12027），
+   加载被模态 MessageDialog 阻断 → 模型永不到达（m2 当日复现 RED）。
+   ShowModal 返回值被调用方忽略 → WM_CLOSE 即放行。已加入
+   `launcher.BLOCKER_TITLES`（customized preset / modified g-code）。
+2. **宿主/客机预设源分层**：生效模板以 staged
+   `build/src/Release/resources` 为准（SET_PURIFIER_MODE 弱冷
+   DELAY_OFF=180），与源码树 resources（600）版本不同 —— 断言以 gcode
+   内 `; machine_start_gcode` 回显为准。
+3. **侧栏耗材槽为 2 列网格** [chip][combo][picker]×N（combo 自绘、picker
+   为 20DIP 位图按钮）；官方色盘仅对 Snapmaker 命名预设开放
+   （PresetComboBoxes.cpp:1067）。
+4. **rig 恢复链**（PITFALLS §21 后续）：PS Direct 崩坏 → vm_reset.flag
+   复位 → 复位后 autologon 可能不触发（quser 无会话、INTERACTIVE 任务
+   秒退且日志 0 字节）→ `shutdown /r` 干净重启客机恢复会话。大批量用
+   suite 任务（`artifacts/run_m8_suite.ps1` + suite 计划任务）在客机内部
+   串行执行，对通道抖动免疫。
+
+
 ### C 层（黑盒不可测，存量白盒兜底）
 
 instance 矩阵精确值、slice_result_valid 标志、preset 脏状态、切片几何正确性、

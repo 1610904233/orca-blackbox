@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from cases import CASES, enabled_cases  # noqa: E402
 
-_SKIP = {"m3_common.py", "m5_common.py", "m7_common.py"}
+_SKIP = {"m3_common.py", "m5_common.py", "m7_common.py", "m8_common.py"}
 
 problems: list[str] = []
 

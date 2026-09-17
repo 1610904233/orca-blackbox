@@ -248,6 +248,10 @@ def export_gcode(session, out_path: Path, timeout_s: float = 60.0) -> bool:
     winutil.msg_text(edit, str(out_path))
     # Enter-on-Edit does NOT trigger the save (native dialog routes it
     # nowhere useful); the deterministic trigger is WM_COMMAND IDOK on the
-    # dialog itself (measured: file lands reliably).
-    user32.SendMessageW(dlg[3], 0x0111, 1, 0)  # WM_COMMAND, IDOK = 1
+    # dialog itself (measured: file lands reliably). Sent via
+    # SendMessageTimeout (NOT bare SendMessageW): when the dialog's app is
+    # wedged, a bare send blocks the driver forever (measured 09-17: an m8
+    # case hung >13 min inside this line). A timeout loses the click and
+    # wait_file returns False — bounded, resolvable on the next run.
+    winutil._send_msg(dlg[3], 0x0111, 1, 0)  # WM_COMMAND, IDOK = 1
     return wait_file(out_path, timeout_s=timeout_s)

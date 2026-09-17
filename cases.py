@@ -38,10 +38,13 @@ def _r(milestone: str, tier: str, **extra) -> dict:
     return d
 
 
-def _o(milestone: str, tier: str) -> dict:
-    """Shorthand for an enabled but not-in-any-suite entry (file filled below)."""
-    return {"file": None, "milestone": milestone, "tier": tier,
-            "suite": None, "enabled": True}
+def _o(milestone: str, tier: str, **extra) -> dict:
+    """Shorthand for an enabled but not-in-any-suite entry (file filled
+    below). Extra kwargs mirror _r (e.g. known_limitation)."""
+    d = {"file": None, "milestone": milestone, "tier": tier,
+         "suite": None, "enabled": True}
+    d.update(extra)
+    return d
 
 
 CASES: dict[str, dict] = {
@@ -146,6 +149,14 @@ CASES: dict[str, dict] = {
     "m7t88": _r("m7", "B"),
     "m7t89": _r("m7", "B"),
     "m7t109": _r("m7", "B", known_limitation=True),
+    # --- m8 (2026-09-17 批次: 飞书基线用例 base EDUAbYWcbaL2HOsgFM1cXmBpn5f,
+    #     Fit/官方颜色/温类门/净化器/高流量; GREEN 后转 regression) ---------
+    "m8a_fit_view": _r("m8", "A"),                       # GREEN 09-17 客机
+    "m8b_official_color": _o("m8", "A", known_limitation=True),
+    "m8c_temp_mix_gate": _o("m8", "A", known_limitation=True),
+    "m8d_purifier_gcode": _o("m8", "A", known_limitation=True),
+    "m8e_purifier_weakcool": _r("m8", "A"),              # GREEN 09-17 客机
+    "m8f_nozzle_flow": _o("m8", "A", known_limitation=True),
 }
 
 

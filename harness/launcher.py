@@ -97,6 +97,15 @@ BLOCKER_TITLES = (
     "configuration update",
     "new version of snapmaker orca",
     "snapmaker orca update",
+    # Fixture-load gates (Plater.cpp:12013/12027, measured 09-17): when a
+    # loaded 3mf's embedded presets don't resolve against the staged vendor
+    # presets, a MODAL MessageDialog ('Customized Preset' — also its sibling
+    # 'Modified G-code') blocks load_3mf until dismissed; the model never
+    # arrives and every downstream step sees an empty bed. ShowModal's
+    # result is ignored by the caller, so WM_CLOSE (Cancel) lets the load
+    # continue — same contract as the update prompts above.
+    "customized preset",
+    "modified g-code",
 )
 
 
