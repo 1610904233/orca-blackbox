@@ -115,15 +115,17 @@ def main() -> int:
         cand = cands[0] if cands else None
         print(f"{LOG} #16 plate candidates: {cands}")
         switched = False
-        if cand:
+        for cand in cands:      # measured 09-18: the first candidate's click
+            if switched:        # does not always take; walk the list
+                break
             sx, sy = m7.client(session, *cand)
             winutil.user32.SetCursorPos(sx, sy)
-            time.sleep(0.4)
+            time.sleep(0.8)
             winutil.real_click_screen(sx, sy)
             time.sleep(2.0)
             img3 = cap(session)
             switched = m8.viewport_diff(img2, img3) > 0.01
-            print(f"{LOG} #16 plate click diff: {switched}")
+            print(f"{LOG} #16 plate click {cand}: {switched}")
         if switched:
             m8.fit_click(session)
             img4 = cap(session)
@@ -139,7 +141,10 @@ def main() -> int:
         cands = other_plate_candidates(session, None)
         cand2 = cands[-1] if len(cands) >= 1 else None
         print(f"{LOG} #17 candidates: {cands}")
-        if cand2:
+        # img4 only exists when the #16 plate switch took (it is captured in
+        # that branch) — measured 09-18 suite: a missed plate click crashed
+        # here with UnboundLocalError instead of recording a FAIL.
+        if cand2 and switched:
             sx, sy = m7.client(session, *cand2)
             winutil.user32.SetCursorPos(sx, sy)
             time.sleep(0.4)
@@ -152,8 +157,9 @@ def main() -> int:
             results["#17 second plate fit"] = (
                 "PASS" if d > 0.02 else f"FAIL (diff {d:.3%})")
         else:
-            results["#17 second plate fit"] = \
-                "FAIL (no second candidate)"
+            results["#17 second plate fit"] = (
+                "FAIL (no second candidate)" if not cand2 else
+                "FAIL (skipped: #16 plate switch did not take)")
 
         results["app alive"] = "PASS" if session.alive() else "FAIL"
         return m7.m7_verdict(results)

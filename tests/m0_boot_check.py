@@ -35,6 +35,9 @@ def main() -> int:
 
     profile.seed_profile(args.datadir, fresh=args.fresh)
     session = launcher.launch(exe=args.exe, datadir=args.datadir, model=args.model)
+    from harness import shot_archive   # same all-cases video trail as boot_session
+    _arch = shot_archive.start_archiver(session, Path(sys.argv[0]).stem)
+    shot_archive.hook_stdout_tee(_arch)
     try:
         report = env_check.print_preflight(session.hwnd)
 

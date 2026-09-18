@@ -110,17 +110,27 @@ def main() -> int:
             "PASS (evidence)" if first_row else "PASS (visual, OCR empty)"
             if len(kids) > 0 else "FAIL")
 
-        # modal check: message-click the canvas; dialog must stay
+        # modal check: REAL-click the canvas; dialog must stay (a message-
+        # level click dismisses nothing but also proves nothing — 09-18 the
+        # dialog vanished even under msg_click, so use a faithful user click)
         from harness import winutil as _wu
         cx, cy = m7.client(session, m7.VIEWPORT_X0 + 300, 400)
-        _wu.msg_click_screen(cx, cy, session.hwnd)
+        _wu.user32.SetCursorPos(cx, cy)
+        time.sleep(0.2)
+        _wu.real_click_screen(cx, cy)
         time.sleep(0.8)
         still = __import__("harness").export_util.wait_popup(
             session.pid, timeout_s=1.5)
         results["#48 modal blocks canvas"] = (
             "PASS" if still else "FAIL (dialog gone after canvas click)")
         if not still:
-            return m7.m7_verdict(results)
+            # re-open and carry on: #46/#47 need the dialog, and the modal
+            # sub-item must not blind the whole case (09-18 rerun)
+            dlg = m8.click_color_picker(session, slot=2)
+            if not dlg:
+                return m7.m7_verdict(results)
+            kids = [(t, r) for t, r, _h in
+                    __import__("harness").export_util._children_texts(dlg[3])]
 
         # --- #46: pick a different color card -> OK ----------------------
         # color cards: child panels inside the dialog; click one below the

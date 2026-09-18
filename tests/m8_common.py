@@ -193,6 +193,20 @@ def click_color_picker(session, slot, timeout_s=6.0, dialog_cls="#32770"):
     winutil.user32.SetCursorPos(sx, sy)
     time.sleep(0.25)
     winutil.real_click_screen(sx, sy)
+    # Measured 09-18 (diag_m8b_toplevels): the picker first opens a NATIVE
+    # context menu (#32768: Edit / Delete / Merge with) — the color dialog
+    # only appears after clicking its FIRST row ("Edit"). A plain wait for
+    # #32770 therefore always timed out.
+    menu = export_util.wait_toplevel(
+        session.pid, lambda c, t, r: c == "#32768", timeout_s=3.0)
+    if menu:
+        mr = menu[2]
+        my = mr[1] + max((mr[3] - mr[1]) // 6, 8)   # first row of three
+        mx = (mr[0] + mr[2]) // 2
+        winutil.user32.SetCursorPos(mx, my)
+        time.sleep(0.2)
+        winutil.real_click_screen(mx, my)
+        time.sleep(0.5)
     if dialog_cls:
         dlg = export_util.wait_toplevel(
             session.pid, lambda c, t, r: c == dialog_cls,

@@ -59,7 +59,7 @@ foreach (`$c in `$cases) {{
 
 def main() -> int:
     cases = sys.argv[1:] or CASES
-    quoted = "' '".join(cases)
+    quoted = "','".join(cases)
     PS1.write_text(TEMPLATE.format(cases=quoted), encoding="utf-8")
     sys.path.insert(0, str(HERE / "runner"))
     from relay_run import relay_transact

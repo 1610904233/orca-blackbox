@@ -24,7 +24,11 @@ def main():
             prev_header = f.readline().strip()
     except OSError:
         pass
-    cred = (f'New-Object System.Management.Automation.PSCredential("{GUEST_USER}",'
+    # $cred MUST be assigned: a bare `New-Object PSCredential(...)` leaks the
+    # object into the relay's 2>&1|Out-String pipeline, where it formats as a
+    # two-row table that lands in front of the base64 body (measured 09-18:
+    # every fetched mp4 carried a 35-byte text prefix and failed to play).
+    cred = (f'$cred = New-Object System.Management.Automation.PSCredential("{GUEST_USER}",'
             f'(ConvertTo-SecureString "{GUEST_PASS}" -AsPlainText -Force))')
     cmd = (cred + f'; Invoke-Command -VMName {GUEST_VM} -Credential $cred -ScriptBlock '
            '{ [Convert]::ToBase64String([IO.File]::ReadAllBytes("%s")) }' % guest)
@@ -45,10 +49,15 @@ def main():
             continue
         if "=== DONE" not in raw:
             continue
-        size = len(raw)
-        stable = stable + 1 if size == last_size else 0
+        # Standard base64 output is ALWAYS a multiple of 4 chars (with
+        # padding) — a truncated flush is not. Requiring this plus a longer
+        # stable window closes the race where the DONE marker appears while
+        # the payload is still flushing (measured 09-18: 4/6 pulls came back
+        # short with only the size-stability check).
+        b64len = len("".join(raw[:raw.index("=== DONE")].split()))
+        stable = stable + 1 if (size := len(raw)) == last_size and b64len % 4 == 0 else 0
         last_size = size
-        if stable >= 1:
+        if stable >= 2:
             break
     else:
         print(f"TIMEOUT waiting for relay ({guest})"); sys.exit(1)
