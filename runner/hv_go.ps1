@@ -54,6 +54,15 @@ if ($OnlyFailed) {
 # rerun does not pay the throwaway pass.
 $warmup = if ($Warmup) { $true } elseif ($NoWarmup) { $false } else { -not $explicitCases }
 
+# Batch discipline preflight — this block IS the PITFALLS_0901.md §15
+# checklist printout (README top section points here; keep in sync by hand).
+Write-Host "[preflight] PITFALLS 0901 §15 checklist:"
+Write-Host "   (1) relay heartbeat: relay_alive.txt fresh (it refreshes on command completion only)"
+Write-Host "   (2) guest orphan sweep: relay Stop-Process snapmaker-orca,python before the batch"
+Write-Host "   (3) guest interactive resolution = 1920x1080 (hv_go -Cases setres_1080 to check)"
+Write-Host "   (4) no residual 'suite' scheduled-task instance ((Get-ScheduledTask suite).State)"
+Write-Host "   (5) long waits go to background tasks (single bash <= 10 min); recordings/large files via base64 relay"
+
 # 1) power on if needed
 $v = Get-VM $vm
 if ($v.State -ne 'Running') {
@@ -172,3 +181,13 @@ if (`$failed) { "FAILED: `$(`$failed -join ' ')" | Add-Content C:\coil\regress_s
 Write-Host "[4] DONE. Poll progress any time (admin window):"
 Write-Host "    Get-Content C:\coil\vm_setup\poll_rerun.txt | Set-Content C:\coil\vm_setup\relay_cmd.txt   # via relay"
 Write-Host "    or in guest: Get-Content C:\coil\regress_progress.txt -Tail 5"
+
+# After-batch closeout reminders (README top section — batch discipline).
+# hv_go only LAUNCHES the batch (it runs for hours on the guest); these
+# lines fire at launch time so the closeout steps are not forgotten later.
+Write-Host "[5] after-batch closeout (batch discipline, README top section):"
+if ($aheadCount -gt 0) { Write-Warning "   host is $aheadCount commit(s) ahead of origin/main — commit+push results/fixes first" }
+if ($dirty) { Write-Warning "   host worktree has $($dirty.Count) uncommitted entries — stage or commit them" }
+Write-Host "   (1) pull results: & runner\hv_harvest.ps1"
+Write-Host "   (2) feishu writeback (GREEN only, host lark-cli): python tools\feishu_writeback.py --help"
+Write-Host "   (3) status stays honest: RED may be committed, never relabeled GREEN"

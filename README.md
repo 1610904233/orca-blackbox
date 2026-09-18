@@ -8,6 +8,16 @@
 > `git filter-repo --subdirectory-filter` 保留全部 38 个提交拆出，2026-09-02）。
 > 被测对象 = 上游构建产物；本仓对上游源码零依赖（fixture 与预设资源已 vendored）。
 
+## 跑批纪律与收尾（新会话必读）
+
+本条是唯一权威条文；`PITFALLS_0901.md` 是证据库，`runner/README.md` 是执行细节。违背历史基线：09-02 / 09-08 / 09-16 / 09-17 四个会话，用户先后 7 次训斥"去虚拟机上跑"——所以纪律从会话口头挪到了这里，并由 `harness/host_guard.py` 机械强制。
+
+1. **执行位置**：批量回归 / 用例 / 探针默认在 Hyper-V 客机 `win11-test` 跑（唯一入口 `runner/hv_go.ps1`）。宿主直跑仅限 dev 调试 / 用户明令，且必须 `ORCA_BB_ALLOW_HOST=1` 显式放行（launcher 强制拦截，否则 exit 2）；宿主跑出的结果**不是回归证据**。
+2. **跑批前**：`hv_go.ps1` 会自动打印 PITFALLS §15 checklist，照做即可。
+3. **提交**：阶段性成果及时 commit+push（客机 09-03 起 git clone 跟踪 origin，未推送的改动到不了客机）；状态如实——红可以提交，**禁止把未验证写成 GREEN**。
+4. **收尾三步**：`runner/hv_harvest.ps1` 拉结果 → commit+push → `tools/feishu_writeback.py`（仅 GREEN/已覆盖项，宿主 lark-cli，**禁止把扫码/授权 URL 甩给用户**）。
+5. **边界**：上游源码 `C:\coil\Projects\SnapmakerOrca` 只读，禁止修改；任务范围外的事不做。
+
 - 范式参照：[MaaAssistantArknights](https://github.com/MaaAssistantArknights/MaaAssistantArknights) /
   [ok-wuthering-waves](https://github.com/ok-oldking/ok-wuthering-waves)
 - 引擎选型：**MaaFramework (pip MaaFw) 优先**，其 Win32 控制器消息注入若无法路由到

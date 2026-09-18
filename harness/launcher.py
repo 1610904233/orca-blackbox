@@ -14,7 +14,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import winutil
+from . import host_guard, winutil
 
 # App-under-test resolution order (see default_exe):
 #   1. ORCA_VISION_APP_EXE env var (any layout, CI/packaged)
@@ -177,6 +177,10 @@ def launch(exe: Path | str | None = None,
     False so census/probe boots stay raw.
     `session.blockers` carries the dismissed titles for forensics.
     """
+    # Batch discipline (README top section): refuse host-side app launches
+    # unless dev-only execution was explicitly allowed — every real entry
+    # point (tests/*.py direct runs, mcp run_case, ui_runner) lands here.
+    host_guard.assert_guest_or_allow()
     exe = Path(exe) if exe else default_exe()
     if not exe.exists():
         raise FileNotFoundError(f"app exe not found: {exe} (pass --exe)")
