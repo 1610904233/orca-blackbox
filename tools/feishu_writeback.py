@@ -40,8 +40,13 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 
 DEFAULT_MAP = ROOT / "diag" / "feishu_0908" / "writeback_map.json"
-DEFAULT_BASE = "EDUAbYWcbaL2HOsgFM1cXmBpn5f"   # FEISHU_BASELINE.md header
-DEFAULT_TABLE = "tblvh0eGrID9JQ02"              # FEISHU_BASELINE.md header
+# Current table: wiki node VtS3wy9WpiNKoRkFJJYcNvPSnZb -> base RJKPbW7fTaMkNnsPx3LcFQISnmd,
+# table tbl2WmD8AtG9yH1i「基线用例」(107 records, resolved 2026-09-21). The old
+# EDUAbY…/tblvh0eGrID9JQ02 pair and diag/feishu_0908/writeback_map.json belong to an
+# earlier table instance whose record_ids no longer exist here — prefer
+# --from-annotations, which rebuilds the map from the case headers + the live export.
+DEFAULT_BASE = "RJKPbW7fTaMkNnsPx3LcFQISnmd"
+DEFAULT_TABLE = "tbl2WmD8AtG9yH1i"
 BATCH_LIMIT = 200  # platform limit for +record-batch-update (tools/feishu_u1_base.py:31)
 
 
@@ -50,6 +55,50 @@ def load_map(path: Path) -> dict[str, dict]:
     if not isinstance(raw, dict):
         raise ValueError(f"map must be a JSON object: {path}")
     return raw
+
+
+def map_from_annotations() -> dict[str, dict]:
+    """record_id -> {case, id, title} built from the case annotations.
+
+    Source of truth: each case script declares `# feishu: baseline#<用例编号> ...`
+    (cases.feishu_refs); the record_id for a number comes from the live-table
+    export artifacts/feishu_baseline_full.ndjson. This keeps the writeback keyed
+    to the CURRENT table instead of a hand-kept map file.
+    """
+    nd = ROOT / "artifacts" / "feishu_baseline_full.ndjson"
+    if not nd.exists():
+        sys.stderr.write(
+            "missing artifacts/feishu_baseline_full.ndjson — export the live table first:\n"
+            '  lark-cli base +record-list --base-token ' + DEFAULT_BASE +
+            ' --table-id ' + DEFAULT_TABLE +
+            ' --format ndjson --output artifacts/feishu_baseline_full.ndjson --limit 2000 --overwrite\n')
+        sys.exit(2)
+    by_num: dict[str, dict] = {}
+    for ln in nd.read_text(encoding="utf-8").splitlines():
+        if not ln.strip():
+            continue
+        r = json.loads(ln)
+        num = r.get("用例编号")
+        num = num[0] if isinstance(num, list) and num else num
+        title = r.get("用例标题")
+        title = title[0] if isinstance(title, list) and title else title
+        if num:
+            by_num[str(num)] = {"record_id": r["record_id"], "title": title or ""}
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    import cases as _cases  # noqa: PLC0415
+    _ = _cases
+    out: dict[str, dict] = {}
+    for case in _cases.CASES:
+        for ref in (_cases.feishu_refs(case) or []):
+            if not ref.startswith("baseline#"):
+                continue
+            n = ref.split("#", 1)[1]
+            entry = by_num.get(n)
+            if not entry:
+                continue
+            out[entry["record_id"]] = {"case": case, "id": n, "title": entry["title"]}
+    return out
 
 
 def case_tokens(entry: dict) -> set[str]:
@@ -143,10 +192,17 @@ def verify_records(ids: list[str], base: str, table: str, field: str, value: str
         sys.stderr.write("read-back failed: unexpected response shape, cannot verify\n")
         sys.exit(3)
     rows = resp["data"].get("data", [])
+    rid_list = resp["data"].get("record_id_list") or []
     got = {}
-    for row in rows:
-        if isinstance(row, list) and len(row) >= 2:
-            got[str(row[0])] = cell_value(row[1])
+    if rid_list and len(rid_list) == len(rows):
+        # current shape: each row carries ONLY the requested cells; the ids come
+        # back in a parallel record_id_list (verified against the live table 09-21)
+        for rid, row in zip(rid_list, rows):
+            got[str(rid)] = cell_value(row)
+    else:
+        for row in rows:  # legacy shape: [record_id, value]
+            if isinstance(row, list) and len(row) >= 2:
+                got[str(row[0])] = cell_value(row[1])
     bad = {rid: got.get(rid) for rid in ids if got.get(rid) != value}
     if bad:
         sample = ", ".join(f"{rid}={v!r}" for rid, v in list(bad.items())[:5])
@@ -157,8 +213,14 @@ def verify_records(ids: list[str], base: str, table: str, field: str, value: str
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Feishu 自动化状态 writeback (host-side closeout)")
-    ap.add_argument("cases", nargs="+", help="GREEN case names from the batch log (regress_progress.txt)")
+    ap.add_argument("cases", nargs="*", help="GREEN case names from the batch log (regress_progress.txt)")
+    ap.add_argument("--ids-file", type=Path,
+                    help="write by explicit record ids instead of case names: JSON list or "
+                         '{"record_id_list": [...]} (e.g. a category from tools/feishu_status_plan.py)')
+    ap.add_argument("--ids-key", default="", help="when --ids-file holds a plan, pick this category")
     ap.add_argument("--map", type=Path, default=DEFAULT_MAP, help="record_id -> {case,...} JSON")
+    ap.add_argument("--from-annotations", action="store_true",
+                    help="rebuild the map from the case `# feishu:` annotations + the live export")
     ap.add_argument("--base-token", default=DEFAULT_BASE)
     ap.add_argument("--table-id", default=DEFAULT_TABLE)
     ap.add_argument("--field", default="自动化状态")
@@ -168,12 +230,27 @@ def main() -> int:
     ap.add_argument("--out-dir", type=Path, default=ROOT / "artifacts" / "feishu_base")
     args = ap.parse_args()
 
-    if not args.map.exists():
-        sys.stderr.write(f"map not found: {args.map} (pass --map <json>; "
-                         f"emit one per batch, shape = diag/feishu_0908/writeback_map.json)\n")
-        return 2
-    mapping = load_map(args.map)
-    ids, unmatched = resolve(mapping, args.cases)
+    if args.from_annotations:
+        mapping = map_from_annotations()
+        print(f"[writeback] map from annotations: {len(mapping)} record(s)")
+    else:
+        if not args.map.exists():
+            sys.stderr.write(f"map not found: {args.map} (pass --map <json> or --from-annotations)\n")
+            return 2
+        mapping = load_map(args.map)
+
+    if args.ids_file:
+        raw = json.loads(args.ids_file.read_text(encoding="utf-8"))
+        if args.ids_key:
+            raw = (raw.get("plan") or {}).get(args.ids_key, [])
+        if isinstance(raw, dict):
+            raw = raw.get("record_id_list", [])
+        ids = [str(x) for x in raw]
+        print(f"[writeback] ids from {args.ids_file}"
+              + (f" [{args.ids_key}]" if args.ids_key else "") + f": {len(ids)} record(s)")
+        unmatched = []
+    else:
+        ids, unmatched = resolve(mapping, args.cases)
     if unmatched:
         sys.stderr.write(f"aborted: no map entry for: {', '.join(unmatched)} "
                          f"(map has {len(mapping)} records)\n")
