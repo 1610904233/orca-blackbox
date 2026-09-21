@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m8b_official_color.py — 飞书基线用例 #44/#46/#47/#48 + #55/#56/#58
+# feishu: baseline#44 baseline#46 baseline#47 baseline#48 baseline#55 baseline#56 baseline#58
 # (4 耗材管理-官方颜色 / 模型渲染, P0)。
 # 入口: 侧栏耗材行的 20DIP clr_picker 位图按钮 -> ChangeExtruderColor
 # (PresetComboBoxes.cpp:1045) — 仅 Snapmaker 命名预设打开官方
@@ -19,8 +20,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness.anchors import capture_bgr  # noqa: E402
 from m1_minimal_loop import capture_bgr as cap  # noqa: E402

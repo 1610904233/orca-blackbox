@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m7g_arrange.py — Feishu #17 (GUI业务, P1):
+# feishu: none  (无基线表映射)
 #   【正向】多模型重叠后自动整理分离
 #
 # Source facts: the toolbar 'Arrange all objects' [A] item (GLCanvas3D:7740,
@@ -17,8 +18,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402

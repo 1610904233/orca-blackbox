@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m3v_mixing_cycle_input.py — the Cycle-mode pattern input (#10/#11/#12):
+# feishu: baseline#80
 # default '12', quick-badge append, legal formats, and every validation
 # branch (#13 single-filament advisory + empty-normalize, #14 unknown
 # filament, #15 invalid characters + leading/trailing commas, 512 cap).
@@ -31,8 +32,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent  # repo root (cases live in tests/)
+HERE = Path(__file__).resolve().parents[2]  # repo root (cases live in tests/)
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import mix_dialog_util as mdu  # noqa: E402
 from harness import mixing_util  # noqa: E402

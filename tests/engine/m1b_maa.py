@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m1b_maa.py — M1b: the SAME minimal loop, expressed as MaaFramework pipeline.
+# feishu: none  (无基线表映射)
 #
 # Decisive comparison for the engine choice (README conclusion matrix):
 #   variant A: pipeline node action "Click" — MaaFw's Win32Controller built-in
@@ -24,8 +25,14 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-HERE = Path(__file__).resolve().parent.parent  # repo root (cases live in tests/)
+HERE = Path(__file__).resolve().parents[2]  # repo root (cases live in tests/)
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import launcher, profile, winutil  # noqa: E402
 from m1_minimal_loop import MATCH_THRESHOLD, capture_bgr, is_tab_teal, wait_for  # noqa: E402

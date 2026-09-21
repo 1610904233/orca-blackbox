@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m3e_preset_switch.py — P0-2: print-preset switch -> gcode header follows.
+# feishu: baseline#159 baseline#166 baseline#182
 #
 # White-box ref: wx_gui_business_tests.cpp:304 — switching the print preset
 # (combo path) and reslicing moves "; layer_height" with the new preset
@@ -21,8 +22,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent  # repo root (cases live in tests/)
+HERE = Path(__file__).resolve().parents[2]  # repo root (cases live in tests/)
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import export_util, winutil  # noqa: E402
 from m1_minimal_loop import match, capture_bgr  # noqa: E402
@@ -31,11 +38,23 @@ from m3_common import (MIXED_3MF, RESOURCE, add_common_args,  # noqa: E402
 
 
 def find_preset_combo(hwnd: int):
-    """The print-preset selector: the wxWindowNR whose text contains
-    'Standard @Snapmaker U1' in the settings panel (screen y 740-800)."""
-    for text, rect, ch in export_util._children_texts(hwnd):
-        if "Standard @Snapmaker U1" in text and 740 <= rect[1] <= 810:
-            return rect, ch
+    """The print-preset selector: the child whose text carries a print-preset
+    name ('0.40 Standard @Snapmaker U1 (0.8 nozzle)').
+
+    Anchored to the neighbouring 'Process' label instead of an absolute screen
+    band: the old test (text + screen y 740-810) was calibrated on the original
+    rig's MAXIMIZED window; this rig's window is the app's default 1200x800 and
+    the combo sits at y≈644, so the band rejected it and every preset switch
+    failed (measured 09-21). Text + label proximity survives maximize/restore.
+    """
+    rows = list(export_util._children_texts(hwnd))
+    anchor = next((r for t, r, _c in rows if t.strip() == "Process"), None)
+    for text, rect, ch in rows:
+        if "@Snapmaker U1" not in text:
+            continue
+        if anchor and not (anchor[1] - 10 <= rect[1] <= anchor[3] + 90):
+            continue
+        return rect, ch
     return None, None
 
 

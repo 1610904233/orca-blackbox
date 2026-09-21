@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m7f_scale120.py — Feishu #16 (GUI业务, P1):
+# feishu: none  (无基线表映射)
 #   【正向】等比例缩放模型到指定比例（120%）+ 还原
 #
 # Source facts: the Scale gizmo (GLGizmoScale3D, tooltip 'Scale [S]') opens
@@ -20,8 +21,14 @@ import sys
 import zipfile
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from m2_slice_chain import wait_model_loaded  # noqa: E402
 from m3_common import MIXED_3MF, add_common_args, boot_session  # noqa: E402
@@ -99,9 +106,7 @@ def main() -> int:
 
         m7.type_into_field(session, boxes[0][:2], "120",
                            old_len=len(boxes[0][2]))
-        time.sleep(1.0)
-        boxes2 = m7.gizmo_row_boxes(session, "scale")
-        cur = boxes2[0][2] if boxes2 else "?"
+        _boxes2, cur = m7.read_gizmo_field(session, "scale", 0, expect="120")
         results["scale commits 120"] = (
             "PASS" if cur.startswith("120") else f"FAIL (now {cur!r})")
 
@@ -124,9 +129,7 @@ def main() -> int:
         results["restore to original size"] = (
             "PASS (reset button)" if restored and reset_hit else
             "PASS (typed 100)" if restored else "FAIL")
-        time.sleep(1.0)
-        b4 = m7.gizmo_row_boxes(session, "scale")
-        cur4 = b4[0][2] if b4 else "?"
+        b4, cur4 = m7.read_gizmo_field(session, "scale", 0, expect="100")
         results["scale reads 100 after restore"] = (
             "PASS" if cur4.startswith("100") else f"FAIL (now {cur4!r})")
 

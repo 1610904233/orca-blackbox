@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m3m_mixing_filaments.py — Manual-mode filament card: default rows, add /
+# feishu: baseline#106
 # remove boundaries (#5/#6) and the gamut warning banner text (#13).
 #
 # White-box refs: none of the wx_gui cases drive the mixing dialog; source
@@ -24,8 +25,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent  # repo root (cases live in tests/)
+HERE = Path(__file__).resolve().parents[2]  # repo root (cases live in tests/)
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import mixing_util, winutil  # noqa: E402
 from m2_slice_chain import wait_model_loaded  # noqa: E402

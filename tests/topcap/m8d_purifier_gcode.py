@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m8d_purifier_gcode.py — 飞书基线用例 #113/#122/#126/#127/#128 (顶盖1.4.0
+# feishu: baseline#113 baseline#122 baseline#126 baseline#127 baseline#128
 # 净化器保温/强冷 gcode, P0)。
 #
 # 源码事实: U1 机器模板 machine_start_gcode 按 chamber_cooling_mode 分支
@@ -19,8 +20,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from m3_common import MIXED_3MF, add_common_args, boot_session, \
     ensure_gl_ready  # noqa: E402

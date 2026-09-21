@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 # m8e_purifier_weakcool.py — 飞书基线用例 #114/#129 (顶盖1.4.0 弱冷 gcode, P0)。
+# feishu: baseline#114 baseline#129
 #
 # 源码事实: 弱冷分支 -> SET_PURIFIER_MODE MODE=3 DESIRE_TEMP=0
-# FAN_SPEED=0.6 DELAY_OFF=180 (无 ALARM_TEMP) — 值以生效机器模板为准
-# (staged build 资源实测 09-17, DELAY_OFF=180; 源码树另一版本写 600,
-# 模板按 filament_is_high_temperature[0]/temperature_vitrification[0]
-# 单耗材分支)。弱冷条件 = 低温耗材且 vitrification > 50
+# FAN_SPEED=0.6 DELAY_OFF=600 (无 ALARM_TEMP) — 值以生效机器模板为准。
+# 2026-09-21 实测: app 发行包自带模板 (2.3.6 与 2.4.0 相同) 的弱冷分支写
+# 600, 而仓库 vendor 的 resources/ 副本 (20260128) 仍写 180; preset 种子
+# 取自 app 的 resources\profiles, 故 gcode 实际出 600 —— 基线与断言均按
+# 600 (人工判定)。模板按
+# filament_is_high_temperature[0]/temperature_vitrification[0]
+# 单耗材分支。弱冷条件 = 低温耗材且 vitrification > 50
 # (Generic PETG @U1 vitr=70)。
 #
 # 黑盒路径 (mixed 夹具): 清场 -> cube (默认槽1 = Generic PETG) ->
@@ -17,8 +21,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from m3_common import MIXED_3MF, add_common_args, boot_session, \
     ensure_gl_ready  # noqa: E402
@@ -98,8 +108,8 @@ def main() -> int:
             "PASS" if p and p["DESIRE_TEMP"] == "0" else f"FAIL ({p})")
         results["#114/#129 no ALARM_TEMP"] = (
             "PASS" if p and p["ALARM_TEMP"] is None else f"FAIL ({p})")
-        results["#129 DELAY_OFF=180 (staged template)"] = (
-            "PASS" if p and p["DELAY_OFF"] == "180" else f"FAIL ({p})")
+        results["#129 DELAY_OFF=600 (app template)"] = (
+            "PASS" if p and p["DELAY_OFF"] == "600" else f"FAIL ({p})")
         results["#129 params complete"] = (
             "PASS" if p and p["FAN_SPEED"] is not None else f"FAIL ({p})")
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m3a_empty_slice.py — P3-13: an empty scene rejects slicing.
+# feishu: none  (无基线表映射)
 #
 # White-box ref: wx_gui_business_tests.cpp:638. Source gate:
 # MainFrame::get_enable_slice_status() (MainFrame.cpp:1989) — an empty
@@ -15,8 +16,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent  # repo root (cases live in tests/)
+HERE = Path(__file__).resolve().parents[2]  # repo root (cases live in tests/)
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import anchors  # noqa: E402
 from harness.anchors import IDLE_DONE_SCORE  # noqa: E402

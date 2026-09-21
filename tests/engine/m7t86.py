@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m7t86.py — Feishu #86 主流程-模板: 自动朝向布尔剪贴整理
+# feishu: none  (无基线表映射)
 #   M-01 import -> M-04 auto orient -> M-15 mesh boolean (2nd volume via
 #   Add Part) -> M-03 arrange -> M-02 slice -> O-02 close
 # Composition of the m7t78 orient step and the m7t81 boolean step.
@@ -8,8 +9,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness.anchors import capture_bgr, viewport_diff  # noqa: E402
 from m3_common import MIXED_3MF  # noqa: E402

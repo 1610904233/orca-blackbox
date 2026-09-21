@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m8f_nozzle_flow.py — 飞书基线用例 #133/#135/#136 (高流量热端, P0)。
+# feishu: baseline#133 baseline#135 baseline#136
 #
 # 源码事实: U1 (0.4 nozzle) 机器预设 printer_flow_support =
 # ['standard','high_flow'] -> 侧栏 Nozzle 区 Flow combo 提供 Standard/
@@ -19,8 +20,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness.anchors import capture_bgr  # noqa: E402
 from m3_common import MULTI_PLATE_3MF, add_common_args, boot_session, \

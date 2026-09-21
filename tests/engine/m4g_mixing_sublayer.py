@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m4g_mixing_sublayer.py — 'Subdivide Mix Layer' (config dithering_local_z_mode):
+# feishu: none  (无基线表映射)
 # the sidebar Process panel exposes the checkbox on the Multimaterial page in
 # Advanced mode; toggling it at layer height 0.4 (>0.1) pops NO warning, at
 # layer height 0.1 (<=0.1) pops the 'Configuration Conflict' advisory while
@@ -55,8 +56,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent  # repo root (cases live in tests/)
+HERE = Path(__file__).resolve().parents[2]  # repo root (cases live in tests/)
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import mixing_util, process_panel as pp, winutil  # noqa: E402
 from harness.anchors import CHECKED_FRACTION  # noqa: E402

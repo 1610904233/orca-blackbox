@@ -7,7 +7,7 @@
 # Ported from C:\coil\vm_setup\hv_go.ps1 (un-versioned); parameters now come
 # from runner\_common.ps1 (env-overridable). Case list comes from cases.py —
 # do NOT hardcode case names here (see docs/STRUCTURING_PLAN.md).
-param([string[]]$Cases = @(), [switch]$OnlyFailed, [switch]$NoWarmup, [switch]$Warmup, [switch]$NoSync)
+param([string[]]$Cases = @(), [switch]$OnlyFailed, [switch]$NoWarmup, [switch]$Warmup, [switch]$NoSync, [string]$Suite = 'regression')
 . (Join-Path $PSScriptRoot '_common.ps1')
 
 # Guest passthrough gate: ONLY caller-supplied selections (-Cases, -OnlyFailed)
@@ -30,12 +30,12 @@ if (-not $Cases) {
   $repoRoot = Split-Path $PSScriptRoot -Parent
   $py = (Get-Command python -ErrorAction SilentlyContinue).Source
   if (-not $py) { $py = $guestPython }  # guest binary as last resort on the host
-  $reg = & $py -c "import sys; sys.path.insert(0, r'$repoRoot'); from cases import enabled_cases; print(' '.join(enabled_cases('regression')))" 2>$null
+  $reg = & $py -c "import sys; sys.path.insert(0, r'$repoRoot'); from cases import enabled_cases; print(' '.join(enabled_cases('$Suite')))" 2>$null
   if ($LASTEXITCODE -ne 0 -or -not $reg) {
     throw "cannot read cases.py registry (host python missing?) — pass -Cases explicitly"
   }
   $Cases = @($reg -split '\s+' | Where-Object { $_ })
-  Write-Host "[0] registry: $($Cases.Count) regression cases from cases.py"
+  Write-Host "[0] registry: $($Cases.Count) $Suite cases from cases.py"
 }
 if ($OnlyFailed) {
   $ff = Join-Path (Split-Path $PSScriptRoot -Parent) 'artifacts\failed_cases.txt'
@@ -124,7 +124,7 @@ Invoke-Command -VMName $vm -Credential $cred -ScriptBlock {
   # NOTE: this scriptblock runs ON THE GUEST — everything it needs must be
   # marshaled via param/-ArgumentList (host-side $warmup is not visible here;
   # measured 09-03 night: silent $false, warmup block never emitted).
-  param($caseStr, $sb, $py, $warmup)
+  param($caseStr, $sb, $py, $warmup, $suite)
   # full run: the guest derives the list from cases.py itself (single
   # source of truth); explicit subset: split the passed string.
   # warmup fragment — the host-side decision ($warmup) must be baked into
@@ -135,14 +135,14 @@ Invoke-Command -VMName $vm -Credential $cred -ScriptBlock {
     $warmupCode = @"
 if (`$cases.Count -gt 1) {
   "=== warmup (`$(`$cases[0]) result discarded) ===" | Add-Content C:\coil\regress_progress.txt
-  & "$py" "tests\`$(`$cases[0]).py" 2>&1 | Out-File -FilePath "artifacts\regress_`$(`$cases[0]).log.warmup" -Encoding utf8
+  & "$py" (Case-File `$(`$cases[0])) 2>&1 | Out-File -FilePath "artifacts\regress_`$(`$cases[0]).log.warmup" -Encoding utf8
 }
 "@
   }
   $runner = @"
 if (`$args) { `$cases = @((`$args -join ' ') -split '\s+' | Where-Object { `$_ }) }
 else {
-  `$reg = & '$py' -c "import sys; sys.path.insert(0, r'$sb'); from cases import enabled_cases; print(' '.join(enabled_cases('regression')))"
+  `$reg = & '$py' -c "import sys; sys.path.insert(0, r'$sb'); from cases import enabled_cases; print(' '.join(enabled_cases('$suite')))"
   if (-not `$reg) { 'REGISTRY_READ_FAILED' | Set-Content C:\coil\regress_summary.txt; exit 1 }
   `$cases = @(`$reg -split '\s+' | Where-Object { `$_ })
 }
@@ -151,6 +151,19 @@ else {
 Set-Location `$sb
 New-Item -ItemType Directory -Force artifacts | Out-Null
 Remove-Item C:\coil\regress_summary.txt -ErrorAction SilentlyContinue
+# Case scripts live under tests/<group>/ keyed by the Feishu baseline table's
+# 二级分类, so the path comes from the registry (cases.py) instead of a hardcoded
+# "tests\<case>.py".
+function Case-File(`$c) {
+  `$rel = & '$py' -c "import sys; sys.path.insert(0, r'$sb'); from cases import CASES; print(CASES[r'`$c']['file'])"
+  if (-not `$rel) {
+    # Fail LOUDLY: a silent fallback to the flat tests\<case>.py path makes a
+    # broken registry look like "every case suddenly broke" (measured 09-21).
+    "REGISTRY_READ_FAILED: no file for `$c" | Set-Content C:\coil\regress_summary.txt
+    exit 1
+  }
+  return (Join-Path `$sb (`$rel -replace '/', '\'))
+}
 $warmupCode
 `$pass=0; `$fail=0; `$failed=@(); `$batch=''
 foreach (`$c in `$cases) {
@@ -158,7 +171,7 @@ foreach (`$c in `$cases) {
   `$env:PYTHONIOENCODING='utf-8'
   # PS 5.1 '>' writes UTF-16LE — junit_report reads UTF-8; route through
   # Out-File -Encoding utf8 or the emitter embeds mojibake (measured 09-03).
-  & "$py" "tests\`$c.py" 2>&1 | Out-File -FilePath "artifacts\regress_`$c.log" -Encoding utf8
+  & "$py" (Case-File `$c) 2>&1 | Out-File -FilePath "artifacts\regress_`$c.log" -Encoding utf8
   if (`$LASTEXITCODE -eq 0) { `$pass++; "`$c GREEN" | Add-Content C:\coil\regress_progress.txt }
   else { `$fail++; `$failed += `$c; "`$c RED rc=`$LASTEXITCODE" | Add-Content C:\coil\regress_progress.txt }
   `$batch = "`$batch `$c|`$LASTEXITCODE|artifacts\regress_`$c.log"
@@ -177,7 +190,7 @@ if (`$failed) { "FAILED: `$(`$failed -join ' ')" | Add-Content C:\coil\regress_s
   Register-ScheduledTask -TaskName "suite" -Action $a -Settings $st -Principal $p -Force | Out-Null
   Start-ScheduledTask -TaskName "suite"
   "suite launched: " + (Get-ScheduledTask suite).State
-} -ArgumentList $guestCaseStr, $guestSandbox, $guestPython, $warmup
+} -ArgumentList $guestCaseStr, $guestSandbox, $guestPython, $warmup, $Suite
 Write-Host "[4] DONE. Poll progress any time (admin window):"
 Write-Host "    Get-Content C:\coil\vm_setup\poll_rerun.txt | Set-Content C:\coil\vm_setup\relay_cmd.txt   # via relay"
 Write-Host "    or in guest: Get-Content C:\coil\regress_progress.txt -Tail 5"

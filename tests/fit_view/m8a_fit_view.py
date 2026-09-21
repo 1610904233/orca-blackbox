@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m8a_fit_view.py — 飞书基线用例 #16/#17/#18/#19 (3 模型与视图-Fit, P0):
+# feishu: baseline#16 baseline#17 baseline#18 baseline#19 baseline#21
 #   #18 选中单个模型 Fit   -> zoom_to_selection: blob 放大且居中
 #   #19 选中多个模型 Fit   -> Edit>Select All 后 Fit: 并集包围盒 (视角回拉)
 #   #16 选中任意盘触发 Fit -> 切盘 + zoom_to_bed: 视角显著变化
@@ -14,8 +15,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness.anchors import capture_bgr  # noqa: E402
 from harness import topbar_util, winutil  # noqa: E402

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m3y_mixing_gradient.py — the Gradient mode: forced 2 rows + Mix Effect
+# feishu: baseline#86
 # + swap control (#31), the row combo repaints the gradient (#32), the
 # default direction registers as F3->F2 and the swap flips it to F2->F3
 # (#33), a re-open stays in Gradient (#34), and a recommendation fill +
@@ -25,8 +26,14 @@ from pathlib import Path
 
 import numpy as np
 
-HERE = Path(__file__).resolve().parent.parent  # repo root (cases live in tests/)
+HERE = Path(__file__).resolve().parents[2]  # repo root (cases live in tests/)
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import mix_dialog_util as mdu  # noqa: E402
 from harness import mixing_util  # noqa: E402

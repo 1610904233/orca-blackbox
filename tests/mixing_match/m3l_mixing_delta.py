@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m3l_mixing_delta.py — hover the mapping swatches: the Delta-E grade
+# feishu: baseline#91
 # tooltip (#24) and its Good/Fair/Poor band (#22).
 #
 # White-box refs: none of the wx_gui cases drive the mixing dialog; source
@@ -21,8 +22,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent  # repo root (cases live in tests/)
+HERE = Path(__file__).resolve().parents[2]  # repo root (cases live in tests/)
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import mixing_util, ocr_util  # noqa: E402
 from m2_slice_chain import wait_model_loaded  # noqa: E402

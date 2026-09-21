@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m7h_context_delete.py — Feishu #18 (GUI业务, P0):
+# feishu: baseline#144
 #   【正向】右键删除模型后恢复空白打印板
 #
 # Source facts: the Plater context menu (Plater.cpp on_right_click -> the
@@ -19,8 +20,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from m1_minimal_loop import capture_bgr  # noqa: E402
 from m2_slice_chain import click_slice_start  # noqa: E402

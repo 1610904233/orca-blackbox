@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m7t88.py — Feishu #88 主流程-模板: 多模型导入拆分对象拆分零件缩放耗材切换
+# feishu: none  (无基线表映射)
 #   M-01 import (fixture) -> M-01 import 2nd (STL dialog) -> M-05/M-07
 #   split attempts -> M-12 scale 120 -> M-18 change filament -> M-02 slice
 #   -> O-02 close
@@ -11,8 +12,14 @@ import ctypes
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import export_util, winutil  # noqa: E402
 from m3_common import HERE as ROOT, MIXED_3MF  # noqa: E402

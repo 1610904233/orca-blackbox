@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m7a_boot_shutdown.py — Feishu #7 + #8 (GUI业务, P0):
+# feishu: baseline#139 baseline#140
 #   #7 【正向】首次启动Orca软件进入准备页面 — boot reaches the ready page
 #   #8 【正向】正常关闭Orca软件无残留进程 — graceful close, zero leftovers
 #
@@ -19,8 +20,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import launcher, profile  # noqa: E402
 from harness.anchors import (IDLE_DONE_SCORE, SLICE_PLATE_BUTTON,  # noqa: E402

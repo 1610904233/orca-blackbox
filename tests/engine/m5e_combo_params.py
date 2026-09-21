@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m5e_combo_params.py — cross-page parameter COMBINATION main flow: on a
+# feishu: none  (无基线表映射)
 # standard right-click model, change THREE parameters on THREE different
 # process pages (Quality layer height, Strength infill density, Support
 # enable + type), slice ONCE, and prove every value reached the slicer
@@ -26,8 +27,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent  # repo root (cases live in tests/)
+HERE = Path(__file__).resolve().parents[2]  # repo root (cases live in tests/)
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import gcode_check  # noqa: E402
 from harness import process_panel as pp  # noqa: E402

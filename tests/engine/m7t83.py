@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m7t83.py — Feishu #83 主流程-模板: 新建项目导入模型
+# feishu: none  (无基线表映射)
 #   O-01 open -> O-05 new project -> M-01 import STL -> M-02 slice
 #   -> O-02 close
 # The import reuses m7c's proven path (File menu dispatch -> native open
@@ -11,8 +12,14 @@ import ctypes
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import export_util, winutil  # noqa: E402
 from m3_common import HERE as ROOT  # noqa: E402

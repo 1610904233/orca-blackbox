@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m7t89.py — Feishu #89 主流程-模板: 模型创建旋转涂色切片
+# feishu: baseline#170
 #   O-01 open -> M-20 model create (Add Primitive > Cube) -> M-11 rotate
 #   Z 45 -> M-17 color painting (dab) -> M-02 slice -> O-02 close
 # The color-paint dab is m4e's paint primitive against the MmSegmentation
@@ -9,8 +10,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import winutil  # noqa: E402
 from m3_common import add_common_args, boot_session  # noqa: E402

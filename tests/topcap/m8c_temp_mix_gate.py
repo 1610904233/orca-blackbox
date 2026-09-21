@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m8c_temp_mix_gate.py — 飞书基线用例 #111/#112 (顶盖1.4.0: 高低温混用门, P0)。
+# feishu: baseline#111 baseline#112
 #
 # 源码事实: 高低温混用门接入切片按钮门链 (MainFrame.cpp:2047
 # is_plate_blocked_by_filament_temp_mixing -> get_enable_slice_status=false,
@@ -18,8 +19,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import export_util, winutil  # noqa: E402
 from harness.anchors import capture_bgr, SLICE_PLATE_BUTTON  # noqa: E402
@@ -66,15 +73,23 @@ def add_cube_and_assign(session, slot_substr, results, key):
 
 
 def slice_rejected(session):
-    """Probe-click Slice; rejected = button stays idle + no slicing starts
-    (m3a negative contract)."""
+    """Probe-click Slice; rejected = the click does not start slicing.
+
+    Evidence: click_slice_start() reports nothing started AND the button's
+    rendered state is unchanged by the click. The previous proxy asked "is the
+    IDLE template's score above the DONE threshold" — but the earlier #112 slice
+    legitimately leaves the button in the DONE state, where the idle template
+    scores only 0.666 (the documented idle-vs-done signature), so the proxy read
+    a working gate as a failure (measured 09-21: started=False, idle-score=0.666).
+    """
     from m2_slice_chain import click_slice_start
+    m7.ensure_maximized(session)
+    before = match(cap(session), SLICE_PLATE_BUTTON)[0]
     started = click_slice_start(session)
     time.sleep(2.0)
-    score, *_rest = match(cap(session), SLICE_PLATE_BUTTON)
-    still_idle = score >= IDLE_DONE_SCORE * 0.9
-    print(f"{LOG} slice probe: started={started} idle-score={score:.3f}")
-    return (not started) and still_idle
+    after = match(cap(session), SLICE_PLATE_BUTTON)[0]
+    print(f"{LOG} slice probe: started={started} score before={before:.3f} after={after:.3f}")
+    return (not started) and abs(after - before) < 0.05
 
 
 def main() -> int:

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m3p_mixing_persist.py — the matched scheme persists into the project
+# feishu: none  (无基线表映射)
 # .3mf and reloads (#48).
 #
 # White-box refs: none of the wx_gui cases drive the mixing dialog; source
@@ -22,8 +23,14 @@ from pathlib import Path
 
 import numpy as np
 
-HERE = Path(__file__).resolve().parent.parent  # repo root (cases live in tests/)
+HERE = Path(__file__).resolve().parents[2]  # repo root (cases live in tests/)
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import mixing_util, topbar_util, export_util, winutil  # noqa: E402
 from harness.anchors import SIDEBAR_COLOR_MIXING_PANEL, SPREAD_COLORED  # noqa: E402

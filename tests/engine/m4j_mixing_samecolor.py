@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m4j_mixing_samecolor.py — same-colour mixing is ALLOWED (表1 #9), the
+# feishu: none  (无基线表映射)
 # 5-distinct-filament Cycle advisory warns WITHOUT blocking (表1 #16), and
 # the batch dialog's Manual match renders a mapping list on a same-colour
 # fixture (表2 #7/#9 partial).
@@ -47,8 +48,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent  # repo root (cases live in tests/)
+HERE = Path(__file__).resolve().parents[2]  # repo root (cases live in tests/)
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import fixture_util  # noqa: E402
 from harness import mix_dialog_util as mdu  # noqa: E402

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m7t74.py — Feishu #74 主流程-模板: 单模型切片调整测试
+# feishu: baseline#152 baseline#156 baseline#164
 #   M-01 import -> M-09 move -> M-11 rotate Z 45 -> M-12 scale 120
 #   -> M-02 slice -> O-02 close
 # Asserts: each gizmo field commits its value (OCR), the model stays on
@@ -9,8 +10,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from m3_common import MIXED_3MF  # noqa: E402
 

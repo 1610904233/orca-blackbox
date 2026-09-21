@@ -43,6 +43,12 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent  # repo root (case lives in tests/)
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import topbar_util, winutil  # noqa: E402
 from harness import mix_dialog_util as mdu  # noqa: E402
@@ -336,7 +342,7 @@ def _click_in_submenu(session, shwnd, shmenu, row_substr, success_fn, label):
 
 # --- gizmo field entry (m6a pattern) -----------------------------------------
 
-def gizmo_row_boxes(session, row_label):
+def gizmo_row_boxes(session, row_label, scale=3):
     """[(x, y, text)] of EVERY numeric field on the gizmo-window row whose
     label starts with row_label, left-to-right (X/Y/Z order).
 
@@ -344,8 +350,13 @@ def gizmo_row_boxes(session, row_label):
     window title 'Rotate', field row 'Rotate (relative)') — the first
     candidate with numeric boxes to its right wins. OCR brackets glue to
     the value ('[0.00') so the numeric pattern strips leading punctuation."""
-    img = capture_bgr(session)
-    words = mdu.ocr_words_img(img, scale=3)
+    return gizmo_row_boxes_img(capture_bgr(session), row_label, scale=scale)
+
+
+def gizmo_row_boxes_img(img, row_label, scale=3):
+    """gizmo_row_boxes on an already-captured frame (lets one capture be OCR'd
+    at several scales — see read_gizmo_field)."""
+    words = mdu.ocr_words_img(img, scale=scale)
 
     def numerics_right(px, py):
         nums = []
@@ -675,6 +686,37 @@ def op_add_primitive(session, shape="cube"):
     return ok
 
 
+def read_gizmo_field(session, row_label, index, expect=None, timeout_s=12.0,
+                     interval_s=1.0, scales=(3, 4, 2, 1)):
+    """Poll the gizmo row until field #index is readable (and reads `expect`).
+
+    Two robustness measures, both measured on this rig (09-20):
+      * a one-shot read races the commit/repaint, so poll instead;
+      * Tesseract's recognition is SCALE-DEPENDENT for the focused-field
+        styling — on one and the same frame, scale 3 returned nothing for the
+        X value while scale 4 read '60.00' cleanly. One capture is therefore
+        OCR'd at several scales and the first scale yielding the expected
+        value wins.
+    The assertion is unchanged — only how the value is read.
+    Returns (boxes, text).
+    """
+    deadline = time.time() + timeout_s
+    fallback = ([], "")
+    while True:
+        img = capture_bgr(session)
+        for s in scales:
+            boxes = gizmo_row_boxes_img(img, row_label, scale=s)
+            idx = index if index >= 0 else len(boxes) + index
+            text = boxes[idx][2] if 0 <= idx < len(boxes) else ""
+            if boxes and (expect is None or text.startswith(expect)):
+                return boxes, text
+            if boxes and not fallback[0]:
+                fallback = (boxes, text)
+        if time.time() >= deadline:
+            return fallback
+        time.sleep(interval_s)
+
+
 def op_gizmo_field(session, slot_pred, row_label, index, value):
     """Select + activate gizmo + type value into row field #index.
     Returns (ok, observed_text)."""
@@ -691,9 +733,7 @@ def op_gizmo_field(session, slot_pred, row_label, index, value):
         return False, ""
     type_into_field(session, boxes[idx][:2], value,
                     old_len=len(boxes[idx][2]))
-    boxes2 = gizmo_row_boxes(session, row_label)
-    idx2 = index if index >= 0 else len(boxes2) + index
-    text = boxes2[idx2][2] if 0 <= idx2 < len(boxes2) else ""
+    _boxes2, text = read_gizmo_field(session, row_label, index, expect=value)
     return text.startswith(value), text
 
 

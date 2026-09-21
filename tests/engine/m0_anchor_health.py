@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m0_anchor_health.py — UI-change smoke (STRUCTURING_PLAN 第二期 #1): boot
+# feishu: none  (无基线表映射)
 # the app and match EVERY idle-boot anchor from harness/anchors.py, printing
 # the invalid list. A UI upgrade surfaces here in ~2 minutes as a precise
 # "which anchors died" report instead of 35 red regression cases.
@@ -22,8 +23,14 @@ from pathlib import Path
 
 import cv2
 
-HERE = Path(__file__).resolve().parent.parent  # repo root
+HERE = Path(__file__).resolve().parents[2]  # repo root
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import anchors, winutil  # noqa: E402
 from m2_slice_chain import has_colored_content, wait_model_loaded  # noqa: E402

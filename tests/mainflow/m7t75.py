@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m7t75.py — Feishu #75 主流程-模板: 多模型布局切片测试
+# feishu: baseline#153 baseline#158
 #   M-01 import x2 (overlap) -> M-03 arrange -> M-19 delete one
 #   -> M-02 slice (gcode exported as evidence) -> O-02 close
 # Asserts: after arrange two separated blobs exist; after deleting one the
@@ -9,8 +10,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from m3_common import MIXED_3MF  # noqa: E402
 import m7_common as m7  # noqa: E402

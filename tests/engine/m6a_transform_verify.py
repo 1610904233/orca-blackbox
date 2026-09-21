@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m6a_transform_verify.py — P1-5 (absorbed from white-box ab3b34adf5:459):
+# feishu: none  (无基线表映射)
 # an object transform driven through the Move gizmo window's Position X
 # field lands in the exported 3mf's <build><item transform> with EXACT
 # precision — the "instance matrix is blackbox-untestable" C-tier claim
@@ -34,8 +35,14 @@ from pathlib import Path
 
 import cv2
 
-HERE = Path(__file__).resolve().parent.parent  # repo root (cases live in tests/)
+HERE = Path(__file__).resolve().parents[2]  # repo root (cases live in tests/)
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from m2_slice_chain import wait_model_loaded  # noqa: E402
 from m3_common import MIXED_3MF, add_common_args, boot_session, verdict  # noqa: E402
@@ -53,11 +60,15 @@ TARGET_X = "60"          # typed into Position X
 EXPECT_Y, EXPECT_Z = 136.0, 13.5  # fixture's untouched components
 
 
-def position_row(session):
+def position_row(session, scale=3):
     """(x_value_box_center, current_text) of the first numeric field right
     of the 'Position' label — adaptive, no hardcoded coordinates."""
-    img = viewport_img(session)
-    words = mdu.ocr_words_img(img, scale=3)
+    return position_row_img(viewport_img(session), scale=scale)
+
+
+def position_row_img(img, scale=3):
+    """position_row on an already-captured frame (one capture, several scales)."""
+    words = mdu.ocr_words_img(img, scale=scale)
     pos = next((w for w in words if w[0].lower() == "position"), None)
     if not pos:
         return None, ""
@@ -70,6 +81,31 @@ def position_row(session):
         return None, ""
     n = nums[0]
     return (n[1] + n[3] // 2, n[2] + n[4] // 2), n[0]
+
+
+def position_row_wait(session, expect=None, timeout_s=12.0, interval_s=1.0,
+                      scales=(3, 4, 2, 1)):
+    """Poll position_row until the X field is readable (and reads `expect`).
+
+    Robustness measured on this rig (09-20): a one-shot read races the
+    commit/repaint, and Tesseract's recognition is SCALE-DEPENDENT for the
+    focused-field styling — on the very same frame, scale 3 read nothing for
+    the X value while scale 4 read '60.00' cleanly. The assertion is
+    unchanged — only how the value is read.
+    """
+    deadline = time.time() + timeout_s
+    fallback = (None, "")
+    while True:
+        img = viewport_img(session)
+        for s in scales:
+            box, cur = position_row_img(img, scale=s)
+            if box and (expect is None or cur.startswith(expect)):
+                return box, cur
+            if box and fallback[0] is None:
+                fallback = (box, cur)
+        if time.time() >= deadline:
+            return fallback
+        time.sleep(interval_s)
 
 
 def type_chars(session, text, enter=True):
@@ -135,7 +171,7 @@ def main() -> int:
         winutil.real_click_screen(sx, sy)
         time.sleep(2.5)
 
-        box, cur = position_row(session)
+        box, cur = position_row_wait(session)
         results["Position X field located"] = (
             f"PASS (was {cur})" if box else "FAIL")
         if box is None:
@@ -157,7 +193,7 @@ def main() -> int:
         type_chars(session, TARGET_X)
         time.sleep(1.5)
 
-        _box2, cur2 = position_row(session)
+        _box2, cur2 = position_row_wait(session, expect=TARGET_X)
         results["field commits typed value"] = (
             "PASS (now %s)" % cur2 if cur2.startswith(TARGET_X) else
             f"FAIL (now {cur2!r})")

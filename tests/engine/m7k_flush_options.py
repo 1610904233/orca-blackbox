@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # m7k_flush_options.py — Feishu #24 (GUI业务, P0, PARTIAL):
+# feishu: none  (无基线表映射)
 #   【正向】擦除塔材料切换后G-Code正确
 #
 # Scope note: the record's wipe-tower-material gcode semantics need a
@@ -20,8 +21,14 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent.parent
+HERE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(HERE)); sys.path.insert(0, str(HERE / "tests"))
+# cases are grouped under tests/<飞书二级分类>/; shared helpers stay in
+# tests/, and cases import each other across groups — put every group
+# dir on the path.
+for _g in sorted((HERE / "tests").iterdir()):
+    if _g.is_dir() and not _g.name.startswith("__"):
+        sys.path.insert(0, str(_g))
 
 from harness import topbar_util, winutil  # noqa: E402
 from m2_slice_chain import wait_model_loaded  # noqa: E402
