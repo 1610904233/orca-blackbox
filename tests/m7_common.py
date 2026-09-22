@@ -212,30 +212,41 @@ def find_centroid(session):
 # --- context menu (Plater right-click) ---------------------------------------
 
 def open_context_menu(session, where="model"):
-    """Real right-click the model centroid ('model') or an empty-bed spot
-    ('bed'); wait for the native popup; return its (hwnd, hmenu) or None.
-    The Plater context menu is a #32768 popup whose modal loop ignores
-    message-level input — opening AND row selection both need REAL input
-    (same lesson as the topbar dropdown, m3b)."""
+    """Real right-click the model ('model') or an empty-bed spot ('bed');
+    wait for the native popup whose rect CONTAINS the click point; return
+    its (hwnd, hmenu) or None.
+
+    Two failure modes measured on V2.3.6 (09-22, g6):
+      * a STALE topbar/dropdown #32768 lingers after WM_CANCELMODE (and
+        real ESC x2 does NOT close it on this build either) — a bare
+        wait_menu_popup returned the stale window, whose items were dead
+        by enumeration time (m7t73's 'menu: []');
+      * the model centroid can sit on the 'Untitled' LABEL painted above
+        the object — right-clicking the label opens NOTHING (m7t75's
+        'no popup'). So walk the centroid candidates like select_model
+        does, and accept only a menu that contains the click point."""
     ensure_maximized(session)
     if where == "model":
-        pos = find_centroid(session)
-        if not pos:
-            print(f"{LOG} no model centroid for right-click")
-            return None
+        candidates = [(cx, cy + 22) for cx, cy in
+                      find_centroids(session, limit=4)]
     else:
         img = capture_bgr(session)
-        pos = (VIEWPORT_X0 + 60, img.shape[0] - 160)  # empty bed, bottom-left
-    sx, sy = client(session, *pos)
-    winutil.user32.SetCursorPos(sx, sy)
-    time.sleep(0.3)
-    winutil.real_right_click_screen(sx, sy)
-    menus = topbar_util.wait_menu_popup(session.pid, timeout_s=4.0)
-    if not menus:
-        print(f"{LOG} {where} right-click: no popup")
-        return None
-    rect, hwnd = menus[0][:4], menus[0][4]
-    return hwnd, topbar_util.menu_hmenu(hwnd)
+        candidates = [(VIEWPORT_X0 + 60, img.shape[0] - 160)]  # empty bed
+    for cx, cy in candidates:
+        sx, sy = client(session, cx, cy)
+        winutil.user32.SetCursorPos(sx, sy)
+        time.sleep(0.3)
+        winutil.real_right_click_screen(sx, sy)
+        deadline = time.monotonic() + 4.0
+        while time.monotonic() < deadline:
+            for rect, hwnd in [(m[:4], m[4]) for m in
+                               topbar_util._enum_menu_windows(session.pid)]:
+                l, t, r, b = rect
+                if l - 30 <= sx <= r + 30 and t - 30 <= sy <= b + 30:
+                    return hwnd, topbar_util.menu_hmenu(hwnd)
+            time.sleep(0.25)
+        print(f"{LOG} {where} right-click @({cx},{cy}): no menu")
+    return None
 
 
 def list_menu(hmenu):
@@ -302,6 +313,19 @@ def click_menu_row(session, hwnd, hmenu, row_substr, nested=False):
 def dismiss_menus(session):
     topbar_util.close_menu_windows(session.pid)
     time.sleep(0.4)
+    # V2.3.6: WM_CANCELMODE leaves expanded-submenu menus open (17.10) and
+    # real ESC x2 does not close them either (g6 s1). A fresh real
+    # right-click dismisses any open menu; CANCELMODE then closes the
+    # fresh one (it has no expanded submenu).
+    if topbar_util._enum_menu_windows(session.pid):
+        img = capture_bgr(session)
+        sx, sy = client(session, VIEWPORT_X0 + 60, img.shape[0] - 160)
+        winutil.user32.SetCursorPos(sx, sy)
+        time.sleep(0.3)
+        winutil.real_right_click_screen(sx, sy)
+        time.sleep(1.0)
+        topbar_util.close_menu_windows(session.pid)
+        time.sleep(0.4)
 
 
 def context_click_row(session, where, row_substr, success_fn=None,
@@ -330,10 +354,13 @@ def context_click_row(session, where, row_substr, success_fn=None,
         deadline = time.monotonic() + 12
         while time.monotonic() < deadline:
             if success_fn():
+                dismiss_menus(session)
                 return True
             time.sleep(1.0)
         print(f"{LOG} {label or row_substr}: success_fn never passed")
+        dismiss_menus(session)
         return False
+    dismiss_menus(session)
     return True
 
 
@@ -349,10 +376,12 @@ def _click_in_submenu(session, shwnd, shmenu, row_substr, success_fn, label):
                                           (rect[1] + rect[3]) // 2)
                 time.sleep(1.5)
                 if success_fn is None:
+                    dismiss_menus(session)
                     return True
                 deadline = time.monotonic() + 12
                 while time.monotonic() < deadline:
                     if success_fn():
+                        dismiss_menus(session)
                         return True
                     time.sleep(1.0)
     print(f"{LOG} submenu row {row_substr!r} not found/click failed")
@@ -374,8 +403,16 @@ def gizmo_row_boxes(session, row_label, scale=3):
 
 
 def gizmo_row_boxes_img(img, row_label, scale=3):
-    """gizmo_row_boxes on an already-captured frame (lets one capture be OCR'd
-    at several scales — see read_gizmo_field)."""
+    """[(x, y, text)] of every numeric field right of words STARTING WITH
+    row_label: rows top-to-bottom, columns left-to-right, with '' cells
+    where OCR missed a value.
+
+    Column x positions are clustered ACROSS ALL matching rows — OCR drops
+    cells at random, so a row's LAST cell is not reliably Z (measured
+    09-22: it is often the Y cell). A column seen in the sibling row
+    anchors the missing one. Row y is the row's numeric-word mean: label
+    words sit above the field text and clicking the label y misses the
+    field (g5 round 2)."""
     words = mdu.ocr_words_img(img, scale=scale)
 
     def numerics_right(px, py):
@@ -386,13 +423,35 @@ def gizmo_row_boxes_img(img, row_label, scale=3):
                 nums.append((w[1] + w[3] // 2, w[2] + w[4] // 2, t))
         return sorted(nums, key=lambda n: n[0])
 
-    best: list = []
+    rows: list = []
     for w in words:
-        if w[0].lower().startswith(row_label.lower()):
-            boxes = numerics_right(w[1], w[2])
-            if len(boxes) > len(best):
-                best = boxes
-    return best
+        if not w[0].lower().startswith(row_label.lower()):
+            continue
+        if w[2] <= 120:      # toolbar tooltips reuse gizmo names ('Rotate [R]')
+            continue
+        nums = numerics_right(w[1], w[2])
+        if nums:
+            rows.append((sum(n[1] for n in nums) / len(nums), nums))
+    if not rows:
+        return []
+    # cluster column x across ALL rows
+    cols: list = []
+    for x in sorted(n[0] for _, nums in rows for n in nums):
+        if cols and x - cols[-1] <= 14:
+            cols[-1] = (cols[-1] + x) / 2
+        else:
+            cols.append(float(x))
+    out: list = []
+    seen_y: set = set()
+    for ry, nums in sorted(rows, key=lambda r: r[0]):
+        if any(abs(ry - y) <= 6 for y in seen_y):
+            continue
+        seen_y.add(ry)
+        for cx in cols:
+            hit = min(nums, key=lambda n: abs(n[0] - cx))
+            out.append((int(cx), int(ry),
+                        hit[2] if abs(hit[0] - cx) <= 14 else ""))
+    return out
 
 
 def gizmo_field_box(session, row_label, viewport_origin=(0, 0)):
@@ -415,20 +474,41 @@ def gizmo_field_box(session, row_label, viewport_origin=(0, 0)):
     return (n[1] + n[3] // 2, n[2] + n[4] // 2), n[0]
 
 
-def type_into_field(session, box, text, old_len=4):
-    """Focus the field with a REAL click (ImGui hit test) then clear +
-    type + commit via message keyboard through the deepest canvas child
-    (m6a: chars must land on the canvas window, not the frame)."""
+def type_into_field(session, box, text, old_len=4, wake=False, recipe=0):
+    """Focus the field with a REAL click, type + commit via message keyboard
+    through the deepest canvas child (m6a: chars must land on the canvas
+    window, not the frame).
+
+    Single click, not double: a double click as the panel's first
+    interaction never entered text (g3: focus ring, value stayed 0.00),
+    while a single click + digits + Enter committed (g4 t1: abs Z -> 45.00
+    persisted across panel reopen; g5: Move X -> 60.00 pixel-verified).
+    The click still occasionally fails to activate the widget on V2.3.6
+    (the value just stays — g3/g5/g5c sessions), so op_gizmo_field retries
+    across `recipe`/`wake` combinations:
+      recipe 0: plain single click
+      recipe 1: single click + clear the field first (backspaces)
+      recipe 2: double click
+      recipe 3: double click + clear
+    `wake` prepends a bare click 1s before the real attempt."""
     fx, fy = client(session, *box)
     winutil.user32.SetCursorPos(fx, fy)
     time.sleep(0.2)
-    winutil.real_click_screen(fx, fy)
-    time.sleep(0.6)
+    if wake:
+        winutil.real_click_screen(fx, fy)
+        time.sleep(1.0)
+    clicks = 2 if recipe in (2, 3) else 1
+    for i in range(clicks):
+        if i:
+            time.sleep(0.08)
+        winutil.real_click_screen(fx, fy)
+    time.sleep(0.7)
     probe = winutil.client_to_screen(session.hwnd, 600, 400)
     hwnd = winutil.deepest_child_at(session.hwnd, *probe) or session.hwnd
-    for _ in range(old_len + 2):
-        winutil._send_msg(hwnd, WM_CHAR, 0x08, 0)   # backspace
-        time.sleep(0.04)
+    if recipe in (1, 3):
+        for _ in range(max(old_len, 4) + 2):
+            winutil._send_msg(hwnd, WM_CHAR, 0x08, 0)   # backspace
+            time.sleep(0.04)
     for ch in text:
         winutil._send_msg(hwnd, WM_CHAR, ord(ch), 0)
         time.sleep(0.05)
@@ -707,19 +787,15 @@ def op_add_primitive(session, shape="cube"):
 
 
 def read_gizmo_field(session, row_label, index, expect=None, timeout_s=12.0,
-                     interval_s=1.0, scales=(3, 4, 2, 1)):
-    """Poll the gizmo row until field #index is readable (and reads `expect`).
+                     interval_s=1.0, scales=(3, 4, 2)):
+    """Poll the gizmo row until field #index reads `expect`.
 
-    Two robustness measures, both measured on this rig (09-20):
-      * a one-shot read races the commit/repaint, so poll instead;
-      * Tesseract's recognition is SCALE-DEPENDENT for the focused-field
-        styling — on one and the same frame, scale 3 returned nothing for the
-        X value while scale 4 read '60.00' cleanly. One capture is therefore
-        OCR'd at several scales and the first scale yielding the expected
-        value wins.
-    The assertion is unchanged — only how the value is read.
-    Returns (boxes, text).
-    """
+    The value comes from the FULL-row OCR at the CLUSTERED column — never
+    'the last cell' (OCR drops columns at random, measured 09-22) and never
+    a tiny cell crop (tesseract misreads/empties 68x28 crops of the focused
+    field, g5/g5d). OCR is scale-dependent for the focused-field styling,
+    so several scales are tried per frame.
+    Returns (boxes, text)."""
     deadline = time.time() + timeout_s
     fallback = ([], "")
     while True:
@@ -737,23 +813,61 @@ def read_gizmo_field(session, row_label, index, expect=None, timeout_s=12.0,
         time.sleep(interval_s)
 
 
-def op_gizmo_field(session, slot_pred, row_label, index, value):
-    """Select + activate gizmo + type value into row field #index.
-    Returns (ok, observed_text)."""
+def op_gizmo_field(session, slot_pred, row_label, index, value,
+                   fallback_dx=0):
+    """Select + activate gizmo + type value into row field #index (index<0 =
+    last row's last column, i.e. Rotate absolute Z). Returns (ok, text).
+
+    Field entry on V2.3.6 is flaky — the click sometimes fails to activate
+    the ImGui widget and the value just stays (g3/g4/g5/g5c sessions) — so
+    type+readback is retried across recipes (plain single / clear / wake /
+    double / double+clear) until the field reads `value`. The Scale slot
+    shows NO tooltip while a model is selected and the rotate-tooltip smear
+    breaks hover scans (g5), so `fallback_dx` clicks the slot at the fixed
+    geometry Rotate+44 (1108+44, measured across 09-08..09-22 scans) and
+    verifies the panel actually opened before typing."""
     if not select_model(session):
         return False, ""
-    x, tip = find_slot(session, slot_pred)
+    if fallback_dx:
+        x = 1108 + fallback_dx
+        print(f"{LOG} {row_label} slot via fixed geometry: {x}")
+    else:
+        x, tip = find_slot(session, slot_pred)
     if x is None:
         return False, ""
     click_slot(session, x)
     time.sleep(1.0)
-    boxes = gizmo_row_boxes(session, row_label)
-    idx = index if index >= 0 else len(boxes) + index
-    if idx < 0 or idx >= len(boxes):
-        return False, ""
-    type_into_field(session, boxes[idx][:2], value,
-                    old_len=len(boxes[idx][2]))
-    _boxes2, text = read_gizmo_field(session, row_label, index, expect=value)
+    text = ""
+    for attempt, (recipe, wake) in enumerate(
+            [(0, False), (1, False), (0, True), (2, False), (3, False)],
+            start=1):
+        boxes = gizmo_row_boxes(session, row_label)
+        idx = index if index >= 0 else len(boxes) + index
+        if not boxes:
+            if fallback_dx:
+                # wrong slot: try neighbors, closing each wrong panel again
+                for guess in (x + 44, x - 44, x + 88, x - 88):
+                    click_slot(session, x)
+                    x = guess
+                    click_slot(session, x)
+                    time.sleep(1.0)
+                    boxes = gizmo_row_boxes(session, row_label)
+                    idx = index if index >= 0 else len(boxes) + index
+                    if boxes:
+                        break
+            if not boxes:
+                break
+        if not (0 <= idx < len(boxes)):
+            break
+        type_into_field(session, boxes[idx][:2], value,
+                        old_len=max(len(boxes[idx][2]), 4),
+                        wake=wake, recipe=recipe)
+        _boxes2, text = read_gizmo_field(session, row_label, index,
+                                         expect=value, timeout_s=6.0)
+        print(f"{LOG} {row_label} attempt{attempt} recipe={recipe} "
+              f"wake={wake}: {text!r}")
+        if text.startswith(value):
+            break
     # Toggle the gizmo back OFF (clicking the active slot again closes its window).
     # The manipulation panel is itself a big chromatic blob and wins find_centroid's
     # "largest blob" vote, so the next step's select_model would click the panel

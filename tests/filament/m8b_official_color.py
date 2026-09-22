@@ -117,11 +117,11 @@ def main() -> int:
             "PASS (evidence)" if first_row else "PASS (visual, OCR empty)"
             if len(kids) > 0 else "FAIL")
 
-        # modal check: REAL-click the canvas; dialog must stay (a message-
-        # level click dismisses nothing but also proves nothing — 09-18 the
-        # dialog vanished even under msg_click, so use a faithful user click)
+        # modal check: REAL-click the canvas LEFT of the dialog (the dialog
+        # covers x585-1059 — a click at VIEWPORT_X0+300 lands INSIDE it,
+        # proving nothing); dialog must stay
         from harness import winutil as _wu
-        cx, cy = m7.client(session, m7.VIEWPORT_X0 + 300, 400)
+        cx, cy = m7.client(session, m7.VIEWPORT_X0 + 60, 400)
         _wu.user32.SetCursorPos(cx, cy)
         time.sleep(0.2)
         _wu.real_click_screen(cx, cy)

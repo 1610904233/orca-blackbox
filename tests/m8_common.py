@@ -28,6 +28,7 @@
 #     weak, high-temp filaments skip -> keep-warm)
 
 import ctypes
+import ctypes.wintypes as wt
 import re
 import sys
 import time
@@ -277,9 +278,16 @@ def switch_filament_preset(session, slot, target_substr, tries=30):
 
 
 def click_color_picker(session, slot, timeout_s=6.0, dialog_cls="#32770"):
-    """Click the slot's color picker button; return the dialog tuple or
-    None. The official FilamentColorDialog is a wx Dialog -> #32770; pass
-    dialog_cls=None to fall back to the SidePopup wxWindowNR shape."""
+    """Click the slot's color picker button; return the OFFICIAL color
+    dialog ('Color') tuple or None.
+
+    V2.3.6 chain (measured 09-22, g7/g9): the picker (REAL click) opens a
+    native #32768 menu (Edit/Delete/Merge with); its first row 'Edit'
+    (REAL click) opens the 'Material settings' dialog whose 'colourpicker'
+    child then needs a MESSAGE click on the child itself — a real click
+    there is swallowed by the modal dialog and opens nothing (g7b) — which
+    finally opens the official 'Color' #32770. pass dialog_cls=None to fall
+    back to the SidePopup wxWindowNR shape."""
     slots = filament_slots(session)
     hit = next((s for s in slots if s["slot"] == slot), None)
     if not hit or not hit["picker"]:
@@ -290,15 +298,11 @@ def click_color_picker(session, slot, timeout_s=6.0, dialog_cls="#32770"):
     py = (rect[1] + rect[3]) // 2
     # REAL click: the clr_picker is a wxBitmapButton whose wx handler
     # needs a real input event (message-level clicks never opened the
-    # dialog, measured 09-17 suite)
+    # menu, measured 09-17 suite)
     sx, sy = winutil.client_to_screen(session.hwnd, px, py)
     winutil.user32.SetCursorPos(sx, sy)
     time.sleep(0.25)
     winutil.real_click_screen(sx, sy)
-    # Measured 09-18 (diag_m8b_toplevels): the picker first opens a NATIVE
-    # context menu (#32768: Edit / Delete / Merge with) — the color dialog
-    # only appears after clicking its FIRST row ("Edit"). A plain wait for
-    # #32770 therefore always timed out.
     menu = export_util.wait_toplevel(
         session.pid, lambda c, t, r: c == "#32768", timeout_s=3.0)
     if menu:
@@ -309,6 +313,28 @@ def click_color_picker(session, slot, timeout_s=6.0, dialog_cls="#32770"):
         time.sleep(0.2)
         winutil.real_click_screen(mx, my)
         time.sleep(0.5)
+    # 'Material settings' (contains the colourpicker child)
+    dlg = export_util.wait_toplevel(
+        session.pid, lambda c, t, r: c == "#32770", timeout_s=timeout_s)
+    if dlg:
+        cp = next((ch for t, r, ch
+                   in export_util._children_texts(dlg[3])
+                   if t.strip() == "colourpicker"), None)
+        if cp:
+            rc = wt.RECT()
+            user32.GetWindowRect(cp, ctypes.byref(rc))
+            winutil.msg_click_screen((rc.left + rc.right) // 2,
+                                     (rc.top + rc.bottom) // 2, cp)
+            time.sleep(1.5)
+            # the official color dialog opens as a SECOND #32770 ('Color')
+            deadline = time.monotonic() + timeout_s
+            while time.monotonic() < deadline:
+                for cls, title, rect2, hwnd in _visible_toplevels(
+                        session.pid):
+                    if cls == "#32770" and "color" in title.lower():
+                        time.sleep(1.0)
+                        return cls, title, rect2, hwnd
+                time.sleep(0.3)
     if dialog_cls:
         dlg = export_util.wait_toplevel(
             session.pid, lambda c, t, r: c == dialog_cls,
@@ -317,6 +343,31 @@ def click_color_picker(session, slot, timeout_s=6.0, dialog_cls="#32770"):
         dlg = export_util.wait_popup(session.pid, timeout_s=timeout_s)
     time.sleep(1.0)
     return dlg
+
+
+def _visible_toplevels(pid):
+    """[(cls, title, rect, hwnd)] of the pid's visible top-level windows."""
+    WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p,
+                                     ctypes.c_void_p)
+    out = []
+
+    def cb(hwnd, _lp):
+        tid = wt.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(tid))
+        if tid.value != pid or not user32.IsWindowVisible(hwnd):
+            return True
+        cls = ctypes.create_unicode_buffer(64)
+        user32.GetClassNameW(hwnd, cls, 64)
+        txt = ctypes.create_unicode_buffer(96)
+        user32.GetWindowTextW(hwnd, txt, 96)
+        rc = wt.RECT()
+        user32.GetWindowRect(hwnd, ctypes.byref(rc))
+        out.append((cls.value, txt.value,
+                    (rc.left, rc.top, rc.right, rc.bottom), hwnd))
+        return True
+
+    user32.EnumWindows(WNDENUMPROC(cb), 0)
+    return out
 
 
 def close_dialog_by_button(dlg, substr):
@@ -339,9 +390,14 @@ def nozzle_reads(session):
     original rig's absolute band (screen y 275-325): on this rig the section sits
     elsewhere, so the band returned the diameter by luck and never saw the flow
     value (measured 09-21: flow=None while the panel showed 'Standard').
+    On 2.4.0 the nozzle section appears TWICE in the child tree: a collapsed
+    template instance (y~248-280, 20px slivers at x5-25) and the live one
+    (y~283-315). Anchor on the LIVE labels (label rows below y=250) and only
+    accept value rects wide enough to be the live widgets (measured 09-22, g11).
     """
     rows = list(export_util._children_texts(session.hwnd))
-    labels = [r for t, r, _c in rows if t.strip() in ("Diameter", "Flow") and r[0] < 425]
+    labels = [r for t, r, _c in rows if t.strip() in ("Diameter", "Flow")
+              and r[0] < 425 and r[1] > 250]
     if labels:
         lo, hi = min(r[1] for r in labels) - 12, max(r[3] for r in labels) + 12
     else:
@@ -352,6 +408,8 @@ def nozzle_reads(session):
         if not (lo <= rect[1] <= hi and rect[0] < 425):
             continue
         if text.strip() == "Diameter" or text.strip() == "Flow":
+            continue
+        if rect[2] - rect[0] < 40:      # degenerate template instance
             continue
         if text.strip().endswith("mm"):
             diameter = text.strip().replace(" ", "")

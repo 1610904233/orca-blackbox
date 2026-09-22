@@ -39,7 +39,7 @@ def steps(session, results):
     results["rotate Z commits 45"] = (
         "PASS" if ok else f"FAIL (now {text!r})")
     ok, text = m7.op_gizmo_field(session, lambda t: "scale" in t,
-                                 "scale", 0, "120")
+                                 "scale", 0, "120", fallback_dx=44)
     if not ok:
         print(f"{LOG} scale words: {[w[0] for w in m7.words(session)][:26]}")
     results["scale commits 120"] = (
