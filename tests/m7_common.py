@@ -140,34 +140,49 @@ def ensure_maximized(session) -> bool:
     return False
 
 
-def select_model(session, tries=4):
+def select_model(session, tries=3):
+    """Click the model until the Rotate slot's tooltip stops demanding a selection.
+
+    Tries the largest chromatic blobs IN TURN (see find_centroids): the fixture
+    carries two objects (a striped colour-mixing box + a cube) and an open gizmo
+    adds a panel-sized blob, so trusting a single "largest blob" selects the wrong
+    thing. Each candidate is clicked slightly BELOW its centroid, because the
+    object's name label ('Untitled') is painted just above it and swallows a
+    centre click (measured 09-21: after a Move the centroid jumped to (943,371)
+    — the other object's label row — and Rotate never left 'Please select ...').
+    """
     ensure_maximized(session)
-    """Click the model's chromatic centroid until the Rotate gizmo slot's
-    tooltip stops demanding a selection (m4e pattern, own scan bands)."""
     rot_x, _ = find_slot(session, lambda t: "rotate" in t)
     if rot_x is None:
         print(f"{LOG} rotate slot not found — toolbar unreadable?")
         return False
-    for _ in range(tries):
-        pos = find_centroid(session)
-        if not pos:
-            time.sleep(1.0)
-            continue
-        sx, sy = client(session, *pos)
-        winutil.user32.SetCursorPos(sx, sy)
-        time.sleep(0.2)
-        winutil.real_click_screen(sx, sy)
-        time.sleep(1.2)
-        tip = tooltip_text(session, rot_x, BAR_Y)
-        print(f"{LOG} rotate tooltip after click: {tip!r}")
-        if tip and "select" not in tip.lower():
-            return True
+    for _attempt in range(tries):
+        cands = find_centroids(session, limit=4)
+        print(f"{LOG} select candidates: {cands}")
+        for cx, cy in cands:
+            sx, sy = client(session, cx, cy + 22)
+            winutil.user32.SetCursorPos(sx, sy)
+            time.sleep(0.2)
+            winutil.real_click_screen(sx, sy)
+            time.sleep(1.2)
+            tip = tooltip_text(session, rot_x, BAR_Y)
+            print(f"{LOG} rotate tooltip after click @({cx},{cy + 22}): {tip!r}")
+            if tip and "select" not in tip.lower():
+                return True
+        time.sleep(1.0)
     return False
 
 
-def find_centroid(session):
-    """Largest chromatic blob centroid in the viewport (m4e algorithm,
-    viewport-wide band)."""
+def find_centroids(session, limit=5, min_area=400):
+    """Centroids of the largest chromatic blobs, LARGEST FIRST.
+
+    A single "largest blob" is not enough: the mixed_filament_test fixture ships
+    two objects (a striped colour-mixing box + a cube), and an open gizmo adds its
+    own panel-sized blob — so after a Move the biggest blob may be the other
+    object or the panel, and clicking it selects nothing (measured 09-21: centroid
+    jumped from the cube at (1172,514) to (943,371), where the object's 'Untitled'
+    label sits, and Rotate stayed at 'Please select at least one object').
+    """
     import cv2
     import numpy as np
     img = capture_bgr(session)
@@ -178,15 +193,20 @@ def find_centroid(session):
     mask = (spread > 45).astype(np.uint8) * 255
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
     n, _labels, stats, centroids = cv2.connectedComponentsWithStats(mask, 8)
-    best, best_area = None, 0
-    for i in range(1, n):
-        area = stats[i, cv2.CC_STAT_AREA]
-        if area > best_area:
-            best, best_area = i, area
-    if best is None or best_area < 400:
-        return None
-    cx, cy = centroids[best]
-    return int(cx) + x0, int(cy) + y0
+    order = sorted(range(1, n), key=lambda i: -stats[i, cv2.CC_STAT_AREA])
+    out = []
+    for i in order[:limit]:
+        if stats[i, cv2.CC_STAT_AREA] < min_area:
+            break
+        cx, cy = centroids[i]
+        out.append((int(cx) + x0, int(cy) + y0))
+    return out
+
+
+def find_centroid(session):
+    """Largest chromatic blob centroid (kept for callers that want just one)."""
+    cands = find_centroids(session, limit=1)
+    return cands[0] if cands else None
 
 
 # --- context menu (Plater right-click) ---------------------------------------
@@ -734,6 +754,13 @@ def op_gizmo_field(session, slot_pred, row_label, index, value):
     type_into_field(session, boxes[idx][:2], value,
                     old_len=len(boxes[idx][2]))
     _boxes2, text = read_gizmo_field(session, row_label, index, expect=value)
+    # Toggle the gizmo back OFF (clicking the active slot again closes its window).
+    # The manipulation panel is itself a big chromatic blob and wins find_centroid's
+    # "largest blob" vote, so the next step's select_model would click the panel
+    # instead of the model (measured 09-21: centroid pinned at (943,371) while the
+    # model sat at (1172,514) — rotate/scale then failed to select).
+    click_slot(session, x)
+    time.sleep(1.0)
     return text.startswith(value), text
 
 
