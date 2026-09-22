@@ -59,39 +59,18 @@ def find_preset_combo(hwnd: int):
 
 
 def switch_preset(session, target: str) -> bool:
-    """Open the preset combo, click the row containing `target`.
+    """Switch the process preset by OCR-matching its popup ROW.
 
-    The preset list rows are SELF-DRAWN (no child HWNDs — enumeration
-    yields nothing), so rows are probed by coordinate: the popup lists U1
-    print presets at a measured 28px pitch starting popup_top+14, and every
-    click selects and closes the popup. After each click the combo text is
-    read back; the loop reopens the popup until the target row is hit."""
-    import ctypes
-    user32 = ctypes.WinDLL("user32")
-    rect, ch = find_preset_combo(session.hwnd)
-    if not rect:
-        return False
-    txt = ctypes.create_unicode_buffer(256)
-    user32.GetWindowTextW(ch, txt, 256)
-    if target in txt.value:
-        return True  # already selected
-    combo_cx = (rect[0] + rect[2]) // 2
-    combo_cy = (rect[1] + rect[3]) // 2
-    for attempt in range(6):
-        winutil.msg_click_screen(combo_cx, combo_cy, session.hwnd)
-        popup = export_util.wait_popup(session.pid, timeout_s=4.0)
-        if not popup:
-            return False
-        pr = popup[2]
-        px = (pr[0] + pr[2]) // 2
-        py = pr[1] + 14 + attempt * 28
-        winutil.msg_click_screen(px, py)  # popup is top-level: no root
-        time.sleep(0.8)
-        user32.GetWindowTextW(ch, txt, 256)
-        if target in txt.value:
-            return True
-        # popup closed by the selection; retry the next row
-    return False
+    Was a blind pitch walk (popup_top+14+i*28) plus a full-name readback.
+    On 2.4.0 the rows read '0.24mm Standard @Snapmaker U1 (0.8 nozzle)' —
+    the added 'mm' suffix breaks the name comparison and OCR splits rows
+    into tokens — so both the click and the readback missed (measured
+    09-22: m7t84/m7t109 'preset switches FAIL' with the popup listed in
+    the log). Delegates to the OCR row matcher in harness.process_panel,
+    which computes the rows from the popup's own pixels and normalises
+    the 'mm' suffix."""
+    from harness import process_panel as pp  # noqa: PLC0415
+    return pp.switch_process_preset(session, target)
 
 
 def gcode_layer_height(data: bytes):
@@ -122,9 +101,9 @@ def main() -> int:
         results["baseline slice + export"] = "PASS" if (ok_slice and ok_a) else "FAIL"
 
         # --- switch print preset 0.40 -> 0.24 ---
-        target = ("0.24 Standard @Snapmaker U1 (0.8 nozzle)"
+        target = ("0.24 Standard"
                   if lh_a and "0.24" not in lh_a
-                  else "0.40 Standard @Snapmaker U1 (0.8 nozzle)")
+                  else "0.40 Standard")
         switched = switch_preset(session, target)
         print(f"[m3e] preset switch to '{target}': {switched}")
         results["preset combo switch"] = "PASS" if switched else "FAIL"

@@ -103,9 +103,9 @@ def steps(session, results):
         import ctypes as _ct
         _txt = _ct.create_unicode_buffer(256)
         _ct.WinDLL("user32").GetWindowTextW(_ch, _txt, 256)
-        target = ("0.24 Standard @Snapmaker U1 (0.8 nozzle)"
+        target = ("0.24 Standard"
                   if "0.40" in _txt.value
-                  else "0.40 Standard @Snapmaker U1 (0.8 nozzle)")
+                  else "0.40 Standard")
     else:
         target = "0.24 Standard @Snapmaker U1 (0.8 nozzle)"
     switched = process_switch(session, target)

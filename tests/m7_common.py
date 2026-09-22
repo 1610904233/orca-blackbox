@@ -365,26 +365,27 @@ def context_click_row(session, where, row_substr, success_fn=None,
 
 
 def _click_in_submenu(session, shwnd, shmenu, row_substr, success_fn, label):
-    for i, lbl in list_menu(shmenu):
-        if row_substr.lower() in lbl.lower():
-            rect = _menu_item_rect(shwnd, shmenu, i)
-            if rect:
-                winutil.user32.SetCursorPos((rect[0] + rect[2]) // 2,
-                                            (rect[1] + rect[3]) // 2)
-                time.sleep(0.4)
-                winutil.real_click_screen((rect[0] + rect[2]) // 2,
-                                          (rect[1] + rect[3]) // 2)
-                time.sleep(1.5)
-                if success_fn is None:
-                    dismiss_menus(session)
-                    return True
-                deadline = time.monotonic() + 12
-                while time.monotonic() < deadline:
-                    if success_fn():
-                        dismiss_menus(session)
-                        return True
-                    time.sleep(1.0)
-    print(f"{LOG} submenu row {row_substr!r} not found/click failed")
+    # Reuse click_menu_row: it falls back to geometric row geometry when
+    # GetMenuItemRect fails, which this function used to lack — on 2.4.0 the
+    # submenu rows then silently never got clicked (measured 09-22: m7t89's
+    # 'submenu row cube not found/click failed' while m7i's direct
+    # click_menu_row call on the SAME submenu worked and added the cube).
+    idx = click_menu_row(session, shwnd, shmenu, row_substr)
+    if idx is None:
+        print(f"{LOG} submenu row {row_substr!r} not found")
+        dismiss_menus(session)
+        return False
+    time.sleep(1.5)
+    if success_fn is None:
+        dismiss_menus(session)
+        return True
+    deadline = time.monotonic() + 12
+    while time.monotonic() < deadline:
+        if success_fn():
+            dismiss_menus(session)
+            return True
+        time.sleep(1.0)
+    print(f"{LOG} {label or row_substr}: success_fn never passed")
     dismiss_menus(session)
     return False
 
@@ -776,11 +777,17 @@ def step_delete_all(session, results):
 
 
 def op_add_primitive(session, shape="cube"):
-    """Bed menu > Add Primitive > shape; returns the plate changed."""
+    """Bed menu > Add Primitive > shape; returns the plate changed.
+
+    The gate is RELATIVE to the empty-bed reading: a fresh cube on the
+    default plate measures ~0.24% chromatic on 2.4.0 with the empty bed at
+    ~0.06%, so a fixed +0.2pp margin sat right on the measured delta and
+    flipped the verdict (measured 09-22: m7i/m7t73/m7t89/m8b 'model
+    created' FAIL at 0.242%). +0.1pp is still ~2x the empty-bed reading."""
     before = model_colored_frac(session)
     ok = context_click_row(session, "bed", shape, via="Add Primitive",
                            success_fn=lambda: model_colored_frac(session)
-                           > before + 0.002,
+                           > before + 0.001,
                            label=f"add-{shape}")
     time.sleep(1.0)
     return ok
