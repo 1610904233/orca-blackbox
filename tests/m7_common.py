@@ -439,11 +439,24 @@ def gizmo_row_boxes_img(img, row_label, scale=3):
     field (g5 round 2)."""
     words = mdu.ocr_words_img(img, scale=scale)
 
+    def clean_token(t0):
+        """Strip the decorations OCR glues onto a field value; return the
+        number or None.
+
+        The Rotate panel's Z column comes back as '|0.00' — the field's
+        caret/border glyph fused to the digits. The old test stripped only
+        '([' , so the whole Z cell was dropped as "not a number" and every
+        rotate readback/verdict failed (measured 09-23, g22: the SAME frame
+        OCRs a clean '0.00' from the Z-cell crop)."""
+        t = re.sub(r"^[|\[\](){}<>:;,'\"\s]+", "", t0)
+        t = re.sub(r"[|\[\](){}<>:;,'\"\s°%]+$", "", t)
+        return t if re.fullmatch(r"-?\d+(?:[.,]\d{1,2})?", t) else None
+
     def numerics_right(px, py):
         nums = []
         for w in words:
-            t = w[0].lstrip("([")
-            if re.fullmatch(r"-?\d+(?:[.,]\d{1,2})?", t)                     and abs(w[2] - py) < 14 and w[1] > px:
+            t = clean_token(w[0])
+            if t is not None and abs(w[2] - py) < 14 and w[1] > px:
                 nums.append((w[1] + w[3] // 2, w[2] + w[4] // 2, t))
         return sorted(nums, key=lambda n: n[0])
 
