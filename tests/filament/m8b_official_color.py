@@ -126,8 +126,10 @@ def main() -> int:
         time.sleep(0.2)
         _wu.real_click_screen(cx, cy)
         time.sleep(0.8)
-        still = __import__("harness").export_util.wait_popup(
-            session.pid, timeout_s=1.5)
+        # the dialog is a #32770 (the official FilamentColorDialog) — a
+        # wait_popup() looks for the SidePopup wxWindowNR and can never see
+        # it (measured 09-23: the modal check failed on a still-open dialog)
+        still = bool(_wu.user32.IsWindowVisible(dlg[3]))
         results["#48 modal blocks canvas"] = (
             "PASS" if still else "FAIL (dialog gone after canvas click)")
         if not still:

@@ -250,8 +250,13 @@ def open_context_menu(session, where="model"):
         candidates = [(cx, cy + 22) for cx, cy in model_candidates(session)]
         print(f"{LOG} model right-click candidates: {candidates}")
     else:
+        # several empty-bed spots: after a dropdown/delete-all the first
+        # right-click can be swallowed by leftovers (measured 09-23: m8b's
+        # bed right-click after Delete All opened nothing at the first spot)
         img = capture_bgr(session)
-        candidates = [(VIEWPORT_X0 + 60, img.shape[0] - 160)]  # empty bed
+        candidates = [(VIEWPORT_X0 + 60, img.shape[0] - 160),
+                      (VIEWPORT_X0 + 140, img.shape[0] - 260),
+                      (VIEWPORT_X0 + 80, img.shape[0] - 360)]
     for cx, cy in candidates:
         sx, sy = client(session, cx, cy)
         winutil.user32.SetCursorPos(sx, sy)
