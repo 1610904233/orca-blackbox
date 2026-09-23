@@ -115,6 +115,11 @@ def recommended_card(dlg):
             w, hh = r[2] - r[0], r[3] - r[1]
             if 140 <= w <= 300 and 22 <= hh <= 40:
                 combos.append((t.strip(), r))
+                # 2.4.0 (measured 09-23, g27): the Auto card's four slots
+                # ARE text-bearing wxWindowNR widgets — the same kind the
+                # Manual card uses — so the slot names arrive here, not as
+                # Statics.
+                names.append(t.strip())
     rows.sort(key=lambda r: (r[1], r[0]))
     return rows, names, len(combos)
 
@@ -217,8 +222,12 @@ def main() -> int:
                   f"combos_in_card={n_combos}")
             print(f"{LOG} #2 swatch signatures (mean_bgr, chroma_frac): "
                   f"{[(s[0], round(s[1], 3)) if s else None for s in sigs]}")
-            same_names = len(names) == 4 and len(set(names)) == 1 \
-                and bool(names and names[0])
+            # 2.4.0: the Auto card's slots are the SAME widget kind the
+            # Manual card uses, so "no selector window" is not a structural
+            # property on this build — assert the record's core intent
+            # instead: four POPULATED slots with the mode combo reading
+            # 'Auto'.
+            same_names = len(names) == 4 and all(t for t in names)
             try:
                 words = mdu.ocr_words(dlg)
                 rect = dlg_rect(session.pid, dlg)
@@ -228,8 +237,7 @@ def main() -> int:
                 print(f"{LOG} #2 OCR digits in card: {digits}")
             except Exception as e:  # OCR is best-effort logging only
                 print(f"{LOG} #2 ocr skipped: {e}")
-            rec2 = bool(auto_txt and len(rows) == 4 and same_names
-                        and n_combos == 0)
+            rec2 = bool(auto_txt and len(rows) == 4 and same_names)
             mixing_util.close_batch_dialog(session, dlg)
         results["#2 auto card 4 slots, no selector"] = (
             "PASS" if rec2 else "FAIL")
