@@ -161,6 +161,9 @@ CASES: dict[str, dict] = {
     "m8d_purifier_gcode": _r("m8", "A", known_limitation=True),
     "m8e_purifier_weakcool": _r("m8", "A"),              # GREEN 09-17 客机
     "m8f_nozzle_flow": _r("m8", "A", known_limitation=True),
+    # 2026-09-23 拆分: #136 单一变量对比独立成例（同会话连切两次会把客机
+    # 内存吃满 → cv2/tesseract OOM；各流量状态一个会话后不再撞墙）
+    "m8g_flow_single": _r("m8", "A"),
 }
 
 

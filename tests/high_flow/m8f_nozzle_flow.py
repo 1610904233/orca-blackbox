@@ -22,8 +22,8 @@
 #   #133 喷嘴界面默认值: diameter '0.4mm' + flow 'Standard'
 #   #135 标准/高流量全量模拟: (STD-TEST+标准流量) vs (HF-TEST+高流量)
 #        两份 gcode 的最终配置应完全一致（官方脚本 rc=0）
-#   #136 单一变量(FLOW-TEST, 两档值相同): 标准 vs 高流量切片，
-#        数值配置差异应为 0（只允许高流量模式字段不同）
+#   #136 单一变量(FLOW-TEST 包) → 独立用例 tests/high_flow/m8g_flow_single.py
+#        （同会话连切两次会把客机内存吃满，cv2/tesseract OOM，实测 09-23）
 #   (#134 喷嘴信息同步 = 设备链, MANUAL)
 
 import re
@@ -236,31 +236,6 @@ def main() -> int:
             "PASS" if rc == 0
             else f"FAIL (rc={rc}, mode={mode_diff}, numeric={num_diff})")
 
-    # ---- C/D: FLOW-TEST project, standard then high (single variable) ----
-    if ok_b:
-        session, ok = boot(args, GCODE_FLOW_SINGLE, "C")
-        try:
-            set_flow(session, "Standard", "C")
-            ok_c, g_c = slice_export(session, results,
-                                     "#136 std slice (single-var)",
-                                     "m8f_singleC.gcode")
-            if ok_c:
-                flow_d = set_flow(session, "High Flow", "D")
-                print(f"{LOG} [D] flow -> {flow_d!r}")
-                ok_d, g_d = slice_export(session, results,
-                                         "#136 hf slice (single-var)",
-                                         "m8f_singleD.gcode")
-            results["app alive"] = "PASS" if session.alive() else "FAIL"
-        finally:
-            session.close()
-            print(f"{LOG} session C closed")
-
-    if ok_c and ok_d:
-        rc2, report2 = compare_gcodes(g_c, g_d)
-        mode2, num2 = report_counts(report2)
-        results["#136 single-variable: numeric diffs 0"] = (
-            "PASS" if num2 == 0 and mode2 >= 0
-            else f"FAIL (numeric={num2}, mode={mode2})")
     return m7.m7_verdict(results)
 
 
