@@ -440,17 +440,7 @@ def gizmo_row_boxes_img(img, row_label, scale=3):
     words = mdu.ocr_words_img(img, scale=scale)
 
     def clean_token(t0):
-        """Strip the decorations OCR glues onto a field value; return the
-        number or None.
-
-        The Rotate panel's Z column comes back as '|0.00' — the field's
-        caret/border glyph fused to the digits. The old test stripped only
-        '([' , so the whole Z cell was dropped as "not a number" and every
-        rotate readback/verdict failed (measured 09-23, g22: the SAME frame
-        OCRs a clean '0.00' from the Z-cell crop)."""
-        t = re.sub(r"^[|\[\](){}<>:;,'\"\s]+", "", t0)
-        t = re.sub(r"[|\[\](){}<>:;,'\"\s°%]+$", "", t)
-        return t if re.fullmatch(r"-?\d+(?:[.,]\d{1,2})?", t) else None
+        return clean_number_token(t0)
 
     def numerics_right(px, py):
         nums = []
@@ -890,6 +880,36 @@ def op_add_primitive(session, shape="cube"):
     return ok
 
 
+def clean_number_token(t0):
+    """The number inside an OCR token, or None.
+
+    Field values come back with decorations glued on — the Rotate panel's Z
+    column reads '|0.00' (the field's caret/border glyph fused to the
+    digits). Stripping only '([' dropped the whole cell as "not a number"
+    (measured 09-23, g22)."""
+    t = re.sub(r"^[|\[\](){}<>:;,'\"\s]+", "", t0)
+    t = re.sub(r"[|\[\](){}<>:;,'\"\s°%]+$", "", t)
+    return t if re.fullmatch(r"-?\d+(?:[.,]\d{1,2})?", t) else None
+
+
+def crop_read_cell(img, cx, cy, half_w=34, half_h=13):
+    """OCR a single gizmo cell from its own crop.
+
+    The full-frame OCR at scale 3 upscales to ~5760x3096 and Tesseract drops
+    small cells there — the Rotate Z column then reads '' at every scale
+    while the SAME pixels crop cleanly ('0.00', measured 09-23, g22)."""
+    crop = img[max(0, cy - half_h):cy + half_h, max(0, cx - half_w):cx + half_w]
+    if crop.size == 0:
+        return ""
+    for scale in (4, 3, 6):
+        for psm in (7, 6, 8):
+            for w in mdu.ocr_words_img(crop, scale=scale, psm=psm):
+                t = clean_number_token(w[0])
+                if t is not None:
+                    return t
+    return ""
+
+
 def read_gizmo_field(session, row_label, index, expect=None, timeout_s=12.0,
                      interval_s=1.0, scales=(3, 4, 2)):
     """Poll the gizmo row until field #index reads `expect`.
@@ -912,6 +932,15 @@ def read_gizmo_field(session, row_label, index, expect=None, timeout_s=12.0,
                 return boxes, text
             if boxes and not fallback[0]:
                 fallback = (boxes, text)
+        if fallback[0]:
+            bx = fallback[0]
+            idx = index if index >= 0 else len(bx) + index
+            if 0 <= idx < len(bx):
+                t2 = crop_read_cell(img, bx[idx][0], bx[idx][1])
+                if t2 and (expect is None or t2.startswith(expect)):
+                    return bx, t2
+                if t2 and not fallback[1]:
+                    fallback = (bx, t2)
         if time.time() >= deadline:
             return fallback
         time.sleep(interval_s)
