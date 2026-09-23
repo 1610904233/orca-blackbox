@@ -176,14 +176,17 @@ def _ocr_click_line(session, popup_rect, target_substr, popup_hwnd=None) -> bool
     if popup_hwnd:
         try:
             w, h, buf = winutil.capture_window(popup_hwnd)
+            img = cv2.cvtColor(np.frombuffer(buf, np.uint8).reshape(h, w, 4),
+                               cv2.COLOR_BGRA2BGR)
         except Exception as exc:  # noqa: BLE001
-            # PrintWindow can time out while the app is busy (WinError 1460
-            # measured 09-23 mid-switch) — treat as "row not read this step"
-            # and let the caller's scroll loop retry instead of crashing.
-            print(f"{LOG} popup capture failed ({exc}) — retrying")
-            return False
-        img = cv2.cvtColor(np.frombuffer(buf, np.uint8).reshape(h, w, 4),
-                           cv2.COLOR_BGRA2BGR)
+            # PrintWindow times out while the app is busy (WinError 1460,
+            # measured 09-23 across a whole filament-switch loop) — fall back
+            # to a SCREEN grab cropped to the popup rect: the popup is a
+            # top-level window, so the desktop shows it.
+            print(f"{LOG} popup PrintWindow failed ({exc}) — screen crop")
+            img = capture_bgr(session)
+            x0, y0, x1, y1 = [int(v) for v in popup_rect]
+            img = img[max(0, y0):y1, max(0, x0):x1]
         ox, oy = popup_rect[0], popup_rect[1]
     else:
         img = capture_bgr(session)
