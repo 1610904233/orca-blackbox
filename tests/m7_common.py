@@ -959,6 +959,8 @@ def op_gizmo_field(session, slot_pred, row_label, index, value,
             [(0, False), (1, False), (0, True), (2, False), (3, False)],
             start=1):
         boxes = gizmo_row_boxes(session, row_label)
+        if attempt == 1:
+            print(f"{LOG} {row_label}: grid attempt1 = {boxes}")
         if not boxes:
             print(f"{LOG} {row_label}: panel closed — nothing to type into")
             break
