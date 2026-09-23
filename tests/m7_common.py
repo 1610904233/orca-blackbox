@@ -261,19 +261,28 @@ def open_context_menu(session, where="model"):
         sx, sy = client(session, cx, cy)
         winutil.user32.SetCursorPos(sx, sy)
         time.sleep(0.3)
-        winutil.real_right_click_screen(sx, sy)
-        deadline = time.monotonic() + 4.0
-        seen: set = set()
-        while time.monotonic() < deadline:
-            for rect, hwnd in [(m[:4], m[4]) for m in
-                               topbar_util._enum_menu_windows(session.pid)]:
-                seen.add(rect)
-                l, t, r, b = rect
-                if l - 30 <= sx <= r + 30 and t - 30 <= sy <= b + 30:
-                    return hwnd, topbar_util.menu_hmenu(hwnd)
-            time.sleep(0.25)
-        print(f"{LOG} {where} right-click @({cx},{cy}): no menu "
-              f"(menu windows seen: {sorted(seen)})")
+        if where == "bed":
+            # give the canvas focus first: after a topbar-dropdown flow the
+            # FIRST right-click is consumed re-activating the plater and no
+            # menu appears (measured 09-23: m8b's post-Delete-All bed click)
+            winutil.real_click_screen(sx, sy)
+            time.sleep(0.5)
+        for _try in range(2):
+            winutil.real_right_click_screen(sx, sy)
+            deadline = time.monotonic() + 4.0
+            seen: set = set()
+            while time.monotonic() < deadline:
+                for rect, hwnd in [(m[:4], m[4]) for m in
+                                   topbar_util._enum_menu_windows(
+                                       session.pid)]:
+                    seen.add(rect)
+                    l, t, r, b = rect
+                    if l - 30 <= sx <= r + 30 and t - 30 <= sy <= b + 30:
+                        return hwnd, topbar_util.menu_hmenu(hwnd)
+                time.sleep(0.25)
+            print(f"{LOG} {where} right-click @({cx},{cy}) try{_try + 1}: "
+                  f"no menu (menu windows seen: {sorted(seen)})")
+            time.sleep(0.6)
     return None
 
 
