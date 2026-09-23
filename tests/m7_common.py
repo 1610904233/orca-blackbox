@@ -448,11 +448,13 @@ def gizmo_row_boxes_img(img, row_label, scale=3):
         return sorted(nums, key=lambda n: n[0])
 
     rows: list = []
+    label_ys: list = []
     for w in words:
         if not w[0].lower().startswith(row_label.lower()):
             continue
         if w[2] <= 120:      # toolbar tooltips reuse gizmo names ('Rotate [R]')
             continue
+        label_ys.append(w[2])
         nums = numerics_right(w[1], w[2])
         if nums:
             rows.append((sum(n[1] for n in nums) / len(nums), nums))
@@ -465,6 +467,24 @@ def gizmo_row_boxes_img(img, row_label, scale=3):
             cols[-1] = (cols[-1] + x) / 2
         else:
             cols.append(float(x))
+    # OCR can drop a WHOLE column in every row (measured 09-23, g20: the
+    # Rotate panel's Z column vanished from both rows). Without
+    # extrapolation the cell list is short, index -1 then addresses the Y
+    # column while a readback at another OCR scale resolves to Z — typed
+    # text and readback disagree forever. Extrapolate with the modal pitch.
+    if cols:
+        gaps = [b - a for a, b in zip(cols, cols[1:])]
+        step = sorted(gaps)[len(gaps) // 2] if gaps else 63.0
+        while len(cols) < 3:
+            cols.append(cols[-1] + step)
+    # same for a missing ROW: the Rotate panel has two label rows
+    # ('(relative)'/'(absolute)'); if only one row of numbers was read and
+    # two labels are present, synthesise the other row at the row pitch.
+    if len(rows) == 1 and len(label_ys) >= 2:
+        ry = rows[0][0]
+        other = min(label_ys, key=lambda y: abs(y - ry))
+        if abs(other - ry) > 6:
+            rows.append((ry + (27.0 if other > ry else -27.0), []))
     out: list = []
     seen_y: set = set()
     for ry, nums in sorted(rows, key=lambda r: r[0]):
@@ -472,6 +492,9 @@ def gizmo_row_boxes_img(img, row_label, scale=3):
             continue
         seen_y.add(ry)
         for cx in cols:
+            if not nums:
+                out.append((int(cx), int(ry), ""))
+                continue
             hit = min(nums, key=lambda n: abs(n[0] - cx))
             out.append((int(cx), int(ry),
                         hit[2] if abs(hit[0] - cx) <= 14 else ""))
