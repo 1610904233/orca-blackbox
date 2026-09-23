@@ -190,7 +190,14 @@ def _ocr_click_line(session, popup_rect, target_substr, popup_hwnd=None) -> bool
         ox = oy = 0
     if img.size == 0:
         return False
-    words = mdu.ocr_words_img(img, scale=3, psm=6)
+    try:
+        words = mdu.ocr_words_img(img, scale=3, psm=6)
+    except Exception as exc:  # noqa: BLE001
+        # tesseract can fail to allocate while the app holds most of the
+        # guest's RAM (pix_malloc fail, measured 09-23) — degrade to "row not
+        # read this step" so the scroll loop retries instead of crashing
+        print(f"{LOG} popup OCR failed ({exc}) — retrying")
+        return False
     tokens = [t.lower() for t in re.split(r"\s+", target_substr) if t]
     lines: dict[int, list] = {}
     for wd in words:
