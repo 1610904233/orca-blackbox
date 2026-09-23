@@ -565,7 +565,18 @@ def type_into_field(session, box, text, old_len=4, wake=False, recipe=0):
             time.sleep(0.04)
     for ch in text:
         winutil._send_msg(hwnd, WM_CHAR, ord(ch), 0)
-        time.sleep(0.05)
+        time.sleep(0.15)
+    # A dropped character must NOT be committed: '45' arriving as '4' sets a
+    # 4deg rotation, and '120' arriving as '1' scales the model to 1% — which
+    # then breaks every later step of the case (measured 09-23: m7t74's model
+    # vanished after the scale step committed 1.00). Verify the field content
+    # first; on a partial read, leave the field uncommitted so the caller's
+    # retry ladder can try again.
+    got = crop_read_cell(capture_bgr(session), box[0], box[1])
+    if got and not got.startswith(text):
+        print(f"{LOG} typed {text!r} but the field reads {got!r} — "
+              f"NOT committing (retry will re-type)")
+        return
     winutil._send_msg(hwnd, WM_KEYDOWN, VK_RETURN, 0)
     time.sleep(0.1)
     winutil._send_msg(hwnd, WM_CHAR, 0x0D, 0)
