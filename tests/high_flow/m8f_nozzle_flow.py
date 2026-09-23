@@ -126,6 +126,16 @@ def set_flow(session, target, tag, tries=3):
             return got
         sweep_dialogs(session, tag + "_flow")
         time.sleep(1.5)
+    # diagnostics for the failure path: what the sidebar reports, which
+    # dialogs are up, and the flow popup's rows when it opens
+    print(f"{LOG} [{tag}] flow switch FAILED: reads="
+          f"{m8.nozzle_reads(session)!r}")
+    dlg = m7.wait_dialog(session.pid, timeout_s=1.0)
+    print(f"{LOG} [{tag}] open dialog: {dlg}")
+    try:
+        m8.switch_flow_combo(session, "High Flow", tries=1)
+    except Exception as exc:  # noqa: BLE001
+        print(f"{LOG} [{tag}] popup probe error: {exc}")
     return m8.nozzle_reads(session).get("flow") or ""
 
 

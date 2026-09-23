@@ -1071,13 +1071,35 @@ def op_gizmo_field(session, slot_pred, row_label, index, value,
     return text.startswith(value), text
 
 
+def click_slice_again(session):
+    """Re-slice when the button already sits in its DONE rendering.
+
+    After a completed slice the button shows the done template, so
+    click_slice_start's IDLE template can never match ("click didn't take
+    (still 1.000)", measured 09-23 twice: m8f's second slice in one session
+    and the g23 determinism probe). Clicking the DONE template re-slices."""
+    import cv2
+    from m2_slice_chain import RESOURCE, wait_for
+    score, sx, sy = wait_for(session, RESOURCE / "slice_button_done.png",
+                             timeout_s=8.0)
+    if score < 0.85:
+        print(f"{LOG} done-template not found ({score:.3f})")
+        return False
+    winutil.msg_click_screen(sx, sy, session.hwnd)
+    time.sleep(1.0)
+    return True
+
+
 def op_slice(session, results, key="slice completes", export_to=None,
              timeout_s=600):
     """Click Slice, wait done, optionally export gcode to export_to."""
     from m2_slice_chain import click_slice_start, wait_slicing_done
     if not click_slice_start(session):
-        results[key] = "FAIL (slice click rejected)"
-        return False
+        print(f"{LOG} {key}: idle slice button not clickable — trying the "
+              f"done rendering")
+        if not click_slice_again(session):
+            results[key] = "FAIL (slice click rejected)"
+            return False
     done, _score = wait_slicing_done(session, timeout_s=timeout_s)
     print(f"{LOG} {key}: {done}")
     results[key] = "PASS" if done else "FAIL"
