@@ -501,9 +501,35 @@ def gizmo_row_boxes_img(img, row_label, scale=3):
     return out
 
 
+# Fixed manipulation-panel geometry on the maximized rig (1920x1032, dpi 96).
+# Measured repeatedly 09-08..09-23 (g2/g3/g5c/g13): every gizmo panel draws
+# its numeric fields on the same three columns, 63px apart, on one or two
+# rows 27px apart. Used ONLY as a fallback when the OCR grid comes back empty
+# for a panel that is open (measured 09-23: m7t74's rotate panel read back
+# '' for all five recipes while being visibly open).
+GIZMO_GEOMETRY = {
+    "position": ([161], [1251, 1314, 1374]),
+    "rotate": ([161, 188], [1253, 1316, 1379]),
+    "scale": ([161, 188], [1339, 1402, 1465]),
+}
+
+
+def geometry_boxes(row_label):
+    """Cell list [(x, y, '')] from GIZMO_GEOMETRY, same order as
+    gizmo_row_boxes (row-major, columns left-to-right)."""
+    import re as _re
+    key = next((k for k in GIZMO_GEOMETRY
+                if row_label.lower().startswith(k)), None)
+    if key is None:
+        key = next((k for k in GIZMO_GEOMETRY
+                    if _re.search(k, row_label, _re.I)), None)
+    if key is None:
+        return []
+    rows, cols = GIZMO_GEOMETRY[key]
+    return [(cx, ry, "") for ry in rows for cx in cols]
+
+
 def gizmo_field_box(session, row_label, viewport_origin=(0, 0)):
-    """(x, y, current_text) of the first numeric field right of `row_label`
-    inside the active gizmo window (ImGui, drawn in-canvas)."""
     img = capture_bgr(session)
     words = mdu.ocr_words_img(img, scale=3)
     pos = next((w for w in words if w[0].lower().startswith(row_label.lower())),
@@ -905,14 +931,16 @@ def op_gizmo_field(session, slot_pred, row_label, index, value,
     """Select + activate gizmo + type value into row field #index (index<0 =
     last row's last column, i.e. Rotate absolute Z). Returns (ok, text).
 
-    Field entry on V2.3.6 is flaky — the click sometimes fails to activate
-    the ImGui widget and the value just stays (g3/g4/g5/g5c sessions) — so
-    type+readback is retried across recipes (plain single / clear / wake /
-    double / double+clear) until the field reads `value`. The Scale slot
-    shows NO tooltip while a model is selected and the rotate-tooltip smear
-    breaks hover scans (g5), so `fallback_dx` clicks the slot at the fixed
-    geometry Rotate+44 (1108+44, measured across 09-08..09-22 scans) and
-    verifies the panel actually opened before typing."""
+    Field entry on this build is flaky in two ways (both measured 2.4.0):
+      * the OCR grid can come back EMPTY for a panel that IS open (m7t74's
+        rotate: 5 recipes, readback '' every time) — the panel geometry is
+        fixed on this rig, so GIZMO_GEOMETRY supplies the cells then;
+      * a mistyped cell must never be "verified" — the retry ladder
+        re-types and re-reads across recipes.
+    The Scale slot shows NO tooltip while a model is selected and the
+    rotate-tooltip smear breaks hover scans (g5), so `fallback_dx` clicks
+    the slot at the fixed geometry Rotate+44 (1108+44) and verifies the
+    panel actually opened before typing."""
     if not select_model(session):
         return False, ""
     if fallback_dx:
@@ -929,6 +957,11 @@ def op_gizmo_field(session, slot_pred, row_label, index, value,
             [(0, False), (1, False), (0, True), (2, False), (3, False)],
             start=1):
         boxes = gizmo_row_boxes(session, row_label)
+        if not boxes:
+            boxes = geometry_boxes(row_label)
+            if boxes:
+                print(f"{LOG} {row_label}: OCR grid empty — using the fixed "
+                      f"panel geometry {boxes}")
         idx = index if index >= 0 else len(boxes) + index
         if not boxes:
             if fallback_dx:
