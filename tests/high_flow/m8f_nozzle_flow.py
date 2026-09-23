@@ -89,10 +89,13 @@ def report_counts(report: str):
 # --- session helpers ----------------------------------------------------------
 
 def sweep_dialogs(session, tag):
-    """Flow/package switches can raise a #32770 (customized preset / nozzle
-    assignment) — confirm the first button whenever one appears."""
-    for _ in range(2):
-        dlg = m7.wait_dialog(session.pid, timeout_s=2.5)
+    """Package switches raise the app's 'Transfer or discard changes' prompt
+    (the flow switch marks the current preset modified) — answer DISCARD so
+    the next selection starts clean. Any other #32770 gets its first button."""
+    for _ in range(3):
+        if m7.dismiss_transfer_dialog(session):
+            continue
+        dlg = m7.wait_dialog(session.pid, timeout_s=2.0)
         if not dlg:
             return
         print(f"{LOG} [{tag}] dialog {dlg[1]!r} — confirming")
@@ -102,15 +105,17 @@ def sweep_dialogs(session, tag):
 
 def select_packages(session, proc_name, fil_name, tag):
     """Select the process + filament package in the UI (the step that proves
-    the two-index values are read)."""
+    the two-index values are read). Returns (process_ok, filament_text); the
+    caller must treat a wrong filament text as FAIL — no blind fallback."""
     ok_p = pp.switch_process_preset(session, proc_name)
     print(f"{LOG} [{tag}] process preset -> {proc_name[-9:]!r}: {ok_p}")
     sweep_dialogs(session, tag + "_proc")
     slots = m8.filament_slots(session)
     slot = slots[0]["slot"] if slots else 1
-    fin = m8.switch_filament_preset(session, slot=slot,
-                                    target_substr=fil_name.split(" - ")[-1])
-    print(f"{LOG} [{tag}] filament preset (slot {slot}) -> {fin!r}")
+    want = fil_name.split(" - ")[-1]
+    fin = m8.switch_filament_preset(session, slot=slot, target_substr=want)
+    print(f"{LOG} [{tag}] filament preset (slot {slot}) -> {fin!r} "
+          f"(want {want!r})")
     sweep_dialogs(session, tag + "_fil")
     return ok_p, fin
 
@@ -198,10 +203,11 @@ def main() -> int:
 
         # --- A: standard flow + STD-TEST packages --------------------------
         set_flow(session, "Standard", "A")
-        select_packages(session, PROC_STD, FIL_STD, "A")
+        _p, fin_a = select_packages(session, PROC_STD, FIL_STD, "A")
         set_flow(session, "Standard", "A2")
         ok_a, g_a = slice_export(session, results, "#135 A: std pkgs+std flow",
                                  "m8f_stdA.gcode")
+        print(f"{LOG} [A] filament check: {fin_a!r}")
         gc.collect()
 
         # --- B: high flow + HF-TEST packages ------------------------------

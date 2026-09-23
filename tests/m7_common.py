@@ -347,6 +347,32 @@ def click_menu_row(session, hwnd, hmenu, row_substr, nested=False):
     return None
 
 
+def dismiss_transfer_dialog(session):
+    """Answer the app's 'Transfer or discard changes' prompt with DISCARD.
+
+    Switching away from a preset whose values were modified (a flow switch
+    modifies the current process/filament preset) raises this #32770: buttons
+    are plain wxWindowNR children labelled 'Transfer' / 'Discard' / 'Save'
+    (measured 09-23, g29; the label-only children are invisible to
+    dialog_buttons(), which filters class 'Button'). The tester's manual
+    choice is Discard, which keeps the state clean for the next selection.
+    Returns True when a prompt was answered."""
+    dlg = wait_dialog(session.pid, timeout_s=3.0, title_substr="")
+    if not dlg:
+        return False
+    from harness import export_util
+    for t, r, ch in export_util._children_texts(dlg[3]):
+        if "discard" in t.strip().lower():
+            cx, cy = (r[0] + r[2]) // 2, (r[1] + r[3]) // 2
+            winutil.msg_click_screen(cx, cy, dlg[3])
+            time.sleep(1.0)
+            print(f"{LOG} transfer prompt -> Discard clicked")
+            return True
+    print(f"{LOG} transfer prompt raised but Discard not found; children: "
+          f"{[t for t, _r, _c in export_util._children_texts(dlg[3])][:8]}")
+    return False
+
+
 def dismiss_menus(session):
     topbar_util.close_menu_windows(session.pid)
     time.sleep(0.4)

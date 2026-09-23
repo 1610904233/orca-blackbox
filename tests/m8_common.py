@@ -258,22 +258,22 @@ def switch_filament_preset(session, slot, target_substr, tries=30):
             time.sleep(0.5)
             continue
         pr = popup[2]
-        if click_popup_row(session, pr, target_substr, popup_hwnd=popup[3]):
+        if click_popup_row(session, pr, target_substr, popup_hwnd=popup[3],
+                           scrolls=24, notch=4):
             time.sleep(0.9)
             now = combo_text(ch)
             print(f"{LOG} slot{slot} OCR row -> {now!r}")
             if target_substr in now:
                 return now
             continue
-        px = (pr[0] + pr[2]) // 2
-        py = pr[1] + 14 + attempt * 28
-        winutil.msg_click_screen(px, py)
-        time.sleep(0.9)
-        now = combo_text(ch)
-        print(f"{LOG} slot{slot} popup row {attempt}: {now!r}")
-        if target_substr in now:
-            time.sleep(1.0)
-            return now
+        # NO blind pitch-walk fallback: clicking rows that OCR did not match
+        # mis-selects an arbitrary preset (measured 09-23: the walk landed on
+        # 'eSUN PLA+' while looking for '- HF-TEST'), which then poisons every
+        # later step. Report the current text instead and let the caller fail
+        # loudly.
+        print(f"{LOG} slot{slot} target {target_substr!r} not found by OCR "
+              f"(attempt {attempt + 1}/{tries})")
+        time.sleep(0.6)
     return combo_text(ch)
 
 
