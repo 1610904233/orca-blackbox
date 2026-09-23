@@ -173,7 +173,7 @@ def select_model(session, tries=3):
     return False
 
 
-def find_centroids(session, limit=5, min_area=400):
+def find_centroids(session, limit=5, min_area=400, kernel=5):
     """Centroids of the largest chromatic blobs, LARGEST FIRST.
 
     A single "largest blob" is not enough: the mixed_filament_test fixture ships
@@ -182,7 +182,8 @@ def find_centroids(session, limit=5, min_area=400):
     object or the panel, and clicking it selects nothing (measured 09-21: centroid
     jumped from the cube at (1172,514) to (943,371), where the object's 'Untitled'
     label sits, and Rotate stayed at 'Please select at least one object').
-    """
+    `kernel` widens the morphological close so fragmented renders merge (the
+    coarse pass is what blob_count uses)."""
     import cv2
     import numpy as np
     img = capture_bgr(session)
@@ -191,7 +192,8 @@ def find_centroids(session, limit=5, min_area=400):
     band = img[y0:y1, x0:x1].astype(int)
     spread = band.max(axis=2) - band.min(axis=2)
     mask = (spread > 45).astype(np.uint8) * 255
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE,
+                            np.ones((kernel, kernel), np.uint8))
     n, _labels, stats, centroids = cv2.connectedComponentsWithStats(mask, 8)
     order = sorted(range(1, n), key=lambda i: -stats[i, cv2.CC_STAT_AREA])
     out = []
@@ -201,6 +203,24 @@ def find_centroids(session, limit=5, min_area=400):
         cx, cy = centroids[i]
         out.append((int(cx) + x0, int(cy) + y0))
     return out
+
+
+def model_candidates(session, limit=6):
+    """Click points for 'the model', largest-first, merged from the fine and
+    coarse blob masks.
+
+    One mask is not enough on 2.4.0: after an arrange the colour-mixing box
+    and the (grey) printed cube read very differently, and the largest
+    fine-mask blob can be the object's NAME LABEL — right-clicking the label
+    opens NO menu at all, while the model a few px below opens the object
+    menu (measured 09-23, g17: @(943,401) nothing vs @(1172,514) the menu).
+    """
+    out: list = []
+    for cx, cy in find_centroids(session, limit=4) + \
+            find_centroids(session, limit=limit, min_area=150, kernel=9):
+        if all(abs(cx - ox) > 25 or abs(cy - oy) > 25 for ox, oy in out):
+            out.append((cx, cy))
+    return out[:limit]
 
 
 def find_centroid(session):
@@ -227,8 +247,8 @@ def open_context_menu(session, where="model"):
         does, and accept only a menu that contains the click point."""
     ensure_maximized(session)
     if where == "model":
-        candidates = [(cx, cy + 22) for cx, cy in
-                      find_centroids(session, limit=4)]
+        candidates = [(cx, cy + 22) for cx, cy in model_candidates(session)]
+        print(f"{LOG} model right-click candidates: {candidates}")
     else:
         img = capture_bgr(session)
         candidates = [(VIEWPORT_X0 + 60, img.shape[0] - 160)]  # empty bed
