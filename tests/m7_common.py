@@ -585,6 +585,40 @@ def blob_count(session, min_area=400):
     return sum(1 for i in range(1, n) if stats[i, cv2.CC_STAT_AREA] >= min_area)
 
 
+def model_blob_count(session, min_area=1500, aspect=(0.3, 3.0)):
+    """Number of OBJECT-shaped chromatic blobs — the reliable object count.
+
+    Plain blob_count() is not usable for object counting on 2.4.0: the
+    object NAME LABEL (a ~71x9 chromatic strip) and the bottom-right plate
+    widgets (~375x60 / 375x25 strips) also read as blobs >= 400 px, so a
+    "one object left" assertion (blob_count < 2) can never hold (measured
+    09-23, g18/g19: after a correct Delete the count stayed 3). Object
+    renders are block-shaped, so keep blobs with area >= min_area and a
+    bbox aspect ratio inside `aspect`."""
+    import cv2
+    import numpy as np
+    img = capture_bgr(session)
+    h, w = img.shape[:2]
+    band = img[110:h - 60, VIEWPORT_X0 + 10:w - 10].astype(int)
+    spread = band.max(axis=2) - band.min(axis=2)
+    mask = (spread > 45).astype(np.uint8) * 255
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+    n, _labels, stats, _centroids = cv2.connectedComponentsWithStats(mask, 8)
+    keep = []
+    for i in range(1, n):
+        a = stats[i, cv2.CC_STAT_AREA]
+        if a < min_area:
+            continue
+        bw = max(int(stats[i, cv2.CC_STAT_WIDTH]), 1)
+        bh = max(int(stats[i, cv2.CC_STAT_HEIGHT]), 1)
+        if aspect[0] <= bw / bh <= aspect[1]:
+            keep.append((int(a), (int(stats[i, cv2.CC_STAT_LEFT]) + VIEWPORT_X0
+                                  + 10,
+                                  int(stats[i, cv2.CC_STAT_TOP]) + 110, bw, bh)))
+    print(f"{LOG} object-shaped blobs: {keep}")
+    return len(keep)
+
+
 def save_project_as(session, out_path: Path, timeout_s=60.0):
     """File > Save Project As via the m3g primitive (native save dialog)."""
     from m3g_export_3mf import save_project_as as _save

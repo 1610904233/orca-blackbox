@@ -36,15 +36,19 @@ def steps(session, results):
         time.sleep(6.0)
     results["arrange runs"] = "PASS" if arr_x else "FAIL"
     results["two models after arrange"] = (
-        "PASS" if m7.blob_count(session) >= 2 else "FAIL")
+        "PASS" if m7.model_blob_count(session) >= 2
+        else f"FAIL ({m7.model_blob_count(session)} object-shaped blobs)")
 
-    # M-19: right-click the model -> Delete (one object only)
+    # M-19: right-click the model -> Delete (one object only). The check is
+    # on OBJECT-shaped blobs: the plain blob count also sees the object name
+    # label and the plate widgets, so "< 2" could never hold (09-23, g18).
     deleted = m7.context_click_row(session, "model", "delete",
                                    success_fn=lambda:
-                                   m7.blob_count(session) < 2,
+                                   m7.model_blob_count(session) < 2,
                                    label="delete-one")
+    left = m7.model_blob_count(session)
     results["delete one leaves one"] = (
-        "PASS" if deleted and m7.blob_count(session) >= 1 else "FAIL")
+        "PASS" if deleted and left >= 1 else f"FAIL (left={left})")
     m7.op_slice(session, results,
                 export_to=ART / "m7t75.gcode")
 
