@@ -212,6 +212,12 @@ def main() -> int:
     if ok_a:
         session, ok = boot(args, GCODE_FLOW_HF, "B")
         try:
+            # 实测 09-23：直接切流量时下拉只给 Standard；先(重)选一次工艺预设
+            # （ASCII 名，UI 可靠）后下拉才刷新出 High Flow —— 与测试者的
+            # "先切流量再选包"顺序配套使用时两种顺序都要能工作
+            proc_ok = pp.switch_process_preset(session, PROC_HF)
+            print(f"{LOG} [B] process preset re-applied: {proc_ok}")
+            sweep_dialogs(session, "B_proc")
             flow = set_flow(session, "High Flow", "B")
             results["#135 flow switches to High Flow"] = (
                 "PASS" if "High Flow" in (flow or "") else f"FAIL ({flow!r})")
