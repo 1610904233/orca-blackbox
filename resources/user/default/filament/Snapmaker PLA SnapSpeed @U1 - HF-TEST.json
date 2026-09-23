@@ -52,7 +52,7 @@
         "31"
     ],
     "filament_settings_id": [
-        "Snapmaker PLA SnapSpeed @U1 - 高流量测试"
+        "Snapmaker PLA SnapSpeed @U1 - HF-TEST"
     ],
     "filament_wipe_distance": [
         "nil",
@@ -65,7 +65,7 @@
     "from": "User",
     "inherits": "Snapmaker PLA SnapSpeed @U1",
     "is_custom_defined": "0",
-    "name": "Snapmaker PLA SnapSpeed @U1 - 高流量测试",
+    "name": "Snapmaker PLA SnapSpeed @U1 - HF-TEST",
     "nozzle_temperature": [
         "220",
         "210"

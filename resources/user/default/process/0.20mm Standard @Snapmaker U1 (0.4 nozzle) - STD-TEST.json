@@ -1,172 +1,172 @@
 {
     "accel_to_decel_factor": [
-        "50%",
-        "55%"
+        "55%",
+        "50%"
     ],
     "bridge_acceleration": [
-        "50%",
-        "55%"
+        "55%",
+        "50%"
     ],
     "bridge_speed": [
-        "50",
-        "55"
+        "55",
+        "50"
     ],
     "default_acceleration": [
-        "10000",
-        "9000"
+        "9000",
+        "10000"
     ],
     "default_jerk": [
-        "0",
-        "5"
+        "5",
+        "0"
     ],
     "extrusion_rate_smoothing_external_perimeter_only": [
-        "0",
-        "1"
+        "1",
+        "0"
     ],
     "from": "User",
     "gap_infill_speed": [
-        "250",
-        "550"
+        "550",
+        "250"
     ],
     "infill_jerk": [
-        "9",
-        "11"
+        "11",
+        "9"
     ],
     "inherits": "0.20mm Standard @Snapmaker U1 (0.4 nozzle)",
     "initial_layer_acceleration": [
-        "500",
-        "550"
+        "550",
+        "500"
     ],
     "initial_layer_infill_speed": [
-        "105",
-        "100"
+        "100",
+        "105"
     ],
     "initial_layer_jerk": [
-        "9",
-        "11"
+        "11",
+        "9"
     ],
     "initial_layer_speed": [
-        "50",
-        "60"
+        "60",
+        "50"
     ],
     "initial_layer_travel_speed": [
-        "100%",
-        "90%"
+        "90%",
+        "100%"
     ],
     "inner_wall_acceleration": [
-        "10000",
-        "9000"
+        "9000",
+        "10000"
     ],
     "inner_wall_jerk": [
-        "9",
-        "11"
+        "11",
+        "9"
     ],
     "inner_wall_speed": [
-        "300",
-        "550"
+        "550",
+        "600"
     ],
     "internal_bridge_speed": [
-        "150%",
-        "155%"
+        "155%",
+        "150%"
     ],
     "internal_solid_infill_acceleration": [
-        "100%",
-        "95%"
+        "95%",
+        "100%"
     ],
     "internal_solid_infill_speed": [
-        "250",
-        "550"
+        "550",
+        "600"
     ],
     "is_custom_defined": "0",
     "max_volumetric_extrusion_rate_slope": [
-        "0",
-        "5"
+        "5",
+        "0"
     ],
     "max_volumetric_extrusion_rate_slope_segment_length": [
-        "3",
-        "5"
+        "5",
+        "3"
     ],
-    "name": "0.20mm Standard @Snapmaker U1 (0.4 nozzle) - 高流量测试",
+    "name": "0.20mm Standard @Snapmaker U1 (0.4 nozzle) - STD-TEST",
     "outer_wall_acceleration": [
-        "5000",
-        "6000"
+        "6000",
+        "5000"
     ],
     "outer_wall_jerk": [
-        "9",
-        "11"
+        "11",
+        "9"
     ],
     "outer_wall_speed": [
-        "200",
-        "550"
+        "550",
+        "500"
     ],
     "overhang_1_4_speed": [
-        "0",
-        "5"
+        "5",
+        "0"
     ],
     "overhang_2_4_speed": [
-        "50",
-        "55"
+        "55",
+        "50"
     ],
     "overhang_3_4_speed": [
-        "30",
-        "35"
+        "35",
+        "30"
     ],
     "overhang_4_4_speed": [
-        "10",
-        "15"
+        "15",
+        "10"
     ],
-    "print_settings_id": "0.20mm Standard @Snapmaker U1 (0.4 nozzle) - 高流量测试",
+    "print_settings_id": "0.20mm Standard @Snapmaker U1 (0.4 nozzle) - STD-TEST",
     "process_flow_support": [
         "standard",
         "high_flow"
     ],
     "slow_down_layers": [
-        "0",
-        "1"
+        "1",
+        "0"
     ],
     "slowdown_for_curled_perimeters": [
         "0",
         "1"
     ],
     "small_perimeter_speed": [
-        "50%",
-        "55%"
+        "55%",
+        "50%"
     ],
     "small_perimeter_threshold": [
-        "0",
-        "5"
+        "5",
+        "0"
     ],
     "sparse_infill_acceleration": [
-        "100%",
-        "95%"
+        "95%",
+        "100%"
     ],
     "sparse_infill_speed": [
-        "270",
-        "550"
+        "550",
+        "600"
     ],
     "top_surface_acceleration": [
-        "2000",
-        "2500"
+        "2500",
+        "2000"
     ],
     "top_surface_jerk": [
-        "9",
-        "11"
+        "11",
+        "9"
     ],
     "top_surface_speed": [
-        "200",
-        "550"
+        "550",
+        "200"
     ],
     "travel_acceleration": [
-        "10000",
-        "9000"
+        "9000",
+        "10000"
     ],
     "travel_jerk": [
-        "12",
-        "11"
+        "11",
+        "12"
     ],
     "travel_speed": [
-        "500",
-        "550"
+        "550",
+        "500"
     ],
     "version": "2.3.1.2"
 }

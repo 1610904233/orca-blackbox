@@ -16,12 +16,12 @@
         "40"
     ],
     "filament_settings_id": [
-        "Snapmaker PLA SnapSpeed @U1 - 流量测试"
+        "Snapmaker PLA SnapSpeed @U1 - FLOW-TEST"
     ],
     "from": "User",
     "inherits": "Snapmaker PLA SnapSpeed @U1",
     "is_custom_defined": "0",
-    "name": "Snapmaker PLA SnapSpeed @U1 - 流量测试",
+    "name": "Snapmaker PLA SnapSpeed @U1 - FLOW-TEST",
     "pressure_advance": [
         "0.024",
         "0.024"

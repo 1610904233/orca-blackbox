@@ -5,8 +5,8 @@
         "60"
     ],
     "is_custom_defined": "0",
-    "name": "0.24mm Standard @Snapmaker U1 (0.4 nozzle) - 流量测试",
-    "print_settings_id": "0.24mm Standard @Snapmaker U1 (0.4 nozzle) - 流量测试",
+    "name": "0.24mm Standard @Snapmaker U1 (0.4 nozzle) - FLOW-TEST",
+    "print_settings_id": "0.24mm Standard @Snapmaker U1 (0.4 nozzle) - FLOW-TEST",
     "process_flow_support": [
         "standard",
         "high_flow"
