@@ -529,6 +529,22 @@ def geometry_boxes(row_label):
     return [(cx, ry, "") for ry in rows for cx in cols]
 
 
+def panel_label_seen(session, row_label, scales=(3, 4)):
+    """True when the gizmo panel's own row label is on screen.
+
+    Guard for the geometry fallback: an empty OCR grid alone does NOT prove
+    the panel is open (m7t74: a failed slot click left the grid empty, the
+    fallback then typed into unrelated widgets and scaled the model to 1%
+    — measured 09-23). The label word ('Position'/'Rotate'/'Scale') is part
+    of the panel itself, so its presence is the cheap proof."""
+    img = capture_bgr(session)
+    for s in scales:
+        for w in mdu.ocr_words_img(img, scale=s):
+            if w[2] > 120 and w[0].lower().startswith(row_label.lower()):
+                return True
+    return False
+
+
 def gizmo_field_box(session, row_label, viewport_origin=(0, 0)):
     img = capture_bgr(session)
     words = mdu.ocr_words_img(img, scale=3)
@@ -957,11 +973,12 @@ def op_gizmo_field(session, slot_pred, row_label, index, value,
             [(0, False), (1, False), (0, True), (2, False), (3, False)],
             start=1):
         boxes = gizmo_row_boxes(session, row_label)
-        if not boxes:
+        if not boxes and panel_label_seen(session, row_label):
             boxes = geometry_boxes(row_label)
             if boxes:
-                print(f"{LOG} {row_label}: OCR grid empty — using the fixed "
-                      f"panel geometry {boxes}")
+                print(f"{LOG} {row_label}: OCR grid empty but the row label "
+                      f"is on screen — using the fixed panel geometry "
+                      f"{boxes}")
         idx = index if index >= 0 else len(boxes) + index
         if not boxes:
             if fallback_dx:
