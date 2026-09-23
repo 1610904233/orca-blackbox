@@ -165,85 +165,85 @@ def boot(args, model, tag):
 
 
 def main() -> int:
+    """单会话内按人工流程依次切换（测试者 2026-09-23 确认的正确顺序：
+    先切流量，再选包）：
+
+        flow=Standard + STD-TEST 包  -> A
+        flow=HighFlow + HF-TEST 包   -> B      (#135: A/B 配置应完全一致)
+        flow=Standard + FLOW-TEST 包 -> C
+        flow=HighFlow (包不变)       -> D      (#136: C/D 数值差异应为 0)
+
+    三轮 app 会话会把这个进程的内存吃满（cv2 模板匹配 OOM，实测 09-23），
+    单会话也正好等于人工操作的方式。
+    """
+    import gc
+
     ap = add_common_args(argparse.ArgumentParser(), default_model=GCODE_FLOW_STD)
     args = ap.parse_args()
     results = {}
+    g_a = g_b = g_c = g_d = None
+    ok_a = ok_b = ok_c = ok_d = False
 
-    # ---- A: STD-TEST packages + standard flow -----------------------------
-    ok_a = False
-    session, ok = boot(args, GCODE_FLOW_STD, "A_std")
+    session, ok = boot(args, GCODE_FLOW_STD, "single")
     try:
         results["U1 0.4 project loads"] = "PASS" if ok else "FAIL"
         reads = m8.nozzle_reads(session)
-        print(f"{LOG} [A] nozzle reads: {reads}")
+        print(f"{LOG} nozzle reads: {reads}")
         results["#133 diameter default 0.4mm"] = (
             "PASS" if reads["diameter"] == "0.4mm"
             else f"FAIL ({reads['diameter']!r})")
         results["#133 flow default Standard"] = (
             "PASS" if reads["flow"] == "Standard"
             else f"FAIL ({reads['flow']!r})")
-        # 操作顺序（测试者 2026-09-23 确认）：先切流量，再选包 —— 否则
-        # 某些包/工程状态下 Flow 下拉只提供 Standard（会话 B 实测）
+
+        # --- A: standard flow + STD-TEST packages --------------------------
         set_flow(session, "Standard", "A")
         select_packages(session, PROC_STD, FIL_STD, "A")
         set_flow(session, "Standard", "A2")
-        ok_a, g_a = slice_export(session, results,
-                                 "#135 A: std packages+std flow",
+        ok_a, g_a = slice_export(session, results, "#135 A: std pkgs+std flow",
                                  "m8f_stdA.gcode")
-    finally:
-        session.close()
-        print(f"{LOG} session A closed")
-        time.sleep(3.0)
-    if not ok_a:
-        return m7.m7_verdict(results)
+        gc.collect()
 
-    # ---- B: HF-TEST packages + high flow ---------------------------------
-    ok_b = False
-    session, ok = boot(args, GCODE_FLOW_HF, "B_hf")
-    try:
-        set_flow(session, "High Flow", "B")
-        select_packages(session, PROC_HF, FIL_HF, "B")
-        flow = set_flow(session, "High Flow", "B2")
-        results["#135 flow switches to High Flow"] = (
-            "PASS" if "High Flow" in (flow or "") else f"FAIL ({flow!r})")
-        ok_b, g_b = slice_export(session, results,
-                                 "#135 B: hf packages+hf flow",
-                                 "m8f_hfB.gcode")
-    finally:
-        session.close()
-        print(f"{LOG} session B closed")
-        time.sleep(3.0)
-    if not ok_b:
-        return m7.m7_verdict(results)
+        # --- B: high flow + HF-TEST packages ------------------------------
+        if ok_a:
+            set_flow(session, "High Flow", "B")
+            select_packages(session, PROC_HF, FIL_HF, "B")
+            flow_b = set_flow(session, "High Flow", "B2")
+            results["#135 flow switches to High Flow"] = (
+                "PASS" if "High Flow" in (flow_b or "")
+                else f"FAIL ({flow_b!r})")
+            ok_b, g_b = slice_export(session, results,
+                                     "#135 B: hf pkgs+hf flow",
+                                     "m8f_hfB.gcode")
+            gc.collect()
 
-    rc, report = compare_gcodes(g_a, g_b)
-    mode_diff, num_diff = report_counts(report)
-    results["#135 std-vs-hf configs identical"] = (
-        "PASS" if rc == 0
-        else f"FAIL (rc={rc}, mode={mode_diff}, numeric={num_diff})")
-
-    # ---- C: FLOW-TEST packages, standard vs high (single variable) --------
-    session, ok = boot(args, GCODE_FLOW_SINGLE, "C_single")
-    ok_c = ok_d = False
-    g_c = g_d = None
-    try:
-        set_flow(session, "Standard", "C")
-        select_packages(session, PROC_FLOW, FIL_FLOW, "C")
-        set_flow(session, "Standard", "C2")
-        ok_c, g_c = slice_export(session, results,
-                                 "#136 std slice (single-var)",
-                                 "m8f_singleC.gcode")
+        # --- C: FLOW-TEST packages, standard then high --------------------
+        if ok_b:
+            set_flow(session, "Standard", "C")
+            select_packages(session, PROC_FLOW, FIL_FLOW, "C")
+            set_flow(session, "Standard", "C2")
+            ok_c, g_c = slice_export(session, results,
+                                     "#136 std slice (single-var)",
+                                     "m8f_singleC.gcode")
+            gc.collect()
         if ok_c:
-            flow2 = set_flow(session, "High Flow", "C2")
-            print(f"{LOG} [C] flow -> {flow2!r}")
+            flow_d = set_flow(session, "High Flow", "D")
+            print(f"{LOG} [D] flow -> {flow_d!r}")
             ok_d, g_d = slice_export(session, results,
                                      "#136 hf slice (single-var)",
                                      "m8f_singleD.gcode")
-    finally:
+            gc.collect()
         results["app alive"] = "PASS" if session.alive() else "FAIL"
+    finally:
         session.close()
-        print(f"{LOG} session C closed")
+        print(f"{LOG} session closed")
 
+    if ok_a and ok_b:
+        rc, report = compare_gcodes(g_a, g_b)
+        mode_diff, num_diff = report_counts(report)
+        results["#135 std-vs-hf configs identical"] = (
+            "PASS" if rc == 0
+            else f"FAIL (rc={rc}, mode={mode_diff}, numeric={num_diff})")
     if ok_c and ok_d:
         rc2, report2 = compare_gcodes(g_c, g_d)
         mode2, num2 = report_counts(report2)
