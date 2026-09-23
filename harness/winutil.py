@@ -205,6 +205,42 @@ def capture_window(hwnd: int) -> "tuple[int, int, bytes]":
         user32.ReleaseDC(hwnd, hdc_window)
 
 
+def screen_grab() -> "tuple[int, int, bytes]":
+    """Desktop screenshot (top-down BGRA) via a screen-DC BitBlt.
+
+    Fallback for the window capture: PrintWindow times out (WinError 1460)
+    while the app is busy — measured 09-23 during m8f's filament-switch loop,
+    which then aborted the whole case because every frame capture depended on
+    it. The desktop grab always works (the app window is on screen) and the
+    caller crops the windows it needs."""
+    gdi32 = ctypes.WinDLL("gdi32")
+    sw = user32.GetSystemMetrics(0)   # SM_CXSCREEN
+    sh = user32.GetSystemMetrics(1)   # SM_CYSCREEN
+    hdc_src = user32.GetDC(0)
+    if not hdc_src:
+        raise CaptureError("GetDC(0) failed")
+    try:
+        hdc_mem = gdi32.CreateCompatibleDC(hdc_src)
+        hbmp = gdi32.CreateCompatibleBitmap(hdc_src, sw, sh)
+        old = gdi32.SelectObject(hdc_mem, hbmp)
+        try:
+            SRCCOPY = 0x00CC0020
+            if not gdi32.BitBlt(hdc_mem, 0, 0, sw, sh, hdc_src, 0, 0, SRCCOPY):
+                raise CaptureError("BitBlt failed")
+            buf = ctypes.create_string_buffer(sw * sh * 4)
+            got = gdi32.GetDIBits(hdc_src, hbmp, 0, sh, buf,
+                                  ctypes.byref(_bitmapinfo(sw, sh)), 0)
+            if not got:
+                raise CaptureError("GetDIBits failed")
+            return (sw, sh, buf.raw)
+        finally:
+            gdi32.SelectObject(hdc_mem, old)
+            gdi32.DeleteObject(hbmp)
+            gdi32.DeleteDC(hdc_mem)
+    finally:
+        user32.ReleaseDC(0, hdc_src)
+
+
 PW_CLIENTONLY = 0x00000001
 
 
