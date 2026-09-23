@@ -203,18 +203,26 @@ def main() -> int:
 
         # --- A: standard flow + STD-TEST packages --------------------------
         set_flow(session, "Standard", "A")
-        _p, fin_a = select_packages(session, PROC_STD, FIL_STD, "A")
+        proc_a, fin_a = select_packages(session, PROC_STD, FIL_STD, "A")
         set_flow(session, "Standard", "A2")
+        # the fixtures already embed the target preset ids, so the UI switch
+        # must be ASSERTED — otherwise a silent switch failure would be
+        # masked by the project's own ids (rigour gap, 09-23)
+        results["#135 A packages applied (UI)"] = (
+            "PASS" if proc_a and "STD-TEST" in (fin_a or "")
+            else f"FAIL (proc={proc_a}, fil={fin_a!r})")
         ok_a, g_a = slice_export(session, results, "#135 A: std pkgs+std flow",
                                  "m8f_stdA.gcode")
-        print(f"{LOG} [A] filament check: {fin_a!r}")
         gc.collect()
 
         # --- B: high flow + HF-TEST packages ------------------------------
         if ok_a:
             set_flow(session, "High Flow", "B")
-            select_packages(session, PROC_HF, FIL_HF, "B")
+            proc_b, fin_b = select_packages(session, PROC_HF, FIL_HF, "B")
             flow_b = set_flow(session, "High Flow", "B2")
+            results["#135 B packages applied (UI)"] = (
+                "PASS" if proc_b and "HF-TEST" in (fin_b or "")
+                else f"FAIL (proc={proc_b}, fil={fin_b!r})")
             results["#135 flow switches to High Flow"] = (
                 "PASS" if "High Flow" in (flow_b or "")
                 else f"FAIL ({flow_b!r})")
@@ -226,8 +234,11 @@ def main() -> int:
         # --- C: FLOW-TEST packages, standard then high --------------------
         if ok_b:
             set_flow(session, "Standard", "C")
-            select_packages(session, PROC_FLOW, FIL_FLOW, "C")
+            proc_c, fin_c = select_packages(session, PROC_FLOW, FIL_FLOW, "C")
             set_flow(session, "Standard", "C2")
+            results["#136 FLOW-TEST packages applied (UI)"] = (
+                "PASS" if proc_c and "FLOW-TEST" in (fin_c or "")
+                else f"FAIL (proc={proc_c}, fil={fin_c!r})")
             ok_c, g_c = slice_export(session, results,
                                      "#136 std slice (single-var)",
                                      "m8f_singleC.gcode")
