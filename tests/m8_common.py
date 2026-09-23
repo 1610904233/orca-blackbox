@@ -174,7 +174,14 @@ def _ocr_click_line(session, popup_rect, target_substr, popup_hwnd=None) -> bool
     import numpy as np  # noqa: PLC0415
     from harness import mix_dialog_util as mdu  # noqa: PLC0415
     if popup_hwnd:
-        w, h, buf = winutil.capture_window(popup_hwnd)
+        try:
+            w, h, buf = winutil.capture_window(popup_hwnd)
+        except Exception as exc:  # noqa: BLE001
+            # PrintWindow can time out while the app is busy (WinError 1460
+            # measured 09-23 mid-switch) — treat as "row not read this step"
+            # and let the caller's scroll loop retry instead of crashing.
+            print(f"{LOG} popup capture failed ({exc}) — retrying")
+            return False
         img = cv2.cvtColor(np.frombuffer(buf, np.uint8).reshape(h, w, 4),
                            cv2.COLOR_BGRA2BGR)
         ox, oy = popup_rect[0], popup_rect[1]
