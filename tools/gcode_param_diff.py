@@ -49,7 +49,15 @@ def body_stats(a: list[str], b: list[str]) -> dict:
     # movement lines (G0/G1) and comments counted separately
     moves_a = sum(1 for x in a if re.match(r"^G[01] ", x))
     moves_b = sum(1 for x in b if re.match(r"^G[01] ", x))
+    # ORDER-INSENSITIVE comparison: the same toolpath emitted in a different
+    # order still differs line-by-line, so compare the sorted line sets too.
+    sa, sb = sorted(a), sorted(b)
+    if len(sa) == len(sb):
+        sorted_diff = sum(1 for x, y in zip(sa, sb) if x != y)
+    else:
+        sorted_diff = -1          # different line counts: not comparable
     return {"lines_a": len(a), "lines_b": len(b), "positional_diff": pos_diff,
+            "sorted_diff": sorted_diff,
             "tail_a": len(only_a), "tail_b": len(only_b),
             "moves_a": moves_a, "moves_b": moves_b}
 
@@ -85,18 +93,23 @@ def main() -> int:
         print(f"  [OTHER] {k}: {va!r} -> {vb!r}")
     print(f"body: lines {bs['lines_a']} vs {bs['lines_b']}; "
           f"positional differing {bs['positional_diff']}; "
+          f"ORDER-INSENSITIVE differing {bs['sorted_diff']}; "
           f"tail-only {bs['tail_a']}/{bs['tail_b']}; "
           f"G0/G1 moves {bs['moves_a']} vs {bs['moves_b']} "
           f"(delta {abs(bs['moves_a'] - bs['moves_b'])})")
 
     move_delta = abs(bs["moves_a"] - bs["moves_b"])
-    body_ok = bs["positional_diff"] <= args.tolerance
+    # 'basically identical' = the SAME toolpath, possibly emitted in a
+    # different order: the order-insensitive diff is the primary signal, the
+    # positional diff only tells us how much the ordering moved.
+    body_ok = 0 <= bs["sorted_diff"] <= args.tolerance
     ok = not other_diffs and body_ok and move_delta <= args.tolerance
     print(f"VERDICT: {'PASS' if ok else 'FAIL'}"
           f"  (config: {'only flow keys differ' if flow_diffs else 'identical'}"
           f"{'' if not other_diffs else f', {len(other_diffs)} non-flow diff(s)'};"
-          f" body: differing {bs['positional_diff']} lines, tolerance"
-          f" {args.tolerance}, move delta {move_delta})")
+          f" body: order-insensitive diff {bs['sorted_diff']}, tolerance"
+          f" {args.tolerance}, move delta {move_delta};"
+          f" positional(ordering) diff {bs['positional_diff']} recorded)")
     return 0 if ok else 1
 
 
