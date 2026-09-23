@@ -528,6 +528,29 @@ def gizmo_field_box(session, row_label, viewport_origin=(0, 0)):
     return (n[1] + n[3] // 2, n[2] + n[4] // 2), n[0]
 
 
+def _type_chars_verified(session, hwnd, box, text):
+    """Send `text` char by char, re-sending a char until the field shows the
+    expected prefix.
+
+    WM_CHARs are dropped at random on this build (measured 09-23: '45'
+    arrived as '4', '120' as '1', and some attempts lost everything), so a
+    plain multi-char send can commit a WRONG value — '1' in the scale field
+    means a 1% model. Reading the field after every char makes each char
+    independently confirmed before moving on."""
+    for i, ch in enumerate(text):
+        want = text[:i + 1]
+        for _try in range(4):
+            winutil._send_msg(hwnd, WM_CHAR, ord(ch), 0)
+            time.sleep(0.25)
+            got = crop_read_cell(capture_bgr(session), box[0], box[1])
+            if got and got.split(".")[0].startswith(want):
+                break
+            print(f"{LOG} char {ch!r} not landed yet (field reads {got!r})")
+        else:
+            return False
+    return True
+
+
 def type_into_field(session, box, text, old_len=4, wake=False, recipe=0):
     """Focus the field with a REAL click, type + commit via message keyboard
     through the deepest canvas child (m6a: chars must land on the canvas
@@ -559,13 +582,18 @@ def type_into_field(session, box, text, old_len=4, wake=False, recipe=0):
     time.sleep(0.7)
     probe = winutil.client_to_screen(session.hwnd, 600, 400)
     hwnd = winutil.deepest_child_at(session.hwnd, *probe) or session.hwnd
-    if recipe in (1, 3):
+    if recipe in (1, 3, 4):
         for _ in range(max(old_len, 4) + 2):
             winutil._send_msg(hwnd, WM_CHAR, 0x08, 0)   # backspace
             time.sleep(0.04)
-    for ch in text:
-        winutil._send_msg(hwnd, WM_CHAR, ord(ch), 0)
-        time.sleep(0.15)
+    if recipe == 4:
+        if not _type_chars_verified(session, hwnd, box, text):
+            print(f"{LOG} per-char typing did not converge — not committing")
+            return
+    else:
+        for ch in text:
+            winutil._send_msg(hwnd, WM_CHAR, ord(ch), 0)
+            time.sleep(0.15)
     # A dropped character must NOT be committed: '45' arriving as '4' sets a
     # 4deg rotation, and '120' arriving as '1' scales the model to 1% — which
     # then breaks every later step of the case (measured 09-23: m7t74's model
@@ -996,7 +1024,8 @@ def op_gizmo_field(session, slot_pred, row_label, index, value,
         toggle_gizmo_key(session, row_label)
     text = ""
     for attempt, (recipe, wake) in enumerate(
-            [(0, False), (1, False), (0, True), (2, False), (3, False)],
+            [(0, False), (1, False), (0, True), (2, False), (3, False),
+             (4, False)],
             start=1):
         boxes = gizmo_row_boxes(session, row_label)
         if attempt == 1:
