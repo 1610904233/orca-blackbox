@@ -966,8 +966,18 @@ def op_gizmo_field(session, slot_pred, row_label, index, value,
         x, tip = find_slot(session, slot_pred)
     if x is None:
         return False, ""
-    click_slot(session, x)
-    time.sleep(1.0)
+    # The toolbar toggle can be eaten while the app is still re-rendering
+    # the previous gizmo (measured 09-23: m7t74's Rotate slot click right
+    # after the Move step left the panel CLOSED — five recipes then read an
+    # empty grid). Verify the panel's own label is on screen; re-toggle if not.
+    if not panel_label_seen(session, row_label):
+        for _ in range(3):
+            click_slot(session, x)
+            if panel_label_seen(session, row_label):
+                break
+            print(f"{LOG} {row_label}: panel not open yet — re-clicking slot")
+    else:
+        print(f"{LOG} {row_label}: panel already open")
     text = ""
     for attempt, (recipe, wake) in enumerate(
             [(0, False), (1, False), (0, True), (2, False), (3, False)],
@@ -1010,8 +1020,13 @@ def op_gizmo_field(session, slot_pred, row_label, index, value,
     # "largest blob" vote, so the next step's select_model would click the panel
     # instead of the model (measured 09-21: centroid pinned at (943,371) while the
     # model sat at (1172,514) — rotate/scale then failed to select).
-    click_slot(session, x)
-    time.sleep(1.0)
+    # Verify closure the same way: a redundant toggle would REOPEN the panel
+    # and leave it covering the next step.
+    for _ in range(3):
+        if not panel_label_seen(session, row_label):
+            break
+        click_slot(session, x)
+        time.sleep(0.5)
     return text.startswith(value), text
 
 
