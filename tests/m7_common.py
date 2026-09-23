@@ -507,44 +507,6 @@ def gizmo_row_boxes_img(img, row_label, scale=3):
 # rows 27px apart. Used ONLY as a fallback when the OCR grid comes back empty
 # for a panel that is open (measured 09-23: m7t74's rotate panel read back
 # '' for all five recipes while being visibly open).
-GIZMO_GEOMETRY = {
-    "position": ([161], [1251, 1314, 1374]),
-    "rotate": ([161, 188], [1253, 1316, 1379]),
-    "scale": ([161, 188], [1339, 1402, 1465]),
-}
-
-
-def geometry_boxes(row_label):
-    """Cell list [(x, y, '')] from GIZMO_GEOMETRY, same order as
-    gizmo_row_boxes (row-major, columns left-to-right)."""
-    import re as _re
-    key = next((k for k in GIZMO_GEOMETRY
-                if row_label.lower().startswith(k)), None)
-    if key is None:
-        key = next((k for k in GIZMO_GEOMETRY
-                    if _re.search(k, row_label, _re.I)), None)
-    if key is None:
-        return []
-    rows, cols = GIZMO_GEOMETRY[key]
-    return [(cx, ry, "") for ry in rows for cx in cols]
-
-
-def panel_label_seen(session, row_label, scales=(3, 4)):
-    """True when the gizmo panel's own row label is on screen.
-
-    Guard for the geometry fallback: an empty OCR grid alone does NOT prove
-    the panel is open (m7t74: a failed slot click left the grid empty, the
-    fallback then typed into unrelated widgets and scaled the model to 1%
-    — measured 09-23). The label word ('Position'/'Rotate'/'Scale') is part
-    of the panel itself, so its presence is the cheap proof."""
-    img = capture_bgr(session)
-    for s in scales:
-        for w in mdu.ocr_words_img(img, scale=s):
-            if w[2] > 120 and w[0].lower().startswith(row_label.lower()):
-                return True
-    return False
-
-
 def gizmo_field_box(session, row_label, viewport_origin=(0, 0)):
     img = capture_bgr(session)
     words = mdu.ocr_words_img(img, scale=3)
@@ -947,16 +909,19 @@ def op_gizmo_field(session, slot_pred, row_label, index, value,
     """Select + activate gizmo + type value into row field #index (index<0 =
     last row's last column, i.e. Rotate absolute Z). Returns (ok, text).
 
-    Field entry on this build is flaky in two ways (both measured 2.4.0):
-      * the OCR grid can come back EMPTY for a panel that IS open (m7t74's
-        rotate: 5 recipes, readback '' every time) — the panel geometry is
-        fixed on this rig, so GIZMO_GEOMETRY supplies the cells then;
-      * a mistyped cell must never be "verified" — the retry ladder
-        re-types and re-reads across recipes.
+    Three robustness measures, all measured on this rig:
+      * the toolbar toggle can be EATEN while the app re-renders the previous
+        gizmo (09-23: m7t74's Rotate slot click after the Move step left the
+        panel closed) — the keyboard shortcut re-toggles it;
+      * the OCR grid can collapse to fewer columns than the panel has, so the
+        cell list is built with column/row extrapolation (see
+        gizmo_row_boxes_img) and index -1 stays the real Z column;
+      * typing + readback is retried across recipes (plain single / clear /
+        wake / double / double+clear); a cell is only typed into while the
+        panel is open — an empty grid types NOTHING (never a blind click).
     The Scale slot shows NO tooltip while a model is selected and the
     rotate-tooltip smear breaks hover scans (g5), so `fallback_dx` clicks
-    the slot at the fixed geometry Rotate+44 (1108+44) and verifies the
-    panel actually opened before typing."""
+    the slot at the fixed geometry Rotate+44 (1108+44)."""
     if not select_model(session):
         return False, ""
     if fallback_dx:
@@ -966,44 +931,25 @@ def op_gizmo_field(session, slot_pred, row_label, index, value,
         x, tip = find_slot(session, slot_pred)
     if x is None:
         return False, ""
-    # The toolbar toggle can be eaten while the app is still re-rendering
-    # the previous gizmo (measured 09-23: m7t74's Rotate slot click right
-    # after the Move step left the panel CLOSED — five recipes then read an
-    # empty grid). Verify the panel's own label is on screen; re-toggle if not.
-    if not panel_label_seen(session, row_label):
-        for _ in range(3):
-            click_slot(session, x)
-            if panel_label_seen(session, row_label):
-                break
-            print(f"{LOG} {row_label}: panel not open yet — re-clicking slot")
-    else:
-        print(f"{LOG} {row_label}: panel already open")
+    click_slot(session, x)
+    time.sleep(1.0)
+    if not gizmo_row_boxes(session, row_label):
+        # The toolbar toggle can be eaten while the app is still re-rendering
+        # the previous gizmo (measured 09-23: m7t74's Rotate slot click right
+        # after the Move step left the panel closed — five recipes then read
+        # an empty grid). The keyboard shortcut is a second, independent
+        # channel (g21: 'R' toggles the rotate panel).
+        print(f"{LOG} {row_label}: panel not open after the slot click")
+        toggle_gizmo_key(session, row_label)
     text = ""
     for attempt, (recipe, wake) in enumerate(
             [(0, False), (1, False), (0, True), (2, False), (3, False)],
             start=1):
         boxes = gizmo_row_boxes(session, row_label)
-        if not boxes and panel_label_seen(session, row_label):
-            boxes = geometry_boxes(row_label)
-            if boxes:
-                print(f"{LOG} {row_label}: OCR grid empty but the row label "
-                      f"is on screen — using the fixed panel geometry "
-                      f"{boxes}")
-        idx = index if index >= 0 else len(boxes) + index
         if not boxes:
-            if fallback_dx:
-                # wrong slot: try neighbors, closing each wrong panel again
-                for guess in (x + 44, x - 44, x + 88, x - 88):
-                    click_slot(session, x)
-                    x = guess
-                    click_slot(session, x)
-                    time.sleep(1.0)
-                    boxes = gizmo_row_boxes(session, row_label)
-                    idx = index if index >= 0 else len(boxes) + index
-                    if boxes:
-                        break
-            if not boxes:
-                break
+            print(f"{LOG} {row_label}: panel closed — nothing to type into")
+            break
+        idx = index if index >= 0 else len(boxes) + index
         if not (0 <= idx < len(boxes)):
             break
         type_into_field(session, boxes[idx][:2], value,
@@ -1015,18 +961,15 @@ def op_gizmo_field(session, slot_pred, row_label, index, value,
               f"wake={wake}: {text!r}")
         if text.startswith(value):
             break
-    # Toggle the gizmo back OFF (clicking the active slot again closes its window).
-    # The manipulation panel is itself a big chromatic blob and wins find_centroid's
-    # "largest blob" vote, so the next step's select_model would click the panel
-    # instead of the model (measured 09-21: centroid pinned at (943,371) while the
-    # model sat at (1172,514) — rotate/scale then failed to select).
-    # Verify closure the same way: a redundant toggle would REOPEN the panel
-    # and leave it covering the next step.
-    for _ in range(3):
-        if not panel_label_seen(session, row_label):
-            break
+    # Toggle the gizmo back OFF — only when the panel is really open (a
+    # redundant toggle would re-open it and the panel blob then wins
+    # find_centroid's "largest blob" vote, so the next select_model clicks
+    # the panel instead of the model, measured 09-21).
+    if gizmo_row_boxes(session, row_label):
         click_slot(session, x)
-        time.sleep(0.5)
+        time.sleep(0.8)
+        if gizmo_row_boxes(session, row_label):
+            toggle_gizmo_key(session, row_label)
     return text.startswith(value), text
 
 
