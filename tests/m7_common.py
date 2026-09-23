@@ -157,7 +157,7 @@ def select_model(session, tries=3):
         print(f"{LOG} rotate slot not found — toolbar unreadable?")
         return False
     for _attempt in range(tries):
-        cands = find_centroids(session, limit=4)
+        cands = model_candidates(session)
         print(f"{LOG} select candidates: {cands}")
         for cx, cy in cands:
             sx, sy = client(session, cx, cy + 22)
