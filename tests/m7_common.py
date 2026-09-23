@@ -942,6 +942,57 @@ def step_delete_all(session, results):
     return deleted
 
 
+def add_primitive_via_toolbar(session, shape="cube"):
+    """Fallback path for adding a primitive: the toolbar's 'Add' slot opens
+    the same shape list.
+
+    The bed right-click menu is dead after some flows (measured 09-23: after
+    Edit > Delete All the bed right-click opens NOTHING at three points × two
+    tries, which blocked m8b's cube step) — the toolbar slot is an
+    independent entry point."""
+    ensure_maximized(session)
+    x, tip = find_slot(session, lambda t: t.strip().lower().startswith("add"))
+    if x is None:
+        print(f"{LOG} toolbar Add slot not found (tip={tip!r})")
+        return False
+    before = model_colored_frac(session)
+    click_slot(session, x)
+    deadline = time.monotonic() + 4.0
+    menu = None
+    while time.monotonic() < deadline:
+        ms = topbar_util._enum_menu_windows(session.pid)
+        if ms:
+            menu = (ms[0][4], topbar_util.menu_hmenu(ms[0][4]))
+            break
+        time.sleep(0.25)
+    if not menu:
+        print(f"{LOG} toolbar Add slot opened no menu")
+        return False
+    hwnd, hmenu = menu
+    rows = [l for _i, l in list_menu(hmenu)]
+    print(f"{LOG} toolbar Add menu rows: {rows}")
+    # the toolbar menu is open: click the shape row inside it, descending a
+    # submenu when the row is nested
+    for candidate in (shape, "primitive", "part"):
+        hit = click_menu_row(session, hwnd, hmenu, candidate, nested=True)
+        if hit and isinstance(hit, tuple):
+            _i, (shwnd, shmenu) = hit
+            if click_menu_row(session, shwnd, shmenu, shape):
+                time.sleep(2.5)
+                grew = model_colored_frac(session) > before + 0.001
+                print(f"{LOG} toolbar add-{shape}: {grew}")
+                dismiss_menus(session)
+                return grew
+        elif hit:
+            time.sleep(2.5)
+            grew = model_colored_frac(session) > before + 0.001
+            print(f"{LOG} toolbar add-{shape}: {grew}")
+            dismiss_menus(session)
+            return grew
+    dismiss_menus(session)
+    return False
+
+
 def op_add_primitive(session, shape="cube"):
     """Bed menu > Add Primitive > shape; returns the plate changed.
 
@@ -955,6 +1006,9 @@ def op_add_primitive(session, shape="cube"):
                            success_fn=lambda: model_colored_frac(session)
                            > before + 0.001,
                            label=f"add-{shape}")
+    if not ok:
+        print(f"{LOG} bed menu route failed — trying the toolbar Add slot")
+        ok = add_primitive_via_toolbar(session, shape)
     time.sleep(1.0)
     return ok
 
