@@ -143,6 +143,13 @@ def slice_export(session, results, key, name):
     out = ART / name
     out.unlink(missing_ok=True)
     ok = m7.op_slice(session, results, key=key, export_to=out)
+    if not (ok and out.exists()):
+        # the export once failed right after a successful slice (measured
+        # 09-23: stdA) — one retry of the export path is cheap
+        print(f"{LOG} {key}: export missing — retrying the export")
+        from harness import export_util
+        time.sleep(2.0)
+        ok = export_util.export_gcode(session, out, timeout_s=60.0) or ok
     return bool(ok and out.exists()), out
 
 
@@ -175,8 +182,11 @@ def main() -> int:
         results["#133 flow default Standard"] = (
             "PASS" if reads["flow"] == "Standard"
             else f"FAIL ({reads['flow']!r})")
-        select_packages(session, PROC_STD, FIL_STD, "A")
+        # 操作顺序（测试者 2026-09-23 确认）：先切流量，再选包 —— 否则
+        # 某些包/工程状态下 Flow 下拉只提供 Standard（会话 B 实测）
         set_flow(session, "Standard", "A")
+        select_packages(session, PROC_STD, FIL_STD, "A")
+        set_flow(session, "Standard", "A2")
         ok_a, g_a = slice_export(session, results,
                                  "#135 A: std packages+std flow",
                                  "m8f_stdA.gcode")
@@ -191,8 +201,9 @@ def main() -> int:
     ok_b = False
     session, ok = boot(args, GCODE_FLOW_HF, "B_hf")
     try:
+        set_flow(session, "High Flow", "B")
         select_packages(session, PROC_HF, FIL_HF, "B")
-        flow = set_flow(session, "High Flow", "B")
+        flow = set_flow(session, "High Flow", "B2")
         results["#135 flow switches to High Flow"] = (
             "PASS" if "High Flow" in (flow or "") else f"FAIL ({flow!r})")
         ok_b, g_b = slice_export(session, results,
@@ -216,8 +227,9 @@ def main() -> int:
     ok_c = ok_d = False
     g_c = g_d = None
     try:
-        select_packages(session, PROC_FLOW, FIL_FLOW, "C")
         set_flow(session, "Standard", "C")
+        select_packages(session, PROC_FLOW, FIL_FLOW, "C")
+        set_flow(session, "Standard", "C2")
         ok_c, g_c = slice_export(session, results,
                                  "#136 std slice (single-var)",
                                  "m8f_singleC.gcode")
