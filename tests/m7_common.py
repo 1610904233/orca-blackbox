@@ -1178,11 +1178,12 @@ def wait_slice_button_ready(session, timeout_s=120):
     so both click paths fail with 'slice click rejected' (measured 09-24 on
     m8f/m8g right after Flow -> High Flow). Returns the template name that
     matched, or '' on timeout."""
-    import cv2
     from harness.anchors import match
     from m2_slice_chain import RESOURCE
-    tpl_idle = cv2.imread(str(RESOURCE / "slice_plate_button.png"))
-    tpl_done = cv2.imread(str(RESOURCE / "slice_button_done.png"))
+    # match() takes a template NAME or PATH (it loads the image itself) —
+    # passing a cv2 array raises TypeError (measured 09-24)
+    tpl_idle = str(RESOURCE / "slice_plate_button.png")
+    tpl_done = str(RESOURCE / "slice_button_done.png")
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         img = capture_bgr(session)
