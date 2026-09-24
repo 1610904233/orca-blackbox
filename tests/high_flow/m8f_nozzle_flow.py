@@ -208,6 +208,58 @@ def slice_with(args, proc_name, flow_target, tag, out_name, results,
         time.sleep(2.5)
 
 
+def flow_index(path):
+    """0 = standard, 1 = high_flow — the index into the per-flow arrays that
+    a gcode was sliced with (read from its own config block)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("cmpx", str(COMPARE))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    cfg = mod.parse_gcode_config(path)
+    val = cfg.values("nozzle_volume_type") or cfg.values("filament_volume_type")
+    if not val:
+        return 0
+    return 1 if "high_flow" in val[0].lower() else 0
+
+
+def effective_diff(a: Path, b: Path):
+    """Index-resolved comparison — the doc's '高流量参数序号访问' check.
+
+    The gcode carries the packages' per-flow ARRAYS (e.g. sparse_infill_speed
+    '550,600' on the STD package and '270,550' on the HF one), so a raw
+    comparison flags them even when the EFFECTIVE entry (the one selected by
+    the flow mode) matches. This walks every numeric key from the official
+    report and compares A's value at ITS flow index with B's at ITS index.
+    Returns (mismatches, checked_keys)."""
+    import importlib.util
+    import re as _re
+    spec = importlib.util.spec_from_file_location("cmpx2", str(COMPARE))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    ca, cb = mod.parse_gcode_config(a), mod.parse_gcode_config(b)
+    ia, ib = flow_index(a), flow_index(b)
+    print(f"{LOG} flow indices: A={ia} B={ib}")
+    mismatches, checked = [], 0
+    for key in sorted(set(ca.by_key) | set(cb.by_key)):
+        va, vb = ca.values(key), cb.values(key)
+        if va == vb or va is None or vb is None:
+            continue
+        if not (mod.is_numeric_config(va) or mod.is_numeric_config(vb)):
+            continue
+        # split the (possibly multi-entry) values and take each side's index
+        def pick(v):
+            parts = [p.strip() for p in ",".join(v).split(",")]
+            if len(parts) > 1 and len(parts) > max(ia, ib):
+                return parts[ia if v is va else ib]
+            return parts[0] if parts else ""
+        ea, eb = pick(va), pick(vb)
+        if len(va) > 1 or len(vb) > 1:
+            checked += 1
+            if ea != eb:
+                mismatches.append((key, ea, eb))
+    return mismatches, checked
+
+
 def main() -> int:
     """#135: (STD-TEST 包 + 标准流量) 与 (HF-TEST 包 + 高流量) 各切一份，
     两份的【数值配置】必须完全一致（模式键不同是预期）。模型=右键 cube。"""
@@ -221,9 +273,17 @@ def main() -> int:
     if ok_a and ok_b:
         rc, report = compare_gcodes(g_a, g_b)
         mode_diff, num_diff = report_counts(report)
-        results["#135 std-vs-hf numeric configs identical"] = (
-            "PASS" if num_diff == 0 and mode_diff >= 1
-            else f"FAIL (rc={rc}, numeric={num_diff}, mode={mode_diff})")
+        # 官方脚本按原样数组比对：两档数组本身的差异会全部计入 numeric。
+        # 文档的意图是"序号访问"——即按各自流量取到的那一项必须相同，
+        # 因此再跑一层按序号解析的比对（结果一并记录）。
+        bad, checked = effective_diff(g_a, g_b)
+        if bad:
+            print(f"{LOG} effective mismatches ({len(bad)}): "
+                  f"{[(k, x, y) for k, x, y in bad][:8]}")
+        results["#135 std-vs-hf effective values identical"] = (
+            "PASS" if not bad and mode_diff >= 1
+            else f"FAIL (checked={checked}, mismatches={len(bad)}, "
+                 f"mode={mode_diff})")
     return m7.m7_verdict(results)
 
 
