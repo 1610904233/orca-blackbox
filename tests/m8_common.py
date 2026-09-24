@@ -294,6 +294,37 @@ def switch_filament_preset(session, slot, target_substr, tries=30):
     return combo_text(ch)
 
 
+def confirm_flow_dialog(session):
+    """Answer the prompt raised by a High-Flow switch (the doc's
+    '确认切片分配喷嘴' popup) before slicing.
+
+    Measured 09-24: right after Flow -> High Flow the Slice click is rejected
+    ('slice click rejected') until the prompt is answered. Prefer a button
+    mentioning the high-flow nozzle, then OK/Confirm, then the first button.
+    Returns the action taken (or '' when no prompt appeared)."""
+    dlg = export_util.wait_toplevel(
+        session.pid, lambda c, t, r: c == "#32770", timeout_s=3.0)
+    if not dlg:
+        return ""
+    print(f"{LOG} flow prompt: {dlg[1]!r} rect={dlg[2]}")
+    kids = export_util._children_texts(dlg[3])
+    print(f"{LOG} flow prompt children: {[(t[:18], r) for t, r, _c in kids if t.strip()][:8]}")
+    for want in ("high", "高流量", "ok", "yes", "confirm", "确定"):
+        act = click_dialog_button(dlg[3], want)
+        if act:
+            print(f"{LOG} flow prompt -> {act}")
+            time.sleep(1.0)
+            return act
+    if kids:
+        t, r, _c = [k for k in kids if k[0].strip()] or kids
+        winutil.msg_click_screen((r[0] + r[2]) // 2, (r[1] + r[3]) // 2,
+                                 dlg[3])
+        print(f"{LOG} flow prompt -> first child {t!r}")
+        time.sleep(1.0)
+        return f"first {t!r}"
+    return ""
+
+
 def click_color_picker(session, slot, timeout_s=6.0, dialog_cls="#32770"):
     """Click the slot's color picker button; return the OFFICIAL color
     dialog ('Color') tuple or None.

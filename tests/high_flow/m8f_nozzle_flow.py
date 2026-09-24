@@ -221,6 +221,7 @@ def main() -> int:
             flow = set_flow(session, "High Flow", "B")
             results["#135 flow switches to High Flow"] = (
                 "PASS" if "High Flow" in (flow or "") else f"FAIL ({flow!r})")
+            m8.confirm_flow_dialog(session)   # '确认切片分配喷嘴' 提示
             ok_b, g_b = slice_export(session, results,
                                      "#135 B: HF-TEST+hf flow",
                                      "m8f_hfB.gcode")

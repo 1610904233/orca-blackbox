@@ -87,6 +87,8 @@ def slice_session(args, flow_target, tag, out_name, results):
         got = set_flow(session, flow_target, tag)
         results[f"#136 flow={flow_target} applied"] = (
             "PASS" if flow_target in (got or "") else f"FAIL ({got!r})")
+        if "High Flow" in (got or ""):
+            m8.confirm_flow_dialog(session)   # '确认切片分配喷嘴' 提示
         out.unlink(missing_ok=True)
         ok_slice = m7.op_slice(session, results, key=f"#136 {tag} slice",
                                export_to=out)
