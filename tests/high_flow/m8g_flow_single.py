@@ -105,8 +105,8 @@ def slice_session(args, flow_target, tag, out_name, results):
 
 
 def main() -> int:
-    ap = add_common_args(argparse.ArgumentParser(),
-                         default_model=GCODE_FLOW_SINGLE)
+    # 模型 = 空盘 + 右键 cube（见 slice_session）
+    ap = add_common_args(argparse.ArgumentParser(), default_model=None)
     args = ap.parse_args()
     results = {}
     ok_c, g_c = slice_session(args, "Standard", "std", "m8g_std.gcode", results)
