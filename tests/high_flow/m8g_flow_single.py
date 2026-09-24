@@ -36,7 +36,8 @@ import m8_common as m8  # noqa: E402
 
 LOG = "[m8g]"
 ART = HERE / "artifacts"
-GCODE_FLOW_SINGLE = HERE / "fixtures" / "gcode_flow_single.3mf"
+# 模型来源：空盘 + 右键 Add Primitive > Cube（测试者 09-24 确认不会
+# 触发 "jerk setting exceeds the printer's maximum" 警告）
 COMPARE = HERE / "tools" / "compare_gcode.py"
 PROC_FLOW = "0.24mm Standard @Snapmaker U1 (0.4 nozzle) - FLOW-TEST"
 
@@ -75,28 +76,32 @@ def set_flow(session, target, tag, tries=3):
 
 
 def slice_session(args, flow_target, tag, out_name, results):
-    args.model = GCODE_FLOW_SINGLE
-    session = boot_session(args, model=GCODE_FLOW_SINGLE)
+    """空盘启动 -> 右键建 cube -> 选 FLOW-TEST 工艺包 -> 切流量 -> 切片导出。"""
+    args.model = None
+    session = boot_session(args, model=None)
     out = ART / out_name
     try:
-        ok, frac = m8.wait_arrival(session)
         m7.ensure_maximized(session)
-        ensure_gl_ready(session)
-        time.sleep(1.0)
-        print(f"{LOG} [{tag}] arrival {ok} ({frac:.2%})")
+        added = m7.op_add_primitive(session, "cube")
+        print(f"{LOG} [{tag}] cube added: {added}")
+        results.setdefault("cube created (right-click)",
+                           "PASS" if added else "FAIL")
+        proc_ok = pp.switch_process_preset(session, PROC_FLOW)
+        m7.dismiss_transfer_dialog(session)
+        print(f"{LOG} [{tag}] process preset FLOW-TEST: {proc_ok}")
         got = set_flow(session, flow_target, tag)
         results[f"#136 flow={flow_target} applied"] = (
             "PASS" if flow_target in (got or "") else f"FAIL ({got!r})")
         if "High Flow" in (got or ""):
-            m8.confirm_flow_dialog(session)   # '确认切片分配喷嘴' 提示
+            m8.confirm_flow_dialog(session)
         out.unlink(missing_ok=True)
-        ok_slice = m7.op_slice(session, results, key=f"#136 {tag} slice",
-                               export_to=out)
-        return bool(ok_slice and out.exists()), out
+        ok = m7.op_slice(session, results, key=f"#136 {tag} slice",
+                         export_to=out)
+        return bool(ok and out.exists()), out
     finally:
         session.close()
         print(f"{LOG} [{tag}] session closed")
-        time.sleep(2.0)
+        time.sleep(2.5)
 
 
 def main() -> int:

@@ -51,9 +51,9 @@ import m8_common as m8  # noqa: E402
 LOG = "[m8f]"
 ART = HERE / "artifacts"
 FIXTURES = HERE / "fixtures"
-GCODE_FLOW_STD = FIXTURES / "gcode_flow_std.3mf"
-GCODE_FLOW_HF = FIXTURES / "gcode_flow_hf.3mf"
-GCODE_FLOW_SINGLE = FIXTURES / "gcode_flow_single.3mf"
+# 模型来源：空盘启动 + 鼠标右键 Add Primitive > Cube（测试者 09-24 确认：
+# 用右键建的正方体不会带入官方测试 3mf 里那套被改过的预设值，因此不会出现
+# "jerk setting exceeds the printer's maximum" 警告 —— 该警告会让切片被拒）
 COMPARE = HERE / "tools" / "compare_gcode.py"
 
 PROC_STD = "0.20mm Standard @Snapmaker U1 (0.4 nozzle) - STD-TEST"
@@ -169,78 +169,61 @@ def boot(args, model, tag):
     return session, ok
 
 
-def main() -> int:
-    """三个工程各起一次会话，只在 UI 里切 Nozzle Flow。
-
-    包由工程文件携带（官方测试文件也是内嵌预设 id 的方式）：实测 09-23
-    (g31) 耗材下拉弹窗在本构建上抓不到像素（PrintWindow 返回空、屏幕裁剪
-    拍到的是背后的侧栏），UI 切耗材包不可靠；而"按序号取值"的关键动作是
-    切流量，这一点在 UI 里做完整体现。
-
-        gcode_flow_std    (STD-TEST 包)  + 标准流量 -> A
-        gcode_flow_hf     (HF-TEST  包)  + 高流量   -> B   (#135: A/B 配置应一致)
-        gcode_flow_single (FLOW-TEST 包) 标准流量   -> C
-                                        切高流量   -> D   (#136: C/D 数值差异应为 0)
-    """
-    ap = add_common_args(argparse.ArgumentParser(), default_model=GCODE_FLOW_STD)
-    args = ap.parse_args()
-    results = {}
-    g_a = g_b = g_c = g_d = None
-    ok_a = ok_b = ok_c = ok_d = False
-
-    # ---- A: STD-TEST project + standard flow -----------------------------
-    session, ok = boot(args, GCODE_FLOW_STD, "A")
+def slice_with(args, proc_name, flow_target, tag, out_name, results,
+               check_133=False):
+    """空盘启动 -> 右键建 cube -> UI 选工艺包 -> 切流量 -> 切片导出。"""
+    from m3_common import boot_session
+    args.model = None
+    session = boot_session(args, model=None)
+    out = ART / out_name
     try:
-        results["U1 0.4 project loads"] = "PASS" if ok else "FAIL"
-        reads = m8.nozzle_reads(session)
-        print(f"{LOG} [A] nozzle reads: {reads}")
-        results["#133 diameter default 0.4mm"] = (
-            "PASS" if reads["diameter"] == "0.4mm"
-            else f"FAIL ({reads['diameter']!r})")
-        results["#133 flow default Standard"] = (
-            "PASS" if reads["flow"] == "Standard"
-            else f"FAIL ({reads['flow']!r})")
-        set_flow(session, "Standard", "A")
-        ok_a, g_a = slice_export(session, results, "#135 A: STD-TEST+std flow",
-                                 "m8f_stdA.gcode")
+        m7.ensure_maximized(session)
+        # 右键建正方体（床面菜单；失败会自动走工具栏 Add 入口兜底）
+        added = m7.op_add_primitive(session, "cube")
+        print(f"{LOG} [{tag}] cube added: {added}")
+        results.setdefault("cube created (right-click)", "PASS" if added else "FAIL")
+        if check_133:
+            reads = m8.nozzle_reads(session)
+            print(f"{LOG} [{tag}] nozzle reads: {reads}")
+            results["#133 diameter default 0.4mm"] = (
+                "PASS" if reads["diameter"] == "0.4mm"
+                else f"FAIL ({reads['diameter']!r})")
+            results["#133 flow default Standard"] = (
+                "PASS" if reads["flow"] == "Standard"
+                else f"FAIL ({reads['flow']!r})")
+        proc_ok = pp.switch_process_preset(session, proc_name)
+        m7.dismiss_transfer_dialog(session)
+        print(f"{LOG} [{tag}] process preset {proc_name[-9:]!r}: {proc_ok}")
+        got = set_flow(session, flow_target, tag)
+        results[f"{tag} flow={flow_target}"] = (
+            "PASS" if flow_target in (got or "") else f"FAIL ({got!r})")
+        if "High Flow" in (got or ""):
+            m8.confirm_flow_dialog(session)
+        out.unlink(missing_ok=True)
+        ok = m7.op_slice(session, results, key=f"{tag} slice", export_to=out)
+        return bool(ok and out.exists()), out
     finally:
         session.close()
-        print(f"{LOG} session A closed")
-        time.sleep(3.0)
+        print(f"{LOG} [{tag}] session closed")
+        time.sleep(2.5)
 
-    # ---- B: HF-TEST project + high flow ---------------------------------
-    if ok_a:
-        session, ok = boot(args, GCODE_FLOW_HF, "B")
-        try:
-            # 实测 09-23：直接切流量时下拉只给 Standard；先(重)选一次工艺预设
-            # （ASCII 名，UI 可靠）后下拉才刷新出 High Flow —— 与测试者的
-            # "先切流量再选包"顺序配套使用时两种顺序都要能工作
-            proc_ok = pp.switch_process_preset(session, PROC_HF)
-            print(f"{LOG} [B] process preset re-applied: {proc_ok}")
-            sweep_dialogs(session, "B_proc")
-            flow = set_flow(session, "High Flow", "B")
-            results["#135 flow switches to High Flow"] = (
-                "PASS" if "High Flow" in (flow or "") else f"FAIL ({flow!r})")
-            m8.confirm_flow_dialog(session)   # '确认切片分配喷嘴' 提示
-            ok_b, g_b = slice_export(session, results,
-                                     "#135 B: HF-TEST+hf flow",
-                                     "m8f_hfB.gcode")
-        finally:
-            session.close()
-            print(f"{LOG} session B closed")
-            time.sleep(3.0)
 
+def main() -> int:
+    """#135: (STD-TEST 包 + 标准流量) 与 (HF-TEST 包 + 高流量) 各切一份，
+    两份的【数值配置】必须完全一致（模式键不同是预期）。模型=右键 cube。"""
+    ap = add_common_args(argparse.ArgumentParser(), default_model=None)
+    args = ap.parse_args()
+    results = {}
+    ok_a, g_a = slice_with(args, PROC_STD, "Standard", "A", "m8f_stdA.gcode",
+                           results, check_133=True)
+    ok_b, g_b = ok_a and slice_with(args, PROC_HF, "High Flow", "B",
+                                    "m8f_hfB.gcode", results)
     if ok_a and ok_b:
         rc, report = compare_gcodes(g_a, g_b)
         mode_diff, num_diff = report_counts(report)
-        # 判据（按文档语义 + 官方脚本的分类）: 两份的**数值配置**必须完全一致
-        # （包构造保证 (STD-TEST+标准) 与 (HF-TEST+高流量) 取值相同）；
-        # 流量模式键（nozzle/filament_volume_type 等）**应当**不同 —— 它还
-        # 顺带证明流量确实切过去了（mode>=1）。
         results["#135 std-vs-hf numeric configs identical"] = (
             "PASS" if num_diff == 0 and mode_diff >= 1
             else f"FAIL (rc={rc}, numeric={num_diff}, mode={mode_diff})")
-
     return m7.m7_verdict(results)
 
 
