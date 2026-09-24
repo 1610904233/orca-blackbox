@@ -55,6 +55,7 @@ FIXTURES = HERE / "fixtures"
 # 用右键建的正方体不会带入官方测试 3mf 里那套被改过的预设值，因此不会出现
 # "jerk setting exceeds the printer's maximum" 警告 —— 该警告会让切片被拒）
 COMPARE = HERE / "tools" / "compare_gcode.py"
+NUM_RE = re.compile(r"-?\d+(?:\.\d+)?%?")
 
 PROC_STD = "0.20mm Standard @Snapmaker U1 (0.4 nozzle) - STD-TEST"
 PROC_HF = "0.20mm Standard @Snapmaker U1 (0.4 nozzle) - HF-TEST"
@@ -208,55 +209,67 @@ def slice_with(args, proc_name, flow_target, tag, out_name, results,
         time.sleep(2.5)
 
 
-def flow_index(path):
-    """0 = standard, 1 = high_flow — the index into the per-flow arrays that
-    a gcode was sliced with (read from its own config block)."""
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("cmpx", str(COMPARE))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    cfg = mod.parse_gcode_config(path)
-    val = cfg.values("nozzle_volume_type") or cfg.values("filament_volume_type")
-    if not val:
-        return 0
-    return 1 if "high_flow" in val[0].lower() else 0
+CONF_RE = re.compile(r"^;\s*([A-Za-z0-9_.]+)\s*=\s*(.*)$")
+
+
+def read_config(path: Path):
+    """{key: [values]} of the gcode's CONFIG_BLOCK (self-contained: no import
+    of the official script's internals)."""
+    out: dict = {}
+    inside = False
+    for line in path.read_text(encoding="utf-8-sig",
+                               errors="replace").splitlines():
+        s = line.strip()
+        if s == "; CONFIG_BLOCK_START":
+            inside = True
+            continue
+        if s == "; CONFIG_BLOCK_END":
+            inside = False
+            continue
+        if not inside:
+            continue
+        m = CONF_RE.match(line)
+        if m:
+            out.setdefault(m.group(1), []).append(m.group(2).strip())
+    return out
+
+
+def flow_index(cfg) -> int:
+    """0 = standard, 1 = high_flow — which entry of the per-flow arrays this
+    gcode was sliced with (from its own nozzle/filament_volume_type)."""
+    val = cfg.get("nozzle_volume_type") or cfg.get("filament_volume_type") or []
+    joined = ",".join(val).lower()
+    return 1 if "high_flow" in joined else 0
 
 
 def effective_diff(a: Path, b: Path):
     """Index-resolved comparison — the doc's '高流量参数序号访问' check.
 
-    The gcode carries the packages' per-flow ARRAYS (e.g. sparse_infill_speed
-    '550,600' on the STD package and '270,550' on the HF one), so a raw
-    comparison flags them even when the EFFECTIVE entry (the one selected by
-    the flow mode) matches. This walks every numeric key from the official
-    report and compares A's value at ITS flow index with B's at ITS index.
-    Returns (mismatches, checked_keys)."""
-    import importlib.util
-    import re as _re
-    spec = importlib.util.spec_from_file_location("cmpx2", str(COMPARE))
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    ca, cb = mod.parse_gcode_config(a), mod.parse_gcode_config(b)
-    ia, ib = flow_index(a), flow_index(b)
+    The gcode carries the packages' per-flow ARRAYS (sparse_infill_speed
+    '550,600' on the STD package vs '270,550' on the HF one), so the official
+    raw comparison counts all of them as differences even when the EFFECTIVE
+    entry (the one the flow mode selects) is the same. This compares A's value
+    at ITS index against B's at ITS index for every multi-entry numeric key.
+    Returns (mismatches, checked)."""
+    ca, cb = read_config(a), read_config(b)
+    ia, ib = flow_index(ca), flow_index(cb)
     print(f"{LOG} flow indices: A={ia} B={ib}")
     mismatches, checked = [], 0
-    for key in sorted(set(ca.by_key) | set(cb.by_key)):
-        va, vb = ca.values(key), cb.values(key)
-        if va == vb or va is None or vb is None:
+    for key in sorted(set(ca) | set(cb)):
+        va, vb = ca.get(key, []), cb.get(key, [])
+        if va == vb or not va or not vb:
             continue
-        if not (mod.is_numeric_config(va) or mod.is_numeric_config(vb)):
-            continue
-        # split the (possibly multi-entry) values and take each side's index
-        def pick(v):
-            parts = [p.strip() for p in ",".join(v).split(",")]
-            if len(parts) > 1 and len(parts) > max(ia, ib):
-                return parts[ia if v is va else ib]
-            return parts[0] if parts else ""
-        ea, eb = pick(va), pick(vb)
-        if len(va) > 1 or len(vb) > 1:
-            checked += 1
-            if ea != eb:
-                mismatches.append((key, ea, eb))
+        pa = [p.strip() for p in ",".join(va).split(",")]
+        pb = [p.strip() for p in ",".join(vb).split(",")]
+        if len(pa) < 2 or len(pb) < 2:
+            continue                      # not a per-flow array on both sides
+        if not (all(NUM_RE.match(x) for x in pa)
+                and all(NUM_RE.match(x) for x in pb)):
+            continue                      # non-numeric key
+        checked += 1
+        if pa[min(ia, len(pa) - 1)] != pb[min(ib, len(pb) - 1)]:
+            mismatches.append((key, pa[min(ia, len(pa) - 1)],
+                               pb[min(ib, len(pb) - 1)]))
     return mismatches, checked
 
 
