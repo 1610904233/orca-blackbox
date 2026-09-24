@@ -1209,11 +1209,35 @@ def op_slice(session, results, key="slice completes", export_to=None,
             results[key] = "FAIL (done-button click rejected)"
             return False
     elif not click_slice_start(session):
-        print(f"{LOG} {key}: idle slice button not clickable — trying the "
-              f"done rendering")
-        if not click_slice_again(session):
-            results[key] = "FAIL (slice click rejected)"
-            return False
+        # The message click can be rejected while the button still renders
+        # idle — right after a Nozzle Flow change the plater needs genuine
+        # input, the same lesson as the Plaster context menu / export button
+        # (measured 09-24: m8f/m8g's post-flow-switch slice). Try a REAL click
+        # on the matched button before falling back to the done rendering.
+        from harness.anchors import match
+        from m2_slice_chain import RESOURCE
+        started = False
+        img = capture_bgr(session)
+        score, bx, by, bw, bh = match(
+            img, str(RESOURCE / "slice_plate_button.png"))
+        if score >= 0.85:
+            sx, sy = client(session, bx + bw // 2, by + bh // 2)
+            winutil.user32.SetCursorPos(sx, sy)
+            time.sleep(0.25)
+            winutil.real_click_screen(sx, sy)
+            print(f"{LOG} {key}: real click on the slice button @({sx},{sy})")
+            time.sleep(2.5)
+            after, *_ = match(capture_bgr(session),
+                              str(RESOURCE / "slice_plate_button.png"))
+            started = after < 0.7
+            print(f"{LOG} {key}: after real click idle-score={after:.3f} "
+                  f"started={started}")
+        if not started:
+            print(f"{LOG} {key}: idle slice button not clickable — trying the "
+                  f"done rendering")
+            if not click_slice_again(session):
+                results[key] = "FAIL (slice click rejected)"
+                return False
     done, _score = wait_slicing_done(session, timeout_s=timeout_s)
     print(f"{LOG} {key}: {done}")
     results[key] = "PASS" if done else "FAIL"
