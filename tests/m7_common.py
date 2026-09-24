@@ -1170,11 +1170,44 @@ def click_slice_again(session):
     return True
 
 
+def wait_slice_button_ready(session, timeout_s=120):
+    """Poll until the Slice button is in its IDLE or DONE rendering.
+
+    A parameter change (e.g. the Nozzle Flow switch) makes the app auto-slice;
+    while that render is busy NEITHER the idle nor the done template matches,
+    so both click paths fail with 'slice click rejected' (measured 09-24 on
+    m8f/m8g right after Flow -> High Flow). Returns the template name that
+    matched, or '' on timeout."""
+    import cv2
+    from harness.anchors import match
+    from m2_slice_chain import RESOURCE
+    tpl_idle = cv2.imread(str(RESOURCE / "slice_plate_button.png"))
+    tpl_done = cv2.imread(str(RESOURCE / "slice_button_done.png"))
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        img = capture_bgr(session)
+        s_idle, _, _, _, _ = match(img, tpl_idle)
+        if s_idle >= 0.85:
+            return "idle"
+        s_done, _, _, _, _ = match(img, tpl_done)
+        if s_done >= 0.85:
+            return "done"
+        time.sleep(1.5)
+    return ""
+
+
 def op_slice(session, results, key="slice completes", export_to=None,
              timeout_s=600):
     """Click Slice, wait done, optionally export gcode to export_to."""
     from m2_slice_chain import click_slice_start, wait_slicing_done
-    if not click_slice_start(session):
+    state = wait_slice_button_ready(session)
+    print(f"{LOG} {key}: slice button state={state!r}")
+    if state == "done":
+        # already sliced (auto-slice after a parameter change): re-slice
+        if not click_slice_again(session):
+            results[key] = "FAIL (done-button click rejected)"
+            return False
+    elif not click_slice_start(session):
         print(f"{LOG} {key}: idle slice button not clickable — trying the "
               f"done rendering")
         if not click_slice_again(session):
