@@ -451,8 +451,22 @@ def switch_flow_combo(session, target_substr, tries=4):
         winutil.msg_click_screen(cx, cy, session.hwnd)
         popup = export_util.wait_popup(session.pid, timeout_s=4.0)
         if not popup:
+            print(f"{LOG} flow attempt {attempt + 1}: popup did not open")
+            time.sleep(0.6)
             continue
         pr = popup[2]
+        # OCR the popup and click the ROW whose text contains the target —
+        # the blind pitch walk missed whenever the popup failed to reopen on
+        # the 2nd attempt, so the switch never happened (measured 09-24: the
+        # options list DID contain 'High Flow' all along, g33).
+        if click_popup_row(session, pr, target_substr, popup_hwnd=popup[3]):
+            time.sleep(0.9)
+            now = nozzle_reads(session).get("flow") or ""
+            print(f"{LOG} flow OCR row -> {now!r}")
+            if target_substr in now:
+                time.sleep(0.8)
+                return now
+            continue
         px = (pr[0] + pr[2]) // 2
         py = pr[1] + 14 + attempt * 28
         winutil.msg_click_screen(px, py)
