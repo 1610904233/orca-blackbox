@@ -232,9 +232,13 @@ def main() -> int:
     if ok_a and ok_b:
         rc, report = compare_gcodes(g_a, g_b)
         mode_diff, num_diff = report_counts(report)
-        results["#135 std-vs-hf configs identical"] = (
-            "PASS" if rc == 0
-            else f"FAIL (rc={rc}, mode={mode_diff}, numeric={num_diff})")
+        # 判据（按文档语义 + 官方脚本的分类）: 两份的**数值配置**必须完全一致
+        # （包构造保证 (STD-TEST+标准) 与 (HF-TEST+高流量) 取值相同）；
+        # 流量模式键（nozzle/filament_volume_type 等）**应当**不同 —— 它还
+        # 顺带证明流量确实切过去了（mode>=1）。
+        results["#135 std-vs-hf numeric configs identical"] = (
+            "PASS" if num_diff == 0 and mode_diff >= 1
+            else f"FAIL (rc={rc}, numeric={num_diff}, mode={mode_diff})")
 
     return m7.m7_verdict(results)
 

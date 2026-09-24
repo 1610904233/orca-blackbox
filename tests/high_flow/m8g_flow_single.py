@@ -107,8 +107,9 @@ def main() -> int:
     if ok_c and ok_d:
         rc, report = compare_gcodes(g_c, g_d)
         mode, numeric = report_counts(report)
+        # 数值配置 0 差异（单一变量），且流量模式键必须确有变化（证明切过去了）
         results["#136 single-variable: numeric diffs 0"] = (
-            "PASS" if numeric == 0 and mode >= 0
+            "PASS" if numeric == 0 and mode >= 1
             else f"FAIL (rc={rc}, numeric={numeric}, mode={mode})")
     results["app alive"] = "PASS" if True else "FAIL"
     return m7.m7_verdict(results)
