@@ -110,34 +110,41 @@ def viewport_diff(img_a, img_b):
 # --- filament slot grid -------------------------------------------------------
 
 def filament_slots(session):
-    """[(slot_no, combo(text,rect,hwnd), picker_rect)] parsed from the
-    sidebar child tree. Chips are the numbered text children.
+    """[{slot, combo(text,rect,hwnd), picker_rect, swatch_rect}] from the
+    sidebar child tree.
 
-    Rows are located RELATIVE to the 'Filaments' section label. The previous
-    absolute band (screen y 395-540) was calibrated on the original rig's
-    MAXIMIZED window; this rig runs the app at its default 1200x800 where the
-    grid sits higher, so the band matched nothing and every slot switch failed
-    (measured 09-21: switch_filament_preset -> ''). Falls back to the old band
-    when the label is absent.
+    STRUCTURAL, not band-based: the numbered chips are found by their text
+    ('1'..'5', a small button), and each row's combo / legacy picker is matched
+    by sharing the chip's row (same centre y, to the right of the chip). The
+    previous version scoped rows with the 'Filaments' label + a fixed y band and
+    an x<425 filter calibrated on the 1200x800 window — under the MAXIMIZED
+    layout (1920x1080) that band matched only ONE row (measured 09-28: slots ==
+    [(5, ...)]), so every slot lookup failed.
+
+    It also computed `picker` OUTSIDE the per-chip loop, so every slot was
+    handed the LAST row's rectangle — that is why clicking slot 2's colour
+    control opened the wrong thing (leading, via the legacy Edit menu, to the
+    native colour picker instead of the official library).
+
+    `swatch` is the numbered chip itself: its background is the filament colour
+    and, for Snapmaker presets, clicking it opens the OFFICIAL colour library
+    (probe 09-28: chip '2' -> popup carrying 'Official Filaments' / 'sku
+    34205'). `picker` is the 16x25 button to its right, whose click opens the
+    legacy Edit/Delete/Merge #32768 menu.
     """
     rows = list(export_util._children_texts(session.hwnd))
-    anchor = next((r for t, r, _c in rows if t.strip() == "Filaments"), None)
-    lo, hi = (anchor[1] - 20, anchor[1] + 220) if anchor else (395, 540)
-    chips, texts, pickers = [], [], []
+    chips, texts, smalls = [], [], []
     for text, rect, ch in rows:
-        if not (lo <= rect[1] <= hi and rect[0] < 425):
+        if rect[0] > 520 or rect[2] <= rect[0]:     # sidebar only, sane rect
             continue
         w, h = rect[2] - rect[0], rect[3] - rect[1]
-        if text.strip().isdigit() and w < 26:
-            chips.append((int(text.strip()), rect))
+        t = text.strip()
+        if t.isdigit() and len(t) <= 2 and w <= 30 and h <= 32:
+            chips.append((int(t), rect))
         elif 12 <= w <= 30 and 16 <= h <= 30:
-            pickers.append(rect)
-        elif text.strip() and w >= 60:
-            # combo candidates are matched STRUCTURALLY below (a wide text child
-            # hugging the chip's right edge). Text markers are not usable: the
-            # slot combos carry plain filament names ('Generic PETG'), so the old
-            # '(' / '@' / 'Filament' test dropped them all (measured 09-21).
-            texts.append((text.strip(), rect, ch))
+            smalls.append(rect)
+        elif t and w >= 60:
+            texts.append((t, rect, ch))
     out = []
     for no, chip_rect in sorted(chips):
         cy = (chip_rect[1] + chip_rect[3]) / 2
@@ -148,13 +155,35 @@ def filament_slots(session):
                 if combo is None or rect[0] < combo[1][0]:
                     combo = (text, rect, ch)
         picker = None
-        for rect in pickers:
+        for rect in smalls:
             ry = (rect[1] + rect[3]) / 2
             if abs(ry - cy) < 12 and rect[0] > chip_rect[2] - 6:
                 if picker is None or rect[0] < picker[0]:
                     picker = rect
-        out.append({"slot": no, "combo": combo, "picker": picker})
+        out.append({"slot": no, "combo": combo, "picker": picker,
+                    "swatch": chip_rect})
     return out
+
+
+
+def wait_slots(session, timeout_s=25.0):
+    """filament_slots() once the sidebar actually exposes the slot rows.
+
+    The sidebar is populated ASYNCHRONOUSLY: reading the child tree right after
+    the GL canvas reports ready returns no slot rows at all, which surfaced as
+    "slot 2 combo not found" and killed the whole case in its first step
+    (measured 09-28 — the early system-preset re-apply). Poll instead of
+    assuming the layout exists."""
+    deadline = time.monotonic() + timeout_s
+    slots = filament_slots(session)
+    while time.monotonic() < deadline:
+        if any(s.get("combo") for s in slots):
+            return slots
+        time.sleep(0.5)
+        slots = filament_slots(session)
+    print(f"{LOG} wait_slots: no slot combo appeared within {timeout_s:.0f}s "
+          f"({[{k: (v is not None) for k, v in s.items() if k != 'slot'} for s in slots]})")
+    return slots
 
 
 def combo_text(ch):
@@ -217,6 +246,22 @@ def _ocr_click_line(session, popup_rect, target_substr, popup_hwnd=None) -> bool
     return False
 
 
+def _real_wheel(x, y, notches):
+    """Real (input-queue) wheel scroll at a screen point.
+
+    Self-contained on purpose: some app popups ignore message-level
+    WM_MOUSEWHEEL — the filament preset list never moved on 2.4.0, so an
+    alphabetically earlier target ('Snapmaker PLA Rainbow' above the current
+    selection) stayed unreachable (measured 09-28: 11 attempts OCR'd the same
+    lower window). Inlined via ctypes so no harness-side change has to be
+    shipped alongside the case."""
+    import ctypes  # noqa: PLC0415
+    u = ctypes.WinDLL("user32", use_last_error=True)
+    u.SetCursorPos(int(x), int(y))
+    time.sleep(0.1)
+    u.mouse_event(0x0800, 0, 0, 120 * int(notches), 0)
+
+
 def click_popup_row(session, popup_rect, target_substr, popup_hwnd=None,
                     scrolls=14, notch=3) -> bool:
     """Find the target row in the popup (OCR of the POPUP window), scrolling.
@@ -245,12 +290,31 @@ def click_popup_row(session, popup_rect, target_substr, popup_hwnd=None,
             return True
         wheel(notch)
         time.sleep(0.5)
+    # Second pass with REAL wheel input: on 2.4.0 the preset popup ignored
+    # message-level WM_MOUSEWHEEL (the OCR window never moved, so a target
+    # ABOVE the opening position was unreachable — measured 09-28).
+    print(f"{LOG} popup: message-level wheel found nothing — retrying with real input")
+    _real_wheel(x, y, -scrolls)
+    time.sleep(0.7)
+    for _step in range(scrolls + 1):
+        if _ocr_click_line(session, popup_rect, target_substr, popup_hwnd):
+            return True
+        _real_wheel(x, y, max(1, notch // 2))
+        time.sleep(0.45)
     return False
 
 
-def switch_filament_preset(session, slot, target_substr, tries=30):
+def switch_filament_preset(session, slot, target_substr, tries=30, force=False):
     """Row-probe the slot's preset combo until the text flips to target.
     Returns the final text ('' on failure).
+
+    force=True re-applies the preset even when the combo text ALREADY contains
+    target_substr. That early return is a trap for project-carried settings: the
+    project embeds its own filament_* values (mixed_filament_test.3mf carries 50
+    of them), so slot 2 reads 'Snapmaker PLA Silk @U1 0.8 nozzle*' — the preset
+    NAME with Orca's profile-modified marker. Returning on the name match leaves
+    the PROJECT's values (and the asterisk) in place, while the case is supposed
+    to run on the SYSTEM preset (user instruction, 09-24).
 
     tries=30: the filament popup lists every installed preset (aliases, Bambu,
     Generic, …) and the target can sit well past row 10 — with tries=10 the walk
@@ -258,17 +322,28 @@ def switch_filament_preset(session, slot, target_substr, tries=30):
     09-21: 'Bambu ASA-CF' instead of 'Generic ABS'). Each attempt re-opens the
     popup and clicks one row deeper, so the walk is O(rows), not a search.
     """
-    slots = filament_slots(session)
+    slots = wait_slots(session)
     hit = next((s for s in slots if s["slot"] == slot), None)
     if not hit or not hit["combo"]:
         print(f"{LOG} slot {slot} combo not found")
         return ""
     text, rect, ch = hit["combo"]
-    if target_substr in combo_text(ch):
+    if not force and target_substr in combo_text(ch):
         return combo_text(ch)
+    # Budget guard: each attempt opens the popup (4s wait) and may scroll it 24
+    # notches, so `tries=30` can run tens of minutes when the target row is not
+    # in the list at all — a case that should FAIL loudly instead hung with the
+    # screen frozen (measured 09-24: the force=True re-apply, which cannot use
+    # the name-match short-circuit, sat >15min). The re-apply case also only
+    # needs a short walk: the preset is already the one displayed on the combo.
+    deadline = time.monotonic() + (90.0 if force else 240.0)
     cx = (rect[0] + rect[2]) // 2
     cy = (rect[1] + rect[3]) // 2
     for attempt in range(tries):
+        if time.monotonic() > deadline:
+            print(f"{LOG} slot{slot} preset-switch budget exhausted after "
+                  f"{attempt} attempt(s) — reporting the current text")
+            break
         winutil.msg_click_screen(cx, cy, session.hwnd)
         popup = export_util.wait_popup(session.pid, timeout_s=4.0)
         if not popup:
@@ -288,6 +363,21 @@ def switch_filament_preset(session, slot, target_substr, tries=30):
         # 'eSUN PLA+' while looking for '- HF-TEST'), which then poisons every
         # later step. Report the current text instead and let the caller fail
         # loudly.
+        # diagnostic: the popup's own text, so a failed match shows what the
+        # list actually offered (OCR is the only reader — the rows are
+        # self-drawn and expose no child text)
+        try:
+            from harness import mix_dialog_util as _mdu
+            import cv2 as _cv2
+            import numpy as _np
+            pw, ph, pbuf = winutil.capture_window(popup[3])
+            pimg = _cv2.cvtColor(_np.frombuffer(pbuf, _np.uint8).reshape(ph, pw, 4),
+                                 _cv2.COLOR_BGRA2BGR)
+            words = [w for w, *_ in _mdu.ocr_words_img(pimg, scale=2)]
+            print(f"{LOG} slot{slot} popup OCR ({len(words)} words): "
+                  f"{' '.join(words)[:280]!r}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"{LOG} slot{slot} popup OCR unavailable: {exc}")
         print(f"{LOG} slot{slot} target {target_substr!r} not found by OCR "
               f"(attempt {attempt + 1}/{tries})")
         time.sleep(0.6)
@@ -325,17 +415,128 @@ def confirm_flow_dialog(session):
     return ""
 
 
-def click_color_picker(session, slot, timeout_s=6.0, dialog_cls="#32770"):
-    """Click the slot's color picker button; return the OFFICIAL color
-    dialog ('Color') tuple or None.
+OFFICIAL_MARKER = "official filaments"
 
-    V2.3.6 chain (measured 09-22, g7/g9): the picker (REAL click) opens a
-    native #32768 menu (Edit/Delete/Merge with); its first row 'Edit'
-    (REAL click) opens the 'Material settings' dialog whose 'colourpicker'
-    child then needs a MESSAGE click on the child itself — a real click
-    there is swallowed by the modal dialog and opens nothing (g7b) — which
-    finally opens the official 'Color' #32770. pass dialog_cls=None to fall
-    back to the SidePopup wxWindowNR shape."""
+
+def official_color_popup(session, timeout_s=8.0):
+    """The OFFICIAL colour library (#32770, empty title, children carrying
+    'Official Filaments' + the current colour's name and SKU), or None.
+
+    Measured 09-24/28 with diag_m8b_swatch_probe (8 controls in slot 2's row
+    clicked one by one): the popup comes from the slot's NUMBERED COLOUR CHIP
+    (child 'Button' with text '2', whose background is the filament colour) for
+    a Snapmaker-named preset, while the 16x25 button to its right opens the
+    Edit/Delete/Merge #32768 menu — the legacy chain that ends at the NATIVE
+    Windows picker. The chip path was never taken by the old code because
+    filament_slots() picked its 'picker' by size (leftmost 12-30px child)."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        for cls, title, rect, hwnd in _visible_toplevels(session.pid):
+            if cls != "#32770":
+                continue
+            texts = [t.strip().lower() for t, _r, _h
+                     in export_util._children_texts(hwnd) if t.strip()]
+            if any(OFFICIAL_MARKER in t for t in texts):
+                return cls, title, rect, hwnd
+        time.sleep(0.3)
+    return None
+
+
+def popup_colour_texts(popup):
+    """(name, sku) of the official popup's current colour, or (None, None)."""
+    names, skus = [], []
+    for t, _r, _h in export_util._children_texts(popup[3]):
+        t = t.strip()
+        if not t:
+            continue
+        if t.lower().startswith("sku"):
+            skus.append(t)
+        elif OFFICIAL_MARKER not in t.lower() and t.lower() not in (
+                "panel", "cancel", "ok", "+ other colors", "official filaments"):
+            names.append(t)
+    return (names[0] if names else None), (skus[0] if skus else None)
+
+
+def slot_swatch_rgb(session, slot):
+    """Mean BGR of the slot's colour chip (its background IS the filament
+    colour) — the swatch surface the baseline rows talk about."""
+    import cv2  # noqa: PLC0415
+    import numpy as np  # noqa: PLC0415
+    slots = wait_slots(session)
+    hit = next((s for s in slots if s["slot"] == slot), None)
+    if not hit or not hit.get("swatch"):
+        return None
+    x0, y0, x1, y1 = hit["swatch"]
+    crop = _screen_crop(x0 + 4, y0 + 4, x1 - 4, y1 - 4)
+    if crop is None or crop.size == 0:
+        return None
+    # cv2 BGR order; the chip is a flat colour, so the mean is stable
+    return [int(v) for v in crop.reshape(-1, 3).mean(axis=0)]
+
+
+def _screen_crop(x0, y0, x1, y1):
+    """Crop the desktop grab; the chip rects come from GetWindowRect (screen
+    coordinates), so they apply directly here (the earlier stills mixed client
+    and screen coordinates and cropped the wrong region, measured 09-24)."""
+    import cv2  # noqa: PLC0415
+    import numpy as np  # noqa: PLC0415
+    sw, sh, buf = winutil.screen_grab()
+    img = np.frombuffer(buf, np.uint8).reshape(sh, sw, 4)
+    img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+    return img[max(0, y0):y1, max(0, x0):x1]
+
+
+def click_official_color_popup(session, slot, timeout_s=8.0):
+    """Click the slot's colour chip and return the official popup (or None)."""
+    slots = wait_slots(session)
+    hit = next((s for s in slots if s["slot"] == slot), None)
+    if not hit or not hit.get("swatch"):
+        print(f"{LOG} slot {slot} colour chip not found")
+        return None
+    x0, y0, x1, y1 = hit["swatch"]
+    sx, sy = winutil.client_to_screen(session.hwnd,
+                                      (x0 + x1) // 2, (y0 + y1) // 2)
+    winutil.user32.SetCursorPos(sx, sy)
+    time.sleep(0.25)
+    winutil.real_click_screen(sx, sy)
+    popup = official_color_popup(session, timeout_s=timeout_s)
+    print(f"{LOG} slot{slot} chip click at ({sx},{sy}) -> "
+          f"{'official colour popup' if popup else 'nothing'}")
+    return popup
+
+
+def click_color_picker(session, slot, timeout_s=6.0, dialog_cls="#32770"):
+    """Click the slot's colour control; return the OFFICIAL colour popup tuple
+    or, when the slot holds a non-Snapmaker filament (which falls back to the
+    legacy picker), the native 'Color' dialog.
+
+    Preferred path (measured 09-28): the slot's NUMBERED COLOUR CHIP opens the
+    official library directly for Snapmaker presets. Only when no official
+    popup appears does the legacy chain run: picker (REAL click) -> native
+    #32768 menu (Edit/Delete/Merge with) -> its first row 'Edit' -> 'Material
+    settings' dialog -> its 'colourpicker' child (MESSAGE click: a real click
+    there is swallowed, g7b) -> native 'Color' #32770."""
+    popup = click_official_color_popup(session, slot, timeout_s=timeout_s)
+    if popup:
+        return popup
+    # A non-official filament (非官方耗材, baseline #44's 纯色 case) falls back
+    # to the LEGACY picker and the chip click already opened it — take that one
+    # instead of running the menu chain again and stacking a second dialog
+    # (measured 09-28: slot 1 'Generic PETG' -> 'Please choose the filament
+    # color' with '&Basic colors:').
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        native_dlg = export_util.wait_toplevel(
+            session.pid, lambda c, t, r: c == "#32770", timeout_s=0.5)
+        if native_dlg:
+            texts = [x.strip().lower() for x, _r, _h
+                     in export_util._children_texts(native_dlg[3])]
+            if any("basic colors" in x for x in texts):
+                print(f"{LOG} slot{slot}: legacy picker opened by the chip "
+                      f"(title={native_dlg[1]!r})")
+                return native_dlg
+            break
+        time.sleep(0.3)
     slots = filament_slots(session)
     hit = next((s for s in slots if s["slot"] == slot), None)
     if not hit or not hit["picker"]:
