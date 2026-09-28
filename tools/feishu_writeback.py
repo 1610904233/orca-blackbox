@@ -57,21 +57,25 @@ def load_map(path: Path) -> dict[str, dict]:
     return raw
 
 
-def map_from_annotations() -> dict[str, dict]:
+def map_from_annotations(export: Path | None = None) -> dict[str, dict]:
     """record_id -> {case, id, title} built from the case annotations.
 
     Source of truth: each case script declares `# feishu: baseline#<用例编号> ...`
     (cases.feishu_refs); the record_id for a number comes from the live-table
-    export artifacts/feishu_baseline_full.ndjson. This keeps the writeback keyed
-    to the CURRENT table instead of a hand-kept map file.
+    export (--export, default artifacts/feishu_baseline_full.ndjson). This keeps
+    the writeback keyed to the CURRENT table instead of a hand-kept map file.
+
+    Pass --export when the target table is not the default one — the table the
+    user tracks (NhqXbsLgPaJ4wvsGtjecsx83n3c/tblWFGvJ5KQGVInq) has its own
+    record_ids, so an ids-from-the-other-table map would patch nothing.
     """
-    nd = ROOT / "artifacts" / "feishu_baseline_full.ndjson"
+    nd = Path(export) if export else (ROOT / "artifacts" / "feishu_baseline_full.ndjson")
     if not nd.exists():
         sys.stderr.write(
-            "missing artifacts/feishu_baseline_full.ndjson — export the live table first:\n"
+            "missing " + str(nd) + " — export the live table first:\n"
             '  lark-cli base +record-list --base-token ' + DEFAULT_BASE +
             ' --table-id ' + DEFAULT_TABLE +
-            ' --format ndjson --output artifacts/feishu_baseline_full.ndjson --limit 2000 --overwrite\n')
+            ' --format ndjson --output ' + str(nd) + ' --limit 2000 --overwrite\n')
         sys.exit(2)
     by_num: dict[str, dict] = {}
     for ln in nd.read_text(encoding="utf-8").splitlines():
@@ -97,7 +101,16 @@ def map_from_annotations() -> dict[str, dict]:
             entry = by_num.get(n)
             if not entry:
                 continue
-            out[entry["record_id"]] = {"case": case, "id": n, "title": entry["title"]}
+            rid = entry["record_id"]
+            prev = out.get(rid)
+            if prev is None:
+                out[rid] = {"case": case, "id": n, "title": entry["title"]}
+            elif case not in case_tokens(prev):
+                # several cases can automate the same baseline row (m7t73 and
+                # m7t74 both cover #152) — keep them all as "/"-separated tokens
+                # (case_tokens/matches already read that shape). Overwriting made
+                # every earlier name unresolvable and aborted the whole writeback.
+                prev["case"] = prev["case"] + "/" + case
     return out
 
 
@@ -221,6 +234,10 @@ def main() -> int:
     ap.add_argument("--map", type=Path, default=DEFAULT_MAP, help="record_id -> {case,...} JSON")
     ap.add_argument("--from-annotations", action="store_true",
                     help="rebuild the map from the case `# feishu:` annotations + the live export")
+    ap.add_argument("--export", type=Path, default=None,
+                    help="record-list ndjson backing --from-annotations (default: "
+                         "artifacts/feishu_baseline_full.ndjson; must be an export of the "
+                         "table named by --base-token/--table-id)")
     ap.add_argument("--base-token", default=DEFAULT_BASE)
     ap.add_argument("--table-id", default=DEFAULT_TABLE)
     ap.add_argument("--field", default="自动化状态")
@@ -231,7 +248,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.from_annotations:
-        mapping = map_from_annotations()
+        mapping = map_from_annotations(args.export)
         print(f"[writeback] map from annotations: {len(mapping)} record(s)")
     else:
         if not args.map.exists():

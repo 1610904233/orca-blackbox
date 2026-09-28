@@ -368,6 +368,23 @@ def msg_text(hwnd: int, text: str) -> None:
         _send_msg(hwnd, WM_CHAR, ord(ch), 0)
 
 
+WM_GETTEXT = 0x000D
+
+
+def edit_text(hwnd: int, size: int = 64) -> str:
+    """A control's text, read with WM_GETTEXT.
+
+    GetWindowTextW (window_title) cannot read a control living in ANOTHER
+    process: it only returns the cached window caption, so an Edit control's
+    contents come back empty while neighbouring Static labels read fine. That
+    made the color dialog's Red/Green/Blue fields look blank (measured 09-24,
+    m8b #46/#47 readback) even though the identifiers were found.
+    """
+    buf = ctypes.create_unicode_buffer(size)
+    user32.SendMessageW(ctypes.c_void_p(hwnd), WM_GETTEXT, size, buf)
+    return buf.value
+
+
 WM_KEYDOWN = 0x0100
 WM_KEYUP = 0x0101
 VK_CONTROL = 0x11
@@ -487,6 +504,22 @@ SWP_NOSIZE = 0x0001
 SWP_NOMOVE = 0x0002
 SWP_NOACTIVATE = 0x0010
 GWL_EXSTYLE = -20
+
+
+MOUSEEVENTF_WHEEL = 0x0800
+
+
+def real_wheel_screen(x: int, y: int, notches: int) -> None:
+    """Real (input-queue) wheel scroll at a screen point.
+
+    Positive notches scroll up/away from the user. Needed because some app
+    popups ignore message-level WM_MOUSEWHEEL: the filament preset list stayed
+    put on 2.4.0, so an alphabetically earlier target ('Snapmaker PLA Rainbow'
+    above the current selection) could never be reached (measured 09-28 — the
+    popup OCR kept showing the same lower window across 11 attempts)."""
+    user32.SetCursorPos(int(x), int(y))
+    time.sleep(0.1)
+    user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, 120 * int(notches), 0)
 
 
 def demote_window(hwnd: int) -> bool:
