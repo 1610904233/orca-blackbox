@@ -22,6 +22,20 @@ param([string[]]$Cases = @(), [switch]$OnlyFailed, [switch]$NoWarmup, [switch]$W
 # '& hv_go.ps1 a b c' binds all) — merge so both invocation forms
 # see the full explicit list (measured 09-02 night: -File 5 names
 # launched "1 cases").
+#
+# The SECOND token is the nastier half of that quirk: `-Cases A B C` binds A to
+# -Cases, B to the NEXT POSITIONAL parameter (here $Suite) and C.. to $args, so
+# one case name disappeared and -Suite was silently poisoned (measured 09-24:
+# 33 baseline names -> "REGRESSION RUN: 32 cases", m3e_preset_switch never ran).
+# Repair it: a $Suite value that is not a known suite can only be a swallowed
+# case name, so push it back onto the list.
+$knownSuites = @('regression', 'baseline', 'smoke', 'all')
+if ($Suite -and ($knownSuites -notcontains $Suite)) {
+    Write-Warning ("hv_go: -Suite got '" + $Suite + "' (not a suite name) — repairing the " +
+                   "-File parameter-swallow: treating it as a case name")
+    $Cases = @($Cases) + $Suite
+    $Suite = 'regression'
+}
 $Cases = @($Cases + @($args)) | Where-Object { $_ }
 $explicitCases = $PSBoundParameters.ContainsKey('Cases') -or @($args).Count -gt 0
 
@@ -110,6 +124,40 @@ if (-not $NoSync) {
   }
 }
 else { Write-Host "[2.5] guest sync skipped (-NoSync)" }
+
+# 2.6) pin the guest's interactive resolution. A VM restart — manual, or the
+# self-heal path that resumes a dead session — degrades the Hyper-V console to
+# 1024x768, and every pixel/OCR assertion then misreads (the calibration is
+# built for 1920x1080). hv_go used to only PRINT a "should be 1920x1080"
+# reminder, so a post-restart batch ran blind (measured 09-24: this bit us
+# twice, once as a full wasted run). Pin it in the INTERACTIVE session and
+# verify by reading the resolution back, refusing to launch on failure.
+$res = Invoke-Command -VMName $vm -Credential $cred -ScriptBlock {
+  (Get-CimInstance Win32_VideoController | Select-Object -First 1).CurrentHorizontalResolution
+} -ErrorAction SilentlyContinue
+if ("$res" -notmatch '^1920') {
+  Write-Host "[2.6] guest resolution is '$res' — pinning 1920x1080 in the interactive session..."
+  $pin = Invoke-Command -VMName $vm -Credential $cred -ScriptBlock {
+    param($sb, $py)
+    $inner = @"
+Set-Location $sb
+& '$py' $sb\setres_1080.py *>> C:\coil\setres_out.txt
+"@
+    [IO.File]::WriteAllText('C:\coil\run_setres.ps1', $inner)
+    $a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass -File C:\coil\run_setres.ps1'
+    $st = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
+    $p = New-ScheduledTaskPrincipal -GroupId 'INTERACTIVE'
+    Register-ScheduledTask -TaskName 'setres' -Action $a -Settings $st -Principal $p -Force | Out-Null
+    Start-ScheduledTask -TaskName 'setres'
+    Start-Sleep -Seconds 30
+    'width=' + (Get-CimInstance Win32_VideoController | Select-Object -First 1).CurrentHorizontalResolution
+  } -ArgumentList $guestSandbox, $guestPython
+  Write-Host "    $pin"
+  if ("$pin" -notmatch 'width=1920') {
+    throw "guest resolution pin failed ($pin) — refusing to launch a batch whose pixel assertions would misread"
+  }
+}
+else { Write-Host "[2.6] guest resolution ok ($res)" }
 
 # 3) push runner + launch INTERACTIVE task
 # NOTE: the case LIST is computed ON THE GUEST from cases.py — passing a
