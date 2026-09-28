@@ -211,3 +211,19 @@
    重选回系统预设**，并以"改耗材子菜单里该行无 `*`"作为断言证据。
 5. **预设下拉的滚动**：该弹窗**无视消息级滚轮**，必须用真实滚轮输入才能滚动——
    否则字母序在打开位置之上的预设（如 PLA Rainbow）无法被搜索到。
+
+### 台架环境说明（跑批沙盒 vs 用户环境）
+
+跑批用 `--datadir artifacts/m3_profile`（由 `harness/profile.py` 现场播种的沙盒）。播种时会从应用
+的 `resources/profiles` 拷入 **Snapmaker + BBL（Bambu Lab）两个厂商包** —— 装第二个厂商包是为了
+让**首次启动向导**不出现（它的门槛是"机器列表里存在非默认打印机"，09-03 实测：只装默认厂商时向导会
+弹出来挡住界面）。**副作用**：我们的耗材/预设下拉里会多出 **Bambu 与第三方（eSUN、Valment 等）**
+条目，而用户自己的配置目录里看不到这些（用户侧多半累积了厂商/机型过滤）。
+
+用例按**名字**匹配预设（`Snapmaker PLA Silk`、`Snapmaker PLA Rainbow` 等），多出的条目不影响判定。
+若以后需要严格贴近用户配置，建议把厂商列表做成**可配置开关**（仅 Snapmaker / Snapmaker+BBL），
+而不是手搓一个桩厂商包（vendor.json + 机型继承的维护成本与风险都不低）。
+
+> 时间戳口径：客机原先时区是 `Pacific Standard Time`（与宿主的 `China Standard Time` 差 15 小时，
+> **UTC 一直是准的**），09-28 已改为 `China Standard Time` 并 resync；此前按客机时间记录的
+> 截图/录像时间戳需要 +15 小时换算。
