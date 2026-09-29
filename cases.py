@@ -164,6 +164,11 @@ CASES: dict[str, dict] = {
     # 2026-09-23 拆分: #136 单一变量对比独立成例（同会话连切两次会把客机
     # 内存吃满 → cv2/tesseract OOM；各流量状态一个会话后不再撞墙）
     "m8g_flow_single": _r("m8", "A"),
+    # 2026-09-28 新增 #123（软化温度 → 温类归类 → GCode 更新）: 编辑器里
+    # 'Softening temperature' 就是 temperature_vitrification；改它并走
+    # "Save Filament as" 保存后重切，顶盖 SET_PURIFIER_MODE 的分支翻转
+    # （vitr<=50 → 强冷 MODE=1，>50 → 保温 MODE=3）。
+    "m8x_123_softening_temp": _r("m8", "A"),
 }
 
 
