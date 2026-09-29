@@ -227,3 +227,28 @@
 > 时间戳口径：客机原先时区是 `Pacific Standard Time`（与宿主的 `China Standard Time` 差 15 小时，
 > **UTC 一直是准的**），09-28 已改为 `China Standard Time` 并 resync；此前按客机时间记录的
 > 截图/录像时间戳需要 +15 小时换算。
+
+## 飞书「待实现」逐条落地（2026-09-29）
+
+基线表里标 `待实现` 的行按「跑通一条、写回一条」推进；已落地的两条（均在 Hyper-V 客机
+2.4.0 构建上实测，录像存 `artifacts/videos/`，写回已回读校验）：
+
+| 行 | 用例 | 结果 |
+|---|---|---|
+| #123 修改耗材预设的软化温度改变温类归类后 GCode 更新 | `m8x_123_softening_temp` | GREEN 17/17（含 GCode 里 `MODE/DESIRE_TEMP` 分支翻转） |
+| #137 耗材丝配置、工艺配置有流量喷嘴标志的参数对比 | `m8x_137_flow_param_tabs` | GREEN 15/15 |
+
+### #137 的两个面在哪里（测试方两次纠正后的实测结论）
+
+* **耗材侧** = `Material settings` 对话框里的 `[Standard flow] / [High flow]` 子 tab。
+* **工艺侧** = 侧边栏 `Process` 面板 **先把 `Advanced` 开关打开**，才会出现 **`Speed`** tab
+  （默认只有 Quality/Strength/Support/Multimaterial/Others 五个），Speed 页上同样有
+  `[Standard flow] / [High flow]`。预设名右侧三个图标是 `[保存][删除][搜索]`（点中间那个
+  弹的是 `Delete Preset`），右键/双击预设名都没有参数对话框 —— 工艺侧的流量面就在 Speed 页。
+* **带标志参数** = 测试包（`resources/user/default/`）里声明成两档值的键，例如耗材包
+  `nozzle_temperature=['210','220']`、`filament_flow_ratio=['0.95','0.966']`，工艺包
+  `process_flow_support=['standard','high_flow']`、`initial_layer_speed=['60','50']`、
+  `outer_wall_speed=['550','500']`。用例对两侧都做了**动手改值**的验证：改 A 模式后
+  B 模式仍读自己的值、且全页找不到新值；不带标志的参数（Idle temperature）两侧同步。
+* 踩坑：耗材编辑器的 `Cancel` 在 1920×1080 下**在屏幕外**，必须用 `Esc` 关闭并回读确认
+  —— 对话框没关时模态会吃掉后面所有侧边栏点击（工艺侧曾因此整段 FAIL）。
