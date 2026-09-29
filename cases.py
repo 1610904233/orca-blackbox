@@ -169,6 +169,10 @@ CASES: dict[str, dict] = {
     # "Save Filament as" 保存后重切，顶盖 SET_PURIFIER_MODE 的分支翻转
     # （vitr<=50 → 强冷 MODE=1，>50 → 保温 MODE=3）。
     "m8x_123_softening_temp": _r("m8", "A"),
+    # 2026-09-29 新增 #137（三类配置带流量喷嘴标志的参数对比）: 面在**0.4 喷嘴机型的
+    # 0.20mm Standard 工艺预设**里——工艺参数面板会出现 Standard / High Flow 两个 tab；
+    # 喷嘴区那个 Flow 组合框不是这条用例的面（0.8 喷嘴机型上它不可交互）。
+    "m8x_137_flow_param_tabs": _r("m8", "A"),
 }
 
 
