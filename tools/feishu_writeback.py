@@ -195,15 +195,17 @@ def cell_value(row: object) -> object:
     return row
 
 
-def verify_records(ids: list[str], base: str, table: str, field: str, value: str) -> None:
-    print(f"[writeback] read-back verify: {len(ids)} record(s), field '{field}' == '{value}' ...")
-    resp = run_lark(lark_cmd("base", "+record-get",
+def _record_get(ids: list[str], base: str, table: str, field: str) -> dict | None:
+    return run_lark(lark_cmd("base", "+record-get",
                              "--base-token", base, "--table-id", table,
                              "--field-id", field, "--format", "json",
                              "--json", json.dumps({"record_id_list": ids})))
+
+
+def _extract_values(resp: dict | None) -> dict:
+    """{record_id: cell value} from a +record-get response (shape-tolerant)."""
     if not resp or not isinstance(resp.get("data"), dict):
-        sys.stderr.write("read-back failed: unexpected response shape, cannot verify\n")
-        sys.exit(3)
+        return {}
     rows = resp["data"].get("data", [])
     rid_list = resp["data"].get("record_id_list") or []
     got = {}
@@ -216,12 +218,32 @@ def verify_records(ids: list[str], base: str, table: str, field: str, value: str
         for row in rows:  # legacy shape: [record_id, value]
             if isinstance(row, list) and len(row) >= 2:
                 got[str(row[0])] = cell_value(row[1])
-    bad = {rid: got.get(rid) for rid in ids if got.get(rid) != value}
-    if bad:
-        sample = ", ".join(f"{rid}={v!r}" for rid, v in list(bad.items())[:5])
-        sys.stderr.write(f"read-back MISMATCH on {len(bad)} record(s): {sample}\n")
-        sys.exit(3)
-    print(f"[writeback] verified: {len(ids)} record(s) == '{value}'")
+    return got
+
+
+def verify_records(ids: list[str], base: str, table: str, field: str, value: str,
+                   attempts: int = 5, delay_s: float = 3.0) -> None:
+    """Read the field back and require every id to carry `value`.
+
+    The Base is eventually consistent right after a batch update: the first read
+    following a successful write still returned the OLD value (measured 09-28:
+    11 records all stale; 09-29: #123 read '待实现' while the update had already
+    been accepted). Retry before reporting — only a value that stays wrong after
+    the attempts is a real mismatch."""
+    print(f"[writeback] read-back verify: {len(ids)} record(s), field '{field}' == '{value}' ...")
+    for attempt in range(1, attempts + 1):
+        got = _extract_values(_record_get(ids, base, table, field))
+        bad = {rid: got.get(rid) for rid in ids if got.get(rid) != value}
+        if not bad:
+            print(f"[writeback] verified: {len(ids)} record(s) == '{value}'")
+            return
+        if attempt < attempts:
+            print(f"[writeback] read-back attempt {attempt}/{attempts}: "
+                  f"{len(bad)} stale — retrying in {delay_s:.0f}s")
+            time.sleep(delay_s)
+    sample = ", ".join(f"{rid}={v!r}" for rid, v in list(bad.items())[:5])
+    sys.stderr.write(f"read-back MISMATCH on {len(bad)} record(s): {sample}\n")
+    sys.exit(3)
 
 
 def main() -> int:
