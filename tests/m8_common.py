@@ -398,17 +398,31 @@ def confirm_flow_dialog(session):
         return ""
     print(f"{LOG} flow prompt: {dlg[1]!r} rect={dlg[2]}")
     kids = export_util._children_texts(dlg[3])
-    print(f"{LOG} flow prompt children: {[(t[:18], r) for t, r, _c in kids if t.strip()][:8]}")
+    print(f"{LOG} flow prompt texts: {[t.strip() for t, _r, _c in kids if t.strip()][:10]}")
     for want in ("high", "高流量", "ok", "yes", "confirm", "确定"):
-        act = click_dialog_button(dlg[3], want)
-        if act:
-            print(f"{LOG} flow prompt -> {act}")
+        # NOTE: this used to call a non-existent click_dialog_button(); the path
+        # was never exercised (m8f/m8g only ever meet the high-flow prompt), so a
+        # different dialog shape — measured 09-29: an app error box raised while
+        # switching flow with an edited process parameter — crashed with
+        # NameError. Match and click the button here, with a REAL click: a modal
+        # dialog swallows message-level clicks (#123 lesson).
+        hit = next(((t.strip(), r) for t, r, _h in kids
+                    if want in t.strip().lower()), None)
+        if hit:
+            t, r = hit
+            cx, cy = (r[0] + r[2]) // 2, (r[1] + r[3]) // 2
+            winutil.user32.SetCursorPos(cx, cy)
+            time.sleep(0.2)
+            winutil.real_click_screen(cx, cy)
+            print(f"{LOG} flow prompt -> {t!r}")
             time.sleep(1.0)
-            return act
+            return t
     if kids:
         t, r, _c = [k for k in kids if k[0].strip()] or kids
-        winutil.msg_click_screen((r[0] + r[2]) // 2, (r[1] + r[3]) // 2,
-                                 dlg[3])
+        cx, cy = (r[0] + r[2]) // 2, (r[1] + r[3]) // 2
+        winutil.user32.SetCursorPos(cx, cy)
+        time.sleep(0.2)
+        winutil.real_click_screen(cx, cy)
         print(f"{LOG} flow prompt -> first child {t!r}")
         time.sleep(1.0)
         return f"first {t!r}"
