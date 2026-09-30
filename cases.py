@@ -173,6 +173,10 @@ CASES: dict[str, dict] = {
     # 0.20mm Standard 工艺预设**里——工艺参数面板会出现 Standard / High Flow 两个 tab；
     # 喷嘴区那个 Flow 组合框不是这条用例的面（0.8 喷嘴机型上它不可交互）。
     "m8x_137_flow_param_tabs": _r("m8", "A"),
+    # 2026-09-29 新增 #125（工艺全局辅材冲突，打开偏好后可切片）: 测试方口径
+    # **主材 = 对象的耗材丝、辅材 = 涂色**；面在准备页耗材列 + 涂色 gizmo +
+    # 切片按钮门禁 + Preferences 的 "Allow high/low temperature filament mixing"。
+    "m8x_125_aux_mix_pref": _r("m8", "A"),
 }
 
 
