@@ -230,13 +230,28 @@
 
 ## 飞书「待实现」逐条落地（2026-09-29）
 
-基线表里标 `待实现` 的行按「跑通一条、写回一条」推进；已落地的两条（均在 Hyper-V 客机
+基线表里标 `待实现` 的行按「跑通一条、写回一条」推进；已落地的三条（均在 Hyper-V 客机
 2.4.0 构建上实测，录像存 `artifacts/videos/`，写回已回读校验）：
 
 | 行 | 用例 | 结果 |
 |---|---|---|
 | #123 修改耗材预设的软化温度改变温类归类后 GCode 更新 | `m8x_123_softening_temp` | GREEN 17/17（含 GCode 里 `MODE/DESIRE_TEMP` 分支翻转） |
 | #137 耗材丝配置、工艺配置有流量喷嘴标志的参数对比 | `m8x_137_flow_param_tabs` | GREEN 15/15 |
+| #125 工艺全局辅材冲突，打开偏好后可以正常切片 | `m8x_125_aux_mix_pref` | GREEN 19/19 |
+
+### #125 的口径与那个"点不动"的坑（2026-09-30）
+
+* 测试方口径：**主材 = 对象的耗材丝；辅材 = 涂色**（painted）。高低温混用门禁对二者生效。
+* 预期链路：冲突时 Slice **置灰 + 红条 `Detected both high and low temperature` + 点击被吞**
+  （无法切片）→ 打开偏好 `Allow high/low temperature filament mixing` → 点 Slice 弹
+  `Confirm slicing`（正文点名 High `[1] Generic ABS` / Low `[2] Snapmaker PLA Silk`）→
+  Confirm → 应用切到 Preview，切片发起。
+* **坑**：偏好里那一行是**复选框**，点它会**立刻弹出** `…Material Mixing Risk`
+  （"Do you want to enable this feature?"），**只有按 Confirm 才真正启用**。把"弹框盖住
+  复选框造成的像素变化"当成开关翻转、接着用 WM_CLOSE 关偏好窗口，会把改动一起丢掉 ——
+  症状是门禁永不解除、点 Slice 毫无反应（排查花了大半天）。
+* 另一个自伤：`page()` 原来按文字取最左的 tab，**永远返回 Prepare**（截图里已在 Preview），
+  于是"切片已发起"被判成超时。现在按"哪个 tab 是高亮绿色"判定。
 
 ### #137 的两个面在哪里（测试方两次纠正后的实测结论）
 
