@@ -523,10 +523,21 @@ def gizmo_row_boxes_img(img, row_label, scale=3):
     # same for a missing ROW: the Rotate panel has two label rows
     # ('(relative)'/'(absolute)'); if only one row of numbers was read and
     # two labels are present, synthesise the other row at the row pitch.
+    #
+    # Two guards, both measured 10-12 on m7t74 (2.4.1):
+    #   * only labels NEAR the numeric row count — the options panel's own
+    #     'Seam position' label (y~830) matched startswith('position') too and
+    #     made len(label_ys) >= 2;
+    #   * the second label must be a real ROW PITCH away (>=15px), not the
+    #     panel's own row label sitting ~10px above its values. Together they
+    #     stop the synthesis from inventing an EMPTY row 27px above the fields
+    #     — that row took index 0, so the case typed into and read back the
+    #     wrong cell ('move X commits 60: FAIL (now "")').
     if len(rows) == 1 and len(label_ys) >= 2:
         ry = rows[0][0]
-        other = min(label_ys, key=lambda y: abs(y - ry))
-        if abs(other - ry) > 6:
+        near = [y for y in label_ys if 15 < abs(y - ry) <= 60]
+        other = min(near, key=lambda y: abs(y - ry)) if near else None
+        if other is not None:
             rows.append((ry + (27.0 if other > ry else -27.0), []))
     out: list = []
     seen_y: set = set()
@@ -642,6 +653,34 @@ def type_into_field(session, box, text, old_len=4, wake=False, recipe=0):
     # retry ladder can try again.
     got = crop_read_cell(capture_bgr(session), box[0], box[1])
     if got and not got.startswith(text):
+        # Focused-field rendering defeats OCR on the rotate panel (measured
+        # 10-12, m7t74: the field visibly holds '45' but the focused cell OCRs
+        # as '4' / '4|35' / '445559' — the caret/selection glyph splits the
+        # digits). Defocus WITHOUT leaving the row: click a sibling cell, read
+        # the target again, and only then commit. A clean read re-focuses the
+        # target and sends Enter, so a real dropped character still never
+        # commits.
+        sib = _sibling_box(session, box)
+        if sib is not None:
+            sx, sy = client(session, sib[0], sib[1])
+            winutil.user32.SetCursorPos(sx, sy)
+            time.sleep(0.2)
+            winutil.real_click_screen(sx, sy)
+            time.sleep(0.6)
+            got2 = crop_read_cell(capture_bgr(session), box[0], box[1])
+            print(f"{LOG} defocused read of the cell: {got2!r} (was {got!r})")
+            if got2 and got2.startswith(text):
+                gx, gy = client(session, box[0], box[1])
+                winutil.user32.SetCursorPos(gx, gy)
+                time.sleep(0.2)
+                winutil.real_click_screen(gx, gy)
+                time.sleep(0.5)
+                winutil._send_msg(hwnd, WM_KEYDOWN, VK_RETURN, 0)
+                time.sleep(0.1)
+                winutil._send_msg(hwnd, WM_CHAR, 0x0D, 0)
+                time.sleep(1.2)
+                return
+            got = got2 or got
         print(f"{LOG} typed {text!r} but the field reads {got!r} — "
               f"NOT committing (retry will re-type)")
         return
@@ -649,6 +688,34 @@ def type_into_field(session, box, text, old_len=4, wake=False, recipe=0):
     time.sleep(0.1)
     winutil._send_msg(hwnd, WM_CHAR, 0x0D, 0)
     time.sleep(1.2)
+
+
+def _sibling_box(session, box, gap=(20, 90)):
+    """A neighbouring cell in the SAME gizmo row (for defocusing the target).
+
+    'Same row' is decided from the current grid: the sibling must be on the
+    same y (±10px) and 20..90px to one side — the measured column pitch is
+    **63px** (the first cut used 25..60 and silently never matched, measured
+    10-12). Returns None when the grid is unreadable (the caller then keeps
+    its old behaviour)."""
+    boxes = gizmo_row_boxes(session, "position") or []
+    if not boxes:
+        # the caller's row label is unknown here; the grid for any gizmo row
+        # shares the geometry, so try the panels' common labels in turn
+        for label in ("rotate", "scale", "position"):
+            boxes = gizmo_row_boxes(session, label)
+            if boxes:
+                break
+    best = None
+    for b in boxes:
+        if b[:2] == box[:2]:
+            continue
+        dy = abs(b[1] - box[1])
+        dx = abs(b[0] - box[0])
+        if dy <= 10 and gap[0] <= dx <= gap[1]:
+            if best is None or dx < abs(best[0] - box[0]):
+                best = b
+    return best
 
 
 def words(session):
@@ -1197,6 +1264,84 @@ def wait_slice_button_ready(session, timeout_s=120):
     return ""
 
 
+GROUPING_MARKERS = ("nozzle assignment", "custom filament grouping",
+                    "nozzle assignment below")
+
+
+def _visible_toplevels(pid: int):
+    """[(cls, title, rect, hwnd)] of the pid's visible top-level windows.
+
+    Local twin of m8_common._visible_toplevels: m8_common imports THIS module,
+    so a module-level import back would be circular; the helper stays here."""
+    import ctypes.wintypes as wt
+    out: list = []
+
+    def cb(hwnd, _lp):
+        tid = wt.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(tid))
+        if tid.value != pid or not user32.IsWindowVisible(hwnd):
+            return True
+        cls = ctypes.create_unicode_buffer(64)
+        user32.GetClassNameW(hwnd, cls, 64)
+        txt = ctypes.create_unicode_buffer(200)
+        user32.GetWindowTextW(hwnd, txt, 200)
+        rc = wt.RECT()
+        user32.GetWindowRect(hwnd, ctypes.byref(rc))
+        out.append((cls.value, txt.value, (rc.left, rc.top, rc.right, rc.bottom), hwnd))
+        return True
+
+    from harness import export_util
+    user32.EnumWindows(export_util.WNDENUMPROC(cb), 0)
+    return out
+
+
+def confirm_filament_grouping(session, timeout_s=5.0):
+    """2.4.1 的"切片分配喷嘴"确认框：点 Slice 后弹 'Custom Filament Grouping'
+    （文本 'Slicing will follow the nozzle assignment below:' + Cancel/Confirm），
+    **Confirm 之后切片才真正开始**；不答框 = 按钮像被"吞"掉。
+
+    实测 10-12（probe_241_hfslice）：High Flow 切换后第一次点 Slice 的消息级点击
+    三次超时（`SendMessageTimeoutW(0x202) did not complete`）、真实点击也不开始
+    切片，弹层就是这个框；点 Confirm 后 idle 模板分立刻 1.000 → 0.666（切片启动）。
+    2.4.0 的旧提示框出现在**切流量时**（m8_common.confirm_flow_dialog），2.4.1 挪到
+    **点切片时**——所以 m8f/m8g 在切换处查提示必然扑空，随后把点击判成 rejected。
+    返回点掉的按钮文本（没框返回 ''）。
+    """
+    from harness import export_util
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        for cls, title, rect, hwnd in _visible_toplevels(session.pid):
+            if cls != "#32770":
+                continue
+            kids = [(t.strip(), r, h) for t, r, h
+                    in export_util._children_texts(hwnd) if t.strip()]
+            blob = " ".join(t for t, _r, _h in kids).lower()
+            if not any(mm in blob for mm in GROUPING_MARKERS):
+                continue
+            print(f"{LOG} filament-grouping prompt: {title!r} {rect} "
+                  f"{[t for t, _r, _h in kids][:14]}")
+            hit = next(((t, r) for t, r, _h in kids
+                        if t.strip().lower() in ("confirm", "ok", "yes", "确定", "确认")),
+                       None)
+            if hit is None:
+                hit = next(((t, r) for t, r, _h in kids
+                            if "confirm" in t.strip().lower()
+                            or "确定" in t or "确认" in t), None)
+            if hit is None:
+                print(f"{LOG} filament-grouping prompt: no confirm button found")
+                return ""
+            t, r = hit
+            cx, cy = (r[0] + r[2]) // 2, (r[1] + r[3]) // 2
+            user32.SetCursorPos(cx, cy)
+            time.sleep(0.25)
+            winutil.real_click_screen(cx, cy)      # 模态框：真实点击（#123 教训）
+            print(f"{LOG} filament-grouping prompt -> {t!r} @({cx},{cy})")
+            time.sleep(1.2)
+            return t
+        time.sleep(0.3)
+    return ""
+
+
 def op_slice(session, results, key="slice completes", export_to=None,
              timeout_s=600):
     """Click Slice, wait done, optionally export gcode to export_to."""
@@ -1232,6 +1377,13 @@ def op_slice(session, results, key="slice completes", export_to=None,
             started = after < 0.7
             print(f"{LOG} {key}: after real click idle-score={after:.3f} "
                   f"started={started}")
+        if not started:
+            # 2.4.1：High Flow 之后第一次点 Slice 会先弹 'Custom Filament
+            # Grouping'（切片按喷嘴分配走）——**Confirm 之后切片才开始**；
+            # 不答框时点击表现为"被吞"（实测 10-12 m8f/m8g）。
+            if confirm_filament_grouping(session):
+                if click_slice_start(session):
+                    started = True
         if not started:
             print(f"{LOG} {key}: idle slice button not clickable — trying the "
                   f"done rendering")

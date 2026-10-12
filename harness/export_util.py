@@ -165,8 +165,18 @@ def wait_popup(pid: int, timeout_s: float = 5.0):
 
 
 def wait_save_dialog(pid: int, timeout_s: float = 15.0):
-    """The native 'Save G-code file as:' dialog — a visible #32770."""
-    return wait_toplevel(pid, lambda c, t, r: c == "#32770", timeout_s)
+    """The native 'Save G-code file as:' dialog — a visible #32770 whose TITLE
+    identifies it.
+
+    Matching ANY #32770 was a latent trap: measured 10-12, m8f's B phase found
+    the *stale* 'Custom Filament Grouping' prompt still on screen, treated it
+    as the save dialog, saw no Edit child and returned False — a silent
+    'gcode exported: FAIL' while the slice itself was fine."""
+    return wait_toplevel(
+        pid,
+        lambda c, t, r: c == "#32770" and ("save" in (t or "").lower()
+                                           or "g-code" in (t or "").lower()),
+        timeout_s)
 
 
 def find_edit(dialog_hwnd: int) -> int | None:
@@ -229,13 +239,22 @@ def export_gcode(session, out_path: Path, timeout_s: float = 60.0) -> bool:
     is_slice_result_ready_for_print). The call is the completion probe
     itself — a dialog appearing proves the gate was open.
     Returns True when the gcode file exists and is non-empty.
+
+    Every early return is LOUD (measured 10-12: m8f/m8g reported a bare
+    'gcode exported: FAIL' with the file present on disk, and there was no
+    way to tell which step had died).
     """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    _dismiss_stale_prompts(session)
     if not switch_to_export_mode(session):
+        print(f"[export] {out_path.name}: switch_to_export_mode FAILED "
+              f"(topbar print button never reached Export mode)")
+        _dump_dialogs(session, "export:switch-mode")
         return False
     _, main = find_print_buttons(session.hwnd)
     if not main:
+        print(f"[export] {out_path.name}: no print/export button found")
         return False
     _click_center(session, main[1])  # posts EVT_GLTOOLBAR_EXPORT_GCODE
     dlg = wait_save_dialog(session.pid, timeout_s=8.0)
@@ -252,9 +271,14 @@ def export_gcode(session, out_path: Path, timeout_s: float = 60.0) -> bool:
         _wu.real_click_screen(sx, sy)
         dlg = wait_save_dialog(session.pid, timeout_s=15.0)
     if not dlg:
+        print(f"[export] {out_path.name}: NO save dialog after msg+real click "
+              f"(button rect {main[1]})")
+        _dump_dialogs(session, "export:no-dialog")
         return False
+    print(f"[export] {out_path.name}: save dialog {dlg[1]!r} {dlg[2]}")
     edit = find_edit(dlg[3])
     if edit is None:
+        print(f"[export] {out_path.name}: save dialog has no Edit child")
         return False
     winutil.select_all(edit)
     winutil.msg_text(edit, str(out_path))
@@ -266,4 +290,69 @@ def export_gcode(session, out_path: Path, timeout_s: float = 60.0) -> bool:
     # case hung >13 min inside this line). A timeout loses the click and
     # wait_file returns False — bounded, resolvable on the next run.
     winutil._send_msg(dlg[3], 0x0111, 1, 0)  # WM_COMMAND, IDOK = 1
-    return wait_file(out_path, timeout_s=timeout_s)
+    ok = wait_file(out_path, timeout_s=timeout_s)
+    if not ok:
+        try:
+            size = out_path.stat().st_size if out_path.exists() else 0
+        except OSError:
+            size = -1
+        print(f"[export] {out_path.name}: file did not land within "
+              f"{timeout_s:.0f}s (exists={out_path.exists()} size={size})")
+        _dump_dialogs(session, "export:no-file")
+    return ok
+
+
+def _dump_dialogs(session, tag: str) -> None:
+    """Diagnostic: the visible #32770 dialogs + child texts (export path)."""
+    try:
+        tup = wait_toplevel(session.pid, lambda c, t, r: c == "#32770",
+                            timeout_s=0.6)
+    except Exception:                                          # noqa: BLE001
+        tup = None
+    seen = [tup] if tup else []
+    print(f"[export] {tag}: visible #32770 = {[(t[1], t[2]) for t in seen]}")
+    for _cls, title, _rect, hwnd in seen:
+        kids = [k.strip() for k, _r, _h in _children_texts(hwnd) if k.strip()]
+        print(f"[export]   {title!r} kids({len(kids)}): {kids[:12]}")
+
+
+# Dialogs that must never be open when the Save dialog is expected. The
+# high-flow 'Custom Filament Grouping' prompt survives into the export step
+# in m8f/m8g: the slice click is sent while the app is busy, the message
+# lands LATE (SendMessageTimeoutW timed out but the click is still
+# delivered), the prompt comes back up after we already confirmed it, and
+# the export then trips over it (measured 10-12).
+STALE_PROMPT_MARKERS = ("nozzle assignment", "custom filament grouping")
+STALE_PROMPT_BUTTONS = ("confirm", "ok", "确定", "确认")
+
+
+def _dismiss_stale_prompts(session, rounds: int = 3) -> int:
+    """Answer leftover 'Custom Filament Grouping' prompts; returns how many."""
+    answered = 0
+    for _ in range(rounds):
+        tup = wait_toplevel(session.pid, lambda c, t, r: c == "#32770",
+                            timeout_s=0.4)
+        if not tup:
+            break
+        kids = [(k.strip(), r) for k, r, _h in _children_texts(tup[3])
+                if k.strip()]
+        blob = " ".join(k for k, _r in kids).lower()
+        if not any(m in blob for m in STALE_PROMPT_MARKERS):
+            break
+        hit = next(((k, r) for k, r in kids
+                    if k.lower() in STALE_PROMPT_BUTTONS), None)
+        if hit is None:
+            hit = next(((k, r) for k, r in kids
+                        if any(b in k.lower() for b in STALE_PROMPT_BUTTONS)), None)
+        print(f"[export] stale prompt {tup[1]!r} -> "
+              f"{'confirm ' + hit[0] if hit else 'WM_CLOSE'}")
+        if hit:
+            sx, sy = (hit[1][0] + hit[1][2]) // 2, (hit[1][1] + hit[1][3]) // 2
+            winutil.user32.SetCursorPos(sx, sy)
+            time.sleep(0.25)
+            winutil.real_click_screen(sx, sy)
+        else:
+            winutil.close_window(tup[3])
+        answered += 1
+        time.sleep(0.8)
+    return answered
