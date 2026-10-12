@@ -652,3 +652,24 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
 - **通用化**：任何"权限被拒"先分三层看——app 是否有该 scope（`auth scopes`）、
   当前身份是否有 token（`auth status`）、token 是否有该 scope（`auth check`）。
   用户 token 有效期约 2h（refresh ~7 天），长时间不写回的会话要重新登录。
+
+### 21.11 切片按钮的"标准/自定义模式"悬停框在 2.4.1 消失了（A/B 实证）
+
+- **2.4.0 实测**（`probe_241_hover_slice.py --exe ...V2.4.0...`）：喷嘴高流量/标准混用时，
+  **悬停**「Slice plate」按钮就弹一个 `wxWindowNR 'panel'`（305×140，自绘、**子控件无文本**，
+  位置贴在按钮下方 (1464,65)-(1769,205)），内容是模式单选：
+  - ● **Standard Mode** — *Prioritize print quality*（默认选中）
+  - ○ **Custom Mode** — *Manually assign filaments to nozzles*
+- **2.4.1 实测**（同探针、同状态：空盘 + cube + HF-TEST 过程预设 + flow=High Flow）：
+  - **悬停 → 什么都不弹**（3.5s 内无任何新 toplevel，移开再悬停也无）；
+  - **点击 → 直接弹 `Custom Filament Grouping`**（'Slicing will follow the nozzle
+    assignment below:' / Standard Nozzle / High Flow Nozzle / Cancel / Confirm），
+    Confirm 后才开始切片。
+- **判读**：2.4.1 把"模式选择"从**悬停态**变成了**切片时的分组确认**——即默认走 Custom
+  Mode 的确认路径；旧版那个悬停框（含"Standard Mode"入口）在本 build 上**没有等价入口**
+  （至少切片按钮处没有）。取证帧 `artifacts/phover_panel_240.jpg`（裁自 2.4.0 截图）。
+- **对用例的影响**：m8f/m8g 在 2.4.1 上点 Slice 必须答分组框（已实现
+  `m7_common.confirm_filament_grouping`）；2.4.0 上同一步骤**不会**有框（A/B 日志里
+  2.4.0 点击后无任何 #32770），所以旧版路径不需要答框。
+- **复跑入口**：`diag/probe_241_hover_slice.py`（默认 2.4.1；`--exe <2.4.0 路径> --datadir <另一目录>`
+  做 2.4.0 对照；日志按版本分开写 `phover241.log` / `phover240.log`）。
