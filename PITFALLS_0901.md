@@ -538,3 +538,104 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
 - **launcher 的 --datadir 必须绝对路径**：launcher 以 exe 目录为子进程
   cwd，相对 datadir 落到 exe 旁 → 种子 conf 不生效 → 首启向导模态阻塞
   主窗口 → find_main_window 90s 超时。
+
+---
+
+## 21. 1012 补充：2.4.1 耗材选择框收敛（三条根因 + 三个环境坑）
+
+### 21.1 探针的控制台窗口会吞掉真实点击（"控件没反应"的假象）
+- **现象**：scheduled task 里 `cmd /c python script.py > log` 起的 Windows
+  Terminal 窗口盖在 app 上；`WindowFromPoint` 在槽位行的**每个点**都返回
+  `'CASCADIA_HOSTING_WINDOW_CLASS' '...cmd.exe'`——chip 点 3 次"毫无反应"，
+  酷似 2.4.1 改了取色入口的语义（前一会话的 probe 结论即栽在这里）。
+- **修法**：探针一律 `C:\Python311\pythonw.exe`（无控制台）+ 自写日志
+  （pythonw 下 `sys.stdout is None`，`sys.stdout.reconfigure(...)` 会
+  AttributeError 秒崩——探针要 `if sys.stdout is not None:` 守卫）。
+- **通用化**：任何"点击没反应"的现场先 `WindowFromPoint` + 比对 pid，再怀疑
+  SUT。批量套件不受影响（app 由用例后启动、占前台），交互式探针必受影响。
+
+### 21.2 子窗口 rect 已是屏幕坐标——不要再 client_to_screen
+- **现象**：m8b `#48 dialog opens: FAIL (no popup)` 的**根因**：chip 的 rect 来自
+  子窗口 `GetWindowRect`（屏幕坐标），代码又走了一次 `client_to_screen()`
+  （最大化窗口 client 原点 ≈ (+8,+31)）→ 点落到 chip 下方 20px 的 combo 上，
+  什么都不弹。2.4.0 时代窗口几何不同所以侥幸没炸。
+- **修法**：直接用 rect。实测 chip 首点即开官方色卡（`#32770` kids =
+  'Mint Lemonade' / 'sku 34205' / 'Official Filaments'）。
+- **通用化**：`export_util._children_texts()` 的 rect 是屏幕坐标，凡再转换处
+  都要复查。
+
+### 21.3 2.4.1 双栏选择框：**hover 即切换右栏**
+- **现象**：弹层开在鼠标落点，光标恰好压在 'Generic' 行上 → 右栏显示 Generic
+  的列表。前一会话据此判定"Snapmaker 分支里没有 PLA Rainbow、需人工在
+  耗材管理里勾选"——**结论是错的**（扫错了分支）。
+- **事实（10-12 实测）**：Snapmaker 二级列表**包含 `PLA Rainbow`**
+  （pscan2_Snapmaker_hover.png：置顶 7 项 + 字典序，PLA Rainbow 在 PLA Glow 与
+  PLA Silk 之间）；置顶 8 项里的 `PLA Full Spectrum` 反而不在列表里。
+  **不需要任何人工勾选**→ m8b #55 端到端 GREEN。
+- **修法**：点厂商行前先 hover（SetCursorPos 停在行上）再点击；右栏内容变了
+  才算切换成功。
+
+### 21.4 右栏滚动必须小步（-1 档）且每档 OCR，且先回顶
+- **现象**：一次 -3 档跨 ~7 行，目标行落在两屏之间被跳过（'PLA Rainbow' 就是
+  这样漏的）；另外弹层开在"回显行"处，目标可能在当前视口**上方**。
+- **修法**：`m8_common._picker_scan_for()`：先回顶（+3 × 24 次，列表到顶即夹住）
+  → 再 -1 档逐步向下，每档 OCR + 匹配。列表很短（Snapmaker 二级 ≈ 24 项 ≈ 3 屏）。
+
+### 21.5 同厂商内切换不要点厂商行
+- **现象**：m8d 的 `Generic ABS → Generic PC`：当前值已属于 Generic，厂商行正是
+  "当前展开分支"（高亮渲染）→ OCR 读不到该行；插值坐标又可能落在回显行上，
+  一点把弹层点关（日志 `candidate无效（pane=False）`）。
+- **修法**：`combo_text().startswith(vendor)` 时**跳过**厂商点击，直接扫右栏
+  （弹层打开时右栏展示的就是当前值的分支）。
+
+### 21.6 2.4.1 耗材相关配置的实测事实（供后续会话）
+- `filament_allow_list.json`（2.4.1 新增，app resources + datadir/system 各一份，
+  由 app 自己 stage）只含 **`high_flow` 限制 + `filament_order` 置顶顺序**，
+  **不是**"可选材料白名单"。
+- 用户预设的父预设 `Snapmaker PLA SnapSpeed @U1` 在 2.4.1 **存在**（app resources
+  + datadir 都有），datadir 日志无预设加载错误 → "继承父预设缺失"假设**不成立**；
+  用户预设（`- STD-TEST` 等）为何不出现在耗材双栏框里**仍未定论**。
+- `Add/Remove filament` 行开的是 **WebView 对话框**（`#32770` kids = wxWebView /
+  'loading' / Chrome Legacy Window）——产品文档的「混色品牌 → 配置可选择的材料」
+  应该在里面（HTML，回归用例不碰；探针可看）。
+
+### 21.7 relay 守护只认 `token|脚本路径`——push_verify/fetch_file 是哑的
+- **现象**：`runner/push_verify.py` / `runner/fetch_file.py`（写 **裸命令** 进
+  relay_cmd.txt）在 10-12 全部超时；relay_history 里根本没有 RUN 记录。
+  当前守护是 `C:\coil\vm_setup\relay.ps1`（`$parts = $line -split '\|', 2`，
+  非 `token|path` 形式的命令直接 `continue` 丢弃）。
+- **修法（10-12 起）**：
+  - 宿主→客机文件：**base64 塞进 job .ps1**（`[Convert]::ToBase64String` 传参 +
+    客机 `[IO.File]::WriteAllBytes`），模板 `jobs/j360_ship_rerun.ps1`；
+  - 客机→宿主文件：**同一个 job 里**把文件读成 base64 **字符串**分块回传，
+    在宿主侧（守护就是宿主提权进程）直接 `[IO.File]::WriteAllBytes` 落地
+    （`jobs/j382_pull_shots.ps1` / `j413_*` 模板）。PS Direct 的 byte[] 返回值
+    仍不可靠，但**字符串**分块可靠（本次 8 个文件全部 MD5-MATCH）。
+- **通用化**：动 relay 前先看 `relay_history.txt` 最后几条是不是自己的 token；
+  通道"成功但零输出"先怀疑命令形式不对（守护把裸命令当垃圾丢掉）。
+
+### 21.8 job .ps1 里有中文注释必须带 UTF-8 BOM，否则 PS 5.1 解析崩
+- **现象**：新写的 job 脚本（中文注释、无 BOM）经 relay `powershell -File` 执行，
+  报 `表达式或语句中包含意外的标记"}"`（行号指向成对的 `} -ArgumentList ...`）——
+  PS 5.1 按系统 ANSI（GBK）解码无 BOM 的 UTF-8，中文注释把解码游标带偏、
+  吞掉后续 ASCII 引号/括号。
+- **修法**：job 脚本一律 `encoding='utf-8-sig'` 写（或干脆只用 ASCII 注释）。
+  本次两条 j380/j386 的解析事故都源于此。
+
+### 21.9 本轮结论的复跑入口（探针索引，都在 `diag/`）
+
+| § | 复跑入口 |
+|---|---|
+| 21.1 控制台吞点击 / pythonw | `probe_241_chip2.py`（打印 WindowFromPoint + pid，一眼看出点落在谁身上） |
+| 21.2 子窗口 rect = 屏幕坐标 | `probe_241_chip.py`（chip 连点重试；对照 slot1 原生取色器 vs slot2 官方色卡）+ `probe_241_slotrow.py`（槽位行控件全枚举） |
+| 21.3 hover 即切分支 / Rainbow 在不在 | `probe_241_picker_scan.py`（首轮扫到 Generic 分支）、`probe_241_picker_scan2.py`（hover 切 Snapmaker，**Rainbow 命中**） |
+| 21.4 右栏小步滚动 | `probe_241_picker_scan2.py`（-1 档逐档 OCR 打印） |
+| 21.5 同厂商不点厂商行 | `probe_241_picker_scan2.py` + m8d 用例日志（`candidate无效（pane=False）`） |
+| 21.6 配置事实（用户组/截断行/WebView） | `probe_241_userpreset_seeded.py`（槽位是用户预设时左栏出 `------ User presets ------ → Custom »`）、`probe_241_usergroup.py`（hover tooltip 才是全名）、`probe_241_slotrow.py`（`Add/Remove filament` = WebView 对话框） |
+| 切片确认框 `Custom Filament Grouping` | `probe_241_hfslice.py` |
+| gizmo 网格空行 / rotate 聚焦读不出 | `probe_241_gizmo.py`（输入通道逐条试）、`probe_241_rotate.py`（逐格试）、`analyze_gizmo_ocr.py`（**离线**复算 OCR 行盒，不用起 app） |
+| 环境体检 | `check_241_launch.py`（进程/窗口/截图）、`diag_241_uicheck.py`（菜单与工具条提示仍在，排除"界面被删"） |
+| 两级原语冒烟（上一会话） | `probe_241_switch.py`；用户组探索 `probe_241_picker10.py`；已过时的编辑器入口 `probe_241_editor_preset.py` |
+
+（上一会话的 `probe_241_picker1..9` / `rainbow_enable1..4` / `material_pick1..2` 是迭代试错链，
+结论已被上表覆盖或推翻——**按用户 10-12 决定未入库**，避免仓库里留死路。）
