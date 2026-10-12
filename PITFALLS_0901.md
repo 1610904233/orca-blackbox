@@ -639,3 +639,16 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
 
 （上一会话的 `probe_241_picker1..9` / `rainbow_enable1..4` / `material_pick1..2` 是迭代试错链，
 结论已被上表覆盖或推翻——**按用户 10-12 决定未入库**，避免仓库里留死路。）
+
+### 21.10 飞书写回需要 lark-cli 的**用户身份** token（bot 身份会被拒）
+- **现象**：`tools/feishu_writeback.py --apply` 报 `app_scope_not_applied / 99991672
+  has not applied for the required scope(s): base:record:update`，看起来像"应用没申请权限"——
+  实际 `lark-cli auth scopes` 里该 scope 在（app 层面没问题），真因是
+  `lark-cli auth status` 显示 **user 身份 token 缺失**（只剩 bot），工具于是用 bot 身份发请求被拒。
+- **修法**：本人在**宿主**跑一次 Device Flow：`lark-cli auth login --domain base`
+  （`--domain base` 把授权范围收窄到多维表格；token 落系统钥匙串）。
+  自检：`lark-cli auth status` 要 `user: ready`、`lark-cli auth check --scope base:record:update`
+  要 `granted`。本轮实测：登录后同一条 `--apply` 62 条记录一次写入并读回校验通过。
+- **通用化**：任何"权限被拒"先分三层看——app 是否有该 scope（`auth scopes`）、
+  当前身份是否有 token（`auth status`）、token 是否有该 scope（`auth check`）。
+  用户 token 有效期约 2h（refresh ~7 天），长时间不写回的会话要重新登录。
