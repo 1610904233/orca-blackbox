@@ -1291,6 +1291,27 @@ def op_gizmo_field(session, slot_pred, row_label, index, value,
     return text.startswith(value), text
 
 
+GIZMO_KEYS = {"move": 0x4D, "position": 0x4D, "rotate": 0x52}  # M / M / R
+
+
+def toggle_gizmo_key(session, row_label):
+    """用键盘快捷键再切一次 gizmo 面板（工具栏点击被吃掉时的第二通道）。
+
+    实测 09-23 (g21)：'R' 能重新打开 Rotate 面板；'M' 同理（Move 面板）。
+    **未证实的快捷键不按**——按错键会触发别的工具（Scale 在本 build 悬停无
+    tooltip，其快捷键未确认，直接跳过）。此前本函数被引用但从未定义：只要
+    走到"面板没打开"的失败路径就 NameError（10-19 m8x_153 实测踩到）。"""
+    vk = GIZMO_KEYS.get((row_label or "").lower())
+    if not vk:
+        print(f"{LOG} {row_label}: no verified gizmo shortcut — skip")
+        return False
+    winutil.user32.keybd_event(vk, 0, 0, 0)
+    time.sleep(0.06)
+    winutil.user32.keybd_event(vk, 0, 2, 0)
+    time.sleep(0.8)
+    return True
+
+
 def click_slice_again(session):
     """Re-slice when the button already sits in its DONE rendering.
 
