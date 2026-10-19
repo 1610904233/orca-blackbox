@@ -177,6 +177,8 @@ CASES: dict[str, dict] = {
     # **主材 = 对象的耗材丝、辅材 = 涂色**；面在准备页耗材列 + 涂色 gizmo +
     # 切片按钮门禁 + Preferences 的 "Allow high/low temperature filament mixing"。
     "m8x_125_aux_mix_pref": _r("m8", "A"),
+    # 2026-10-15 主流程四行逐行落地（一行一例；打印链=人工 -> 飞书「部分自动化」）：
+    "m8x_152": _r("m8", "A"),     # #152 首次安装后新建项目并完成打印（本地段）
 }
 
 

@@ -246,6 +246,13 @@ def export_gcode(session, out_path: Path, timeout_s: float = 60.0) -> bool:
     """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    # 先删目标文件：wait_file 只判"存在且非空"，旧文件会让一次根本没写出的
+    # 导出秒过（实测 10-19：m8x_152 报 'gcode exported: PASS'，而磁盘上最新
+    # 还是三天前的文件；IDOK 发送超时后 app 仍在写，导出实际没落盘）。
+    try:
+        out_path.unlink(missing_ok=True)
+    except OSError as exc:                                     # noqa: BLE001
+        print(f"[export] {out_path.name}: cannot clear stale file: {exc!r}")
     _dismiss_stale_prompts(session)
     if not switch_to_export_mode(session):
         print(f"[export] {out_path.name}: switch_to_export_mode FAILED "

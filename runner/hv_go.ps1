@@ -1,4 +1,4 @@
-# hv_go.ps1 — ONE-CLICK suite runner (HOST, elevated — run in admin window or via relay).
+﻿# hv_go.ps1 — ONE-CLICK suite runner (HOST, elevated — run in admin window or via relay).
 # Usage:
 #   & runner\hv_go.ps1              # full suite from cases.py registry
 #   & runner\hv_go.ps1 m3j_mixing_entry m3k_mixing_match   # subset
@@ -84,14 +84,20 @@ if ($v.State -ne 'Running') {
   Start-VM $vm
 } else { Write-Host "[1] VM already running" }
 
-# 2) wait for guest + autologon (up to 6 min)
+# 2) wait for guest + autologon (up to 6 min).
+# Any LOGGED-ON CONSOLE USER qualifies - the suite's INTERACTIVE task runs in
+# whichever desktop session is on the console, and the templates/DPI are
+# account-independent (measured 10-16: the machine sat at LogonUI because the
+# autologon target user 'test' had been manually superseded by 'user'; waiting
+# for the literal name was over-constrained). Only EMPTY quser output (nobody
+# logged on) keeps waiting.
 Write-Host "[2] waiting for guest autologon..."
 $deadline = (Get-Date).AddMinutes(6)
 do {
   Start-Sleep 15
   $q = Invoke-Command -VMName $vm -Credential $cred -ScriptBlock { (quser 2>&1 | Out-String).Trim() } -ErrorAction SilentlyContinue
-} while (-not ($q -match $guestUser) -and (Get-Date) -lt $deadline)
-if ($q -notmatch $guestUser) { throw "guest not logged on after 6 min (autologon broken?)" }
+} while ((-not $q) -and (Get-Date) -lt $deadline)
+if (-not $q) { throw "guest not logged on after 6 min (autologon broken?)" }
 Write-Host "    logged on."
 
 # 2.5) sync the guest checkout — the guest tracks ORIGIN (git clone since
@@ -153,6 +159,21 @@ Set-Location $sb
     'width=' + (Get-CimInstance Win32_VideoController | Select-Object -First 1).CurrentHorizontalResolution
   } -ArgumentList $guestSandbox, $guestPython
   Write-Host "    $pin"
+  if ("$pin" -notmatch 'width=1920') {
+    # WMI's CurrentHorizontalResolution can come back EMPTY via PS Direct
+    # while the interactive session is actually fine (measured 10-16, after a
+    # manual reboot + account switch, on the same session that reported 1920
+    # twenty minutes earlier). The in-session probe's own self-report
+    # (setres_out.txt, written INSIDE the console session) is the ground
+    # truth - fall back to it before refusing to launch.
+    $out = Invoke-Command -VMName $vm -Credential $cred -ScriptBlock {
+      param($f) if (Test-Path $f) { Get-Content $f -Raw } else { '' }
+    } -ArgumentList 'C:\coil\setres_out.txt' -ErrorAction SilentlyContinue
+    if ($out -match 'interactive screen now:\s*(\d+)x(\d+)') {
+      $pin = 'width=' + $Matches[1] + ' (setres self-report ' + $Matches[1] + 'x' + $Matches[2] + ')'
+      Write-Host "    [2.6] WMI empty - using the in-session self-report: $pin"
+    }
+  }
   if ("$pin" -notmatch 'width=1920') {
     throw "guest resolution pin failed ($pin) — refusing to launch a batch whose pixel assertions would misread"
   }

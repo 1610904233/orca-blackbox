@@ -173,6 +173,65 @@ def select_model(session, tries=3):
     return False
 
 
+def object_info_text(session) -> str:
+    """OCR the bottom-right object-info panel (Object name / Size / Volume /
+    Triangles). The panel exists only while an object is SELECTED — measured
+    10-16 on Prusa.stl: it shows up with the selection highlight on the first
+    click that lands on the object, and is gone the moment ESC deselects."""
+    img = capture_bgr(session)
+    h, w = img.shape[:2]
+    crop = img[max(0, h - 120):h - 10, max(0, w - 390):w - 8]
+    if crop.size == 0:
+        return ""
+    words = mdu.ocr_words_img(crop, scale=3)
+    return " ".join(wd for wd, *_ in words)
+
+
+def object_selected(session) -> bool:
+    """Selection oracle for the plater (object-info panel).
+
+    Do NOT fall back to the toolbar-tooltip test: with no tooltip up the OCR
+    reads the toolbar button's own label ('Vv Rotate [R]') instead of
+    'Please select at least one object', so an EMPTY-BED click reads as a
+    successful selection (measured 10-16, m8x_152 s4: two 'selected' verdicts
+    landed on the bed while the plate held no selection)."""
+    return "object name" in object_info_text(session).lower()
+
+
+def select_object_strict(session, tries=2, offsets=((0, 0), (0, -8), (0, 8)),
+                         max_clicks=14):
+    """Like select_model, but verified by the info panel; returns the client
+    point that selected the object (None if a click budget's worth of tries
+    selects nothing).
+
+    Why not select_model: it clicks centroid+22 because the object's name
+    label swallows a centre click — on a THIN FLAT object that offset is the
+    BED. The Prusa.stl bar is 91.5 x 19.5 x 3.0 mm (~15px tall on screen) and
+    the plate menu answers a right-click there (measured 10-16, s4: 'no
+    context menu' four times, then an 'Add Primitive...' menu). Click the
+    centroid itself, then small nudges."""
+    ensure_maximized(session)
+    clicks = 0
+    for _attempt in range(tries):
+        for cx, cy in model_candidates(session):
+            for dx, dy in offsets:
+                if clicks >= max_clicks:
+                    print(f"{LOG} strict select: click budget spent")
+                    return None
+                sx, sy = client(session, cx + dx, cy + dy)
+                winutil.user32.SetCursorPos(sx, sy)
+                time.sleep(0.2)
+                winutil.real_click_screen(sx, sy)
+                clicks += 1
+                time.sleep(0.9)
+                if object_selected(session):
+                    print(f"{LOG} object selected @({cx + dx},{cy + dy})")
+                    return (cx + dx, cy + dy)
+        time.sleep(0.8)
+    print(f"{LOG} strict select: no object-info panel after {clicks} clicks")
+    return None
+
+
 def find_centroids(session, limit=5, min_area=400, kernel=5):
     """Centroids of the largest chromatic blobs, LARGEST FIRST.
 
@@ -1146,6 +1205,20 @@ def read_gizmo_field(session, row_label, index, expect=None, timeout_s=12.0,
         time.sleep(interval_s)
 
 
+def _already_selected(session) -> bool:
+    """Rotate 槽的悬停 tooltip 已不喊 'Please select' = 模型处于选中态。
+
+    op_gizmo_field 过去无条件再跑一次 select_model：对大夹具无害，但小模型
+    （Prusa.stl，blob 质心带阴影偏移 ~65px）上 select_model 的 '+22px 点击'
+    落在对象外，反而把外部调用方已经选中的模型**点取消**，随后判定
+    '选不中' 返回空（实测 10-15，m8x_152 S2-S4 连续空回读）。"""
+    rot_x, _ = find_slot(session, lambda t: "rotate" in t)
+    if rot_x is None:
+        return False
+    tip = tooltip_text(session, rot_x, BAR_Y)
+    return bool(tip) and "select" not in tip.lower()
+
+
 def op_gizmo_field(session, slot_pred, row_label, index, value,
                    fallback_dx=0):
     """Select + activate gizmo + type value into row field #index (index<0 =
@@ -1164,7 +1237,7 @@ def op_gizmo_field(session, slot_pred, row_label, index, value,
     The Scale slot shows NO tooltip while a model is selected and the
     rotate-tooltip smear breaks hover scans (g5), so `fallback_dx` clicks
     the slot at the fixed geometry Rotate+44 (1108+44)."""
-    if not select_model(session):
+    if not _already_selected(session) and not select_model(session):
         return False, ""
     if fallback_dx:
         x = 1108 + fallback_dx
