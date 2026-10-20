@@ -126,6 +126,26 @@ def find_slot(session, pred, cy=BAR_Y):
 
 # --- selection ---------------------------------------------------------------
 
+def real_drag_screen(session, src_pt, dst_pt, steps=14, settle=1.0):
+    """真实左键拖拽：客户区 (src_pt) 按下 → 分步移到 (dst_pt) → 松开。
+
+    与"消息级点击"不同，拖拽必须走 OS 级输入：Orca 的 gizmo 交互按物理
+    鼠标位置逐帧采样（实测 10-19：激活 Move 后面板/对象随拖动实时更新）。
+    """
+    sx, sy = client(session, *src_pt)
+    dx, dy = client(session, *dst_pt)
+    winutil.user32.SetCursorPos(sx, sy)
+    time.sleep(0.3)
+    winutil.user32.mouse_event(0x0002, 0, 0, 0, 0)      # LEFTDOWN
+    for i in range(1, steps + 1):
+        winutil.user32.SetCursorPos(sx + (dx - sx) * i // steps,
+                                    sy + (dy - sy) * i // steps)
+        time.sleep(0.06)
+    time.sleep(0.15)
+    winutil.user32.mouse_event(0x0004, 0, 0, 0, 0)      # LEFTUP
+    time.sleep(settle)
+
+
 def ensure_maximized(session) -> bool:
     """Re-assert SW_MAXIMIZE. The app spontaneously RESTORES (~1366x751)
     around the first user input after a job (m5_common lesson, re-measured
