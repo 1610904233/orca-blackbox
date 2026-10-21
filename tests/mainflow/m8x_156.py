@@ -96,16 +96,22 @@ def run_s1(args, results):
         if x is None:
             results["旋转（拖拽）生效"] = "FAIL (slot not found)"
             return False
-        # 旋转：**面板输入值 + 回读**（本 build 唯一稳定通道）。
-        # 鼠标拖箭头的完整实测（10-19/20）：**能转** —— 蓝箭头命中点拖动 →
-        # Rotate Z 0.00 → 171.54，热床投影不动（view_delta 2.4%）；但命中点
-        # 每轮漂移：环上像素（8 点）、色块尖端、包围盒角、gizmo 相对偏移、
-        # 16 点扫掠五套定位都只在个别轮次命中，命不中时拖到床面 = 相机环绕；
-        # 且同一会话内重开面板会失聪（2.4.1 已知），无法"先试拖拽再退化输入"。
-        # → 要做成稳定回归步骤需先做**箭头模板视觉标定**（独立任务）。
+        # 旋转：**先鼠标拖箭头锥**（用户口径）；命中不了再退化为输入值，
+        # 并在结果里如实标注走的是哪条路。箭头锥几何见 rot_drag 的 docstring。
+        if not open_gizmo(session, 1108, "rotate"):
+            results["旋转（鼠标拖拽箭头）"] = "FAIL (rotate tool never active)"
+            return False
+        z0 = panel_value(session, "rotate", -1, timeout_s=3.0)
+        live = m7.find_centroid(session) or pt
+        print(f"{LOG} rotate: Z0={z0!r} live={live}")
+        z1, how = rot_drag(session, live, z0)
+        if how:
+            results["旋转（鼠标拖拽箭头）"] = f"PASS ({how})"
+            return True
+        results["旋转（鼠标拖拽箭头）"] = "FAIL (arrow sweep missed)"
         ok, text = m7.op_gizmo_field(session, lambda t: "rotate" in t,
                                      "rotate", -1, "45")
-        results["旋转 Z=45 提交（输入值）"] = (
+        results["旋转 Z=45（退化·输入值）"] = (
             "PASS" if ok else f"FAIL (now {text!r})")
         return ok
     finally:
@@ -243,6 +249,43 @@ def _sig_delta(a, b):
         a, b = (a[2], a[3]), (b[2], b[3])
     return max(abs(b[0] - a[0]) / max(a[0], 1),
                abs(b[1] - a[1]) / max(a[1], 1)) * 100.0
+
+
+def rot_drag(session, live, z_before):
+    """旋转：点住**蓝色箭头锥**水平拖动，以面板 Z 值变化为判据。
+
+    几何来源 = 取证帧放大图（artifacts/m8x156_gizmo_zoom.png，带刻度）：
+    Rotate 激活后，箭头锥在对象中心**右侧 ~85-95px**（实测锥的可见范围
+    x 1255-1300、y 545-595，对象中心 1186,578）；两次实证命中点 (1266,563)、
+    (1259,584) 都落在锥内。此前按颜色找"蓝块"抓到的是锥左边的**方块手柄**
+    （fill 0.27 的那个 44x52 分量），拖它无效——这是前几轮全部落空的原因。
+    锥约 45x50px，这里在 live+(78..100, -14..+14) 上取 12 个点，命中即停；
+    若某次拖拽把视角带偏（view 变化 >3%），立即反向拖回，录像不留相机转动。
+    """
+    import m7_common as m7
+    plate0 = _plate_bbox(session)   # 仅作诊断打印，不再参与判定
+    pts = [(live[0] + dx, live[1] + dy)
+           for dy in (-14, 0, 14) for dx in (78, 86, 94, 100)]
+    zs = []
+    for (hx, hy) in pts:
+        for ddx in (45, -45):
+            m7.real_drag_screen(session, (hx, hy), (hx + ddx, hy))
+            time.sleep(0.7)
+            z_now = panel_value(session, "rotate", -1, timeout_s=1.5)
+            dplate = _sig_delta(plate0, _plate_bbox(session))
+            print(f"{LOG} rot drag ({hx},{hy}) d({ddx},0) -> Z={z_now!r} "
+                  f"view={dplate}")
+            # **不再用"视角变化"否决**：Z 是应用自己的状态值，相机怎么动都造
+            # 不了假；而本 build 的旋转拖拽常常同时带动视角（实测 view 25~32%
+            # 时 Z 仍正常变化 35.10/31.39/59.62），先前那道守卫把真命中全拒了。
+            if z_now:
+                if not zs or z_now != zs[-1][3]:
+                    zs.append((hx, hy, ddx, z_now))
+                if len({z[3] for z in zs}) >= 2:
+                    a = zs[-1]
+                    return a[3], (f"arrow({a[0]},{a[1]}) drag ({a[2]},0): "
+                                  f"Z {z_before!r} -> {a[3]}")
+    return "", ""
 
 
 def scale_drag(session, live, s_before):
