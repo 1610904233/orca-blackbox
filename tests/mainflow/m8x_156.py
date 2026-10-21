@@ -263,28 +263,40 @@ def rot_drag(session, live, z_before):
     若某次拖拽把视角带偏（view 变化 >3%），立即反向拖回，录像不留相机转动。
     """
     import m7_common as m7
-    plate0 = _plate_bbox(session)   # 仅作诊断打印，不再参与判定
+    plate0 = _plate_bbox(session)
+    # 起点顺序 = 实证命中优先：上一轮命中在 live+(78,+14)（Z 176.36），
+    # 另一轮在 live+(86,0)（Z 33.79）；方向先试 -45（命中方向）。
+    # 命中点放第一位（两轮实证 live+(78,+14)：Z 150.57 / 176.36），
+    # 这样第一次拖拽就命中，录像里不会出现相机晃动。
     pts = [(live[0] + dx, live[1] + dy)
-           for dy in (-14, 0, 14) for dx in (78, 86, 94, 100)]
+           for dy, dx in ((14, 78), (0, 86), (14, 86), (-14, 78), (0, 78),
+                          (0, 94), (-14, 86))]
     zs = []
     for (hx, hy) in pts:
-        for ddx in (45, -45):
+        for ddx in (-45, 45):
             m7.real_drag_screen(session, (hx, hy), (hx + ddx, hy))
             time.sleep(0.7)
             z_now = panel_value(session, "rotate", -1, timeout_s=1.5)
             dplate = _sig_delta(plate0, _plate_bbox(session))
             print(f"{LOG} rot drag ({hx},{hy}) d({ddx},0) -> Z={z_now!r} "
                   f"view={dplate}")
-            # **不再用"视角变化"否决**：Z 是应用自己的状态值，相机怎么动都造
-            # 不了假；而本 build 的旋转拖拽常常同时带动视角（实测 view 25~32%
-            # 时 Z 仍正常变化 35.10/31.39/59.62），先前那道守卫把真命中全拒了。
+            # 接受条件必须严格：模型初始 Z=0.00，所以 **Z 仍是 '0.00' 就是
+            # 没转**（上一轮把"相机转了 31% + Z=0.00"当成了命中 = 假阳性，
+            # 录像里只看到视角转动）。真旋转后 Z 必然非 0。
+            if z_now and z_now not in ("0.00", "0", "0.0"):
+                zs.append((hx, hy, ddx, z_now))
+                a = zs[-1]
+                return a[3], (f"arrow({a[0]},{a[1]}) drag ({a[2]},0): "
+                              f"Z {z_before!r} -> {a[3]}")
             if z_now:
-                if not zs or z_now != zs[-1][3]:
-                    zs.append((hx, hy, ddx, z_now))
-                if len({z[3] for z in zs}) >= 2:
-                    a = zs[-1]
-                    return a[3], (f"arrow({a[0]},{a[1]}) drag ({a[2]},0): "
-                                  f"Z {z_before!r} -> {a[3]}")
+                print(f"{LOG}   Z still {z_now!r} = no rotation")
+                continue
+            # 落空且把相机转走了 → **立刻反向拖回**（实测反向拖能把视角复原），
+            # 否则后面所有点的坐标都跟着偏移，录像里还会连续出现相机转动。
+            if dplate is not None and dplate > 3.0:
+                print(f"{LOG}   miss: view moved {dplate:.1f}% -> drag back")
+                m7.real_drag_screen(session, (hx + ddx, hy), (hx, hy))
+                time.sleep(0.5)
     return "", ""
 
 
