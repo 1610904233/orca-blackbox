@@ -7,7 +7,7 @@
 # Ported from C:\coil\vm_setup\hv_go.ps1 (un-versioned); parameters now come
 # from runner\_common.ps1 (env-overridable). Case list comes from cases.py —
 # do NOT hardcode case names here (see docs/STRUCTURING_PLAN.md).
-param([string[]]$Cases = @(), [switch]$OnlyFailed, [switch]$NoWarmup, [switch]$Warmup, [switch]$NoSync, [string]$Suite = 'regression')
+param([string[]]$Cases = @(), [switch]$OnlyFailed, [switch]$NoWarmup, [switch]$Warmup, [switch]$NoSync, [string]$Suite = 'regression', [string]$Exe = '')
 . (Join-Path $PSScriptRoot '_common.ps1')
 
 # Guest passthrough gate: ONLY caller-supplied selections (-Cases, -OnlyFailed)
@@ -193,7 +193,7 @@ Invoke-Command -VMName $vm -Credential $cred -ScriptBlock {
   # NOTE: this scriptblock runs ON THE GUEST — everything it needs must be
   # marshaled via param/-ArgumentList (host-side $warmup is not visible here;
   # measured 09-03 night: silent $false, warmup block never emitted).
-  param($caseStr, $sb, $py, $warmup, $suite)
+  param($caseStr, $sb, $py, $warmup, $suite, $exe)
   # full run: the guest derives the list from cases.py itself (single
   # source of truth); explicit subset: split the passed string.
   # warmup fragment — the host-side decision ($warmup) must be baked into
@@ -208,7 +208,10 @@ if (`$cases.Count -gt 1) {
 }
 "@
   }
+  $exeEnv = ''
+  if ($exe) { $exeEnv = "`$env:ORCA_VISION_APP_EXE = '$exe'" }
   $runner = @"
+$exeEnv
 if (`$args) { `$cases = @((`$args -join ' ') -split '\s+' | Where-Object { `$_ }) }
 else {
   `$reg = & '$py' -c "import sys; sys.path.insert(0, r'$sb'); from cases import enabled_cases; print(' '.join(enabled_cases('$suite')))"
@@ -254,12 +257,12 @@ if (`$failed) { "FAILED: `$(`$failed -join ' ')" | Add-Content C:\coil\regress_s
   [IO.File]::WriteAllText('C:\coil\run_suite.ps1', $runner)
   Unregister-ScheduledTask -TaskName suite -Confirm:$false -ErrorAction SilentlyContinue
   $a = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ("-NoProfile -ExecutionPolicy Bypass -File C:\coil\run_suite.ps1 " + $caseStr)
-  $st = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 4)
+    $st = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 6)
   $p = New-ScheduledTaskPrincipal -GroupId "INTERACTIVE"
   Register-ScheduledTask -TaskName "suite" -Action $a -Settings $st -Principal $p -Force | Out-Null
   Start-ScheduledTask -TaskName "suite"
   "suite launched: " + (Get-ScheduledTask suite).State
-} -ArgumentList $guestCaseStr, $guestSandbox, $guestPython, $warmup, $Suite
+} -ArgumentList $guestCaseStr, $guestSandbox, $guestPython, $warmup, $Suite, $Exe
 Write-Host "[4] DONE. Poll progress any time (admin window):"
 Write-Host "    Get-Content C:\coil\vm_setup\poll_rerun.txt | Set-Content C:\coil\vm_setup\relay_cmd.txt   # via relay"
 Write-Host "    or in guest: Get-Content C:\coil\regress_progress.txt -Tail 5"
