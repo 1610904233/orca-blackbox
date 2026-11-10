@@ -71,6 +71,63 @@ SCAN_X1_OFF = 120          # scan up to (width - SCAN_X1_OFF)
 SLOT_PITCH = 22            # fine hover step; icon ~40px wide, so every
                            # icon is hit by at least one hover point
 
+# 2.4.2 fixed-geometry fallback table (exported from 2.4.1 by
+# diag/probe_241_slottable.py -> artifacts/slot_table_241.json; the JSON is
+# gitignored so it never reaches the guest — THESE constants are the
+# authority, deduped to the smallest x per tool and stripped of OCR noise).
+# On 2.4.2 the toolbar tooltips are completely unreadable (probe_242_tipwin/
+# tipnudge/tooltip: no visible tooltips_class32 under jump/nudge/slide-in
+# hovers, main-window OCR empty), so hover scans cannot locate slots; the
+# two builds' toolbar layouts are visually identical and the x's below were
+# effect-verified on 2.4.2d (rotate/move/scale panel opens, add-plate widens
+# the plate band >=1.25x — diag/probe_242_slotfallback.py).
+STATIC_SLOTS_241 = (
+    (722, "Add [Ctrl+1]"),
+    (758, "Add plate"),
+    (812, "Auto orient"),
+    (848, "Arrange all objects [A]"),
+    (902, "Split to objects"),
+    (938, "Split to parts"),
+    (992, "Variable layer height"),
+    (1064, "Move"),
+    (1100, "Rotate"),
+    (1154, "Scale"),
+    (1190, "Lay on Face [F]"),
+    (1244, "Mesh Boolean [B]"),
+    (1280, "Support Painting [L]"),
+    (1334, "Seam painting [P]"),
+    (1370, "Paint-on fuzzy skin [H]"),
+    (1406, "Color painting [N]"),
+    (1460, "Emboss [T]"),
+    (1496, "Measure"),
+    (1550, "Assemble"),
+    (1586, "Brim Ears"),
+    (1658, "Assembly View"),
+)
+
+_STATE: dict = {}          # per-process probe cache: {"tooltips_alive": pid -> bool}
+
+
+def tooltips_alive(session, dwell_s=1.8):
+    """Whether the toolbar tooltips answer hovers in THIS session (verdict
+    probed once per pid, then cached).
+
+    2.4.2 kills the tooltips outright, and a full hover sweep then burns
+    ~2s x ~50 positions per find_slot call for nothing. Probe two known
+    slots (rotate 1100 / arrange 848) once: both read empty -> tooltips are
+    dead, find_slot/select_model/_already_selected take the fixed-geometry
+    / info-panel fallbacks. A false 'dead' on a healthy build is harmless —
+    the static x's were measured ON that build."""
+    key = ("tooltips_alive", session.pid)
+    if key not in _STATE:
+        ensure_maximized(session)
+        reads = [tooltip_text(session, x, BAR_Y, dwell_s=dwell_s)
+                 for x in (1100, 848)]
+        _STATE[key] = any(t.strip() for t in reads)
+        print(f"{LOG} tooltips_alive={_STATE[key]} probes={reads!r}")
+    return _STATE[key]
+
+
 user32 = ctypes.WinDLL("user32")
 MF_BYPOSITION = 0x400
 
@@ -119,9 +176,22 @@ def scan_slots(session, x0=SCAN_X0, cy=BAR_Y, pred=None, dwell_s=1.1):
 
 
 def find_slot(session, pred, cy=BAR_Y):
-    """First toolbar slot whose tooltip satisfies pred — m4e contract."""
-    hits = scan_slots(session, cy=cy, pred=pred)
-    return (hits[0][0], hits[0][1]) if hits else (None, "")
+    """First toolbar slot whose tooltip satisfies pred — m4e contract.
+
+    2.4.2: when the tooltips are dead (tooltips_alive) or a live sweep finds
+    no hit, fall back to the 2.4.1 fixed-geometry table; the returned tip is
+    the table's canonical text, so callers that gate on it ('plate' in tip,
+    'add' in tip) keep working. The caller's own effect assertion (gizmo
+    panel opens / plate band widens) remains the real success gate."""
+    if tooltips_alive(session):
+        hits = scan_slots(session, cy=cy, pred=pred)
+        if hits:
+            return (hits[0][0], hits[0][1])
+    for x, tip in STATIC_SLOTS_241:
+        if pred(tip.lower()):
+            print(f"{LOG} find_slot static fallback: x={x} tip={tip!r}")
+            return (x, tip)
+    return (None, "")
 
 
 # --- selection ---------------------------------------------------------------
@@ -185,10 +255,22 @@ def select_model(session, tries=3):
             time.sleep(0.2)
             winutil.real_click_screen(sx, sy)
             time.sleep(1.2)
-            tip = tooltip_text(session, rot_x, BAR_Y)
-            print(f"{LOG} rotate tooltip after click @({cx},{cy + 22}): {tip!r}")
-            if tip and "select" not in tip.lower():
-                return True
+            if tooltips_alive(session):
+                tip = tooltip_text(session, rot_x, BAR_Y)
+                print(f"{LOG} rotate tooltip after click "
+                      f"@({cx},{cy + 22}): {tip!r}")
+                if tip and "select" not in tip.lower():
+                    return True
+            else:
+                # 2.4.2: no tooltips anywhere — the bottom-right object-info
+                # panel is the selection oracle instead (object_selected's
+                # OCR channel, measured since 2.4.0 and independent of the
+                # tooltip renderer).
+                picked = object_selected(session)
+                print(f"{LOG} info-panel selected after click "
+                      f"@({cx},{cy + 22}): {picked}")
+                if picked:
+                    return True
         time.sleep(1.0)
     return False
 
@@ -1231,7 +1313,10 @@ def _already_selected(session) -> bool:
     op_gizmo_field 过去无条件再跑一次 select_model：对大夹具无害，但小模型
     （Prusa.stl，blob 质心带阴影偏移 ~65px）上 select_model 的 '+22px 点击'
     落在对象外，反而把外部调用方已经选中的模型**点取消**，随后判定
-    '选不中' 返回空（实测 10-15，m8x_152 S2-S4 连续空回读）。"""
+    '选不中' 返回空（实测 10-15，m8x_152 S2-S4 连续空回读）。
+    2.4.2：tooltip 全灭时改用 object_selected（右下信息面板 OCR）判定。"""
+    if not tooltips_alive(session):
+        return object_selected(session)
     rot_x, _ = find_slot(session, lambda t: "rotate" in t)
     if rot_x is None:
         return False
