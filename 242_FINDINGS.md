@@ -73,6 +73,19 @@ PITFALLS/提交信息里）。每项附证据与复现步骤；定性为「待�
   产品问题升级为正式 bug
 - **状态**：全量复跑进行中，跑完后复核
 
+## F-6 色域警告文案变更：不再包含具体推荐区间「0%-70%」
+
+- **现象**：混色 Manual 匹配后的色域警告横幅，2.4.2 文案为
+  "The mix ratios for 8 in the Color Mapping list are outside the
+  recommended ranges.\nAdjust the mix ratios manually for better results."
+  ——不再写出具体区间数字；2.4.1 文案含 "0%-70%"（飞书用例 #13 的行文
+  预期即「文案提及 0%-70%」）。
+- **证据**：242d 全量日志 regress_m3m_mixing_filaments（gamut warning
+  appears: PASS / gamut text mentions 0-70%: FAIL，横幅原文已捕获）
+- **定性**：警告**功能正常**（该弹时弹），纯文案变化。是否有意去掉
+  数字提示需产品确认；确认有意后测试接受新文案，否则按文案回归处理
+- **状态**：待产品侧确认
+
 ---
 
 ## 记录纪律（本会话约定）
