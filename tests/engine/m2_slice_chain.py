@@ -214,13 +214,18 @@ def main() -> int:
         colored = has_colored_content(img)
         print(f"[m2] Preview switched={ok_pv}, colored-viewport fraction: "
               f"{colored:.3%} (was {empty_frac0:.3%} before slicing)")
-        # toolpath = colored fraction well above the noise floor AND >=2x
+        # toolpath = colored fraction well above the noise floor AND >=1.5x
         # the pre-slice colored-model baseline (a colored MODEL alone used
         # to false-positive the old fixed threshold; the ratio gate already
-        # excludes that — the floor only excludes sub-1% empty-bed jitter)
+        # excludes that — the floor only excludes sub-1% empty-bed jitter).
+        # 2.0x -> 1.5x (measured 11-10 on 2.4.2d, 242_FINDINGS F-5): the
+        # baseline model fraction itself swings 1.47%..3.88% across boots
+        # (view-state variance), putting the old 2.0x constant INSIDE the
+        # observed band — clean-session ratio 2.32x vs in-batch 1.87x with
+        # the toolpath fully rendered in both (diag/probe_242_f5_frames).
         results["preview toolpath"] = (
             "PASS" if (ok_pv and colored > TOOLPATH_COLORED_FLOOR
-                       and colored >= 2 * max(empty_frac0, 1e-4)) else "FAIL")
+                       and colored >= 1.5 * max(empty_frac0, 1e-4)) else "FAIL")
 
         print("\n[m2] === verdict ===")
         # A successful end-to-end slice is itself proof the model loaded
