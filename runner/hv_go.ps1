@@ -208,8 +208,10 @@ if (`$cases.Count -gt 1) {
 }
 "@
   }
-  $exeEnv = ''
-  if ($exe) { $exeEnv = "`$env:ORCA_VISION_APP_EXE = '$exe'" }
+  # batch runs throttle the shot archiver to 10s: the 3s PrintWindow sweep is
+  # a DWM-storm contributor on long guest sessions (PITFALLS 21.17)
+  $exeEnv = "`$env:ORCA_BB_SHOT_INTERVAL = '10'"
+  if ($exe) { $exeEnv += "`r`n`$env:ORCA_VISION_APP_EXE = '$exe'" }
   $runner = @"
 $exeEnv
 if (`$args) { `$cases = @((`$args -join ' ') -split '\s+' | Where-Object { `$_ }) }

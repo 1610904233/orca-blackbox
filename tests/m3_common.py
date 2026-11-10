@@ -10,6 +10,7 @@
 # messages / filesystem only (see BLACKBOX_CASES.md).
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -87,9 +88,14 @@ def boot_session(args, model=None, fresh=True):
     # relocation. Probes/census keep the raw boot (launcher default False).
     session = launcher.launch(exe=args.exe, datadir=datadir, model=model,
                               dismiss_wizard=True)
-    # archive screenshots for later manual spot-check (all cases, zero edits)
+    # archive screenshots for later manual spot-check (all cases, zero edits).
+    # ORCA_BB_SHOT_INTERVAL throttles the capture cadence for long batch runs
+    # (default 3s): the PrintWindow sweep is a documented DWM-storm contributor
+    # on the guest rig (PITFALLS 21.17) — hv_go sets 10s for suite runs.
     from harness import shot_archive
-    _arch = shot_archive.start_archiver(session, Path(sys.argv[0]).stem)
+    _interval = float(os.environ.get("ORCA_BB_SHOT_INTERVAL", "3.0") or 3.0)
+    _arch = shot_archive.start_archiver(session, Path(sys.argv[0]).stem,
+                                        interval=_interval)
     shot_archive.hook_stdout_tee(_arch)   # labeled capture per step/verdict print
     time.sleep(12.0)  # hands-off: early interference kills CLI auto-load
     try:  # maximize for the full-screen recording; viewport checks are
