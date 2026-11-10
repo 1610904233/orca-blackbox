@@ -1088,15 +1088,16 @@ def file_menu_dispatch(session, item_substr, expect_dialog=False,
         if idx is None:
             topbar_util.close_menu_windows(session.pid)
             return False, None
-        # open the submenu popup so its rows are live (row geometry only
-        # exists while the menu is shown), then match the row inside it
-        got = click_menu_row(session, hwnd, hmenu, via, nested=True)
-        if not got:
+        # 2.4.2: GetSubMenu reads the child HMENU while the parent popup is
+        # open — no hover (hover-opening submenus is unreliable on 2.4.2,
+        # the HMENU tree itself stays readable; probe_242_submenu)
+        _vid, sub = topbar_util.item_info(hmenu, idx)
+        if not sub:
+            print(f"{LOG} {via!r} has no submenu")
             topbar_util.close_menu_windows(session.pid)
             return False, None
-        _idx, (_shwnd, shmenu_live) = got
-        target_hmenu = shmenu_live
-        rows = list_menu(shmenu_live)
+        target_hmenu = sub
+        rows = list_menu(sub)
         print(f"{LOG} {via} menu: {[l for _i, l in rows]}")
     idx = topbar_util.find_item(target_hmenu, item_substr)
     if idx is None:

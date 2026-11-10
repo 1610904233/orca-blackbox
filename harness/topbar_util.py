@@ -170,6 +170,23 @@ def real_click_submenu_row(session, submenu_name: str, row_substr: str,
     geometry drifts ~12px from the naive formula. Reopens the menus between
     attempts. Returns True when the observable fired."""
     from . import winutil
+    # 2.4.2 fast path: while the dropdown popup is open the submenu HMENU
+    # is readable without hovering (GetSubMenu), and WM_COMMAND(row_id)
+    # drives the same handler a real click would — try the command route
+    # first; the hover ladder below stays as the fallback for builds/flows
+    # where the command route is dead.
+    ok, wid = dispatch_submenu(session, "dropdown", row_substr,
+                               via=submenu_name)
+    if ok:
+        deadline = time.monotonic() + 8.0
+        while time.monotonic() < deadline:
+            if success_fn():
+                print(f"[topbar] {label or row_substr}: WM_COMMAND({wid}) "
+                      f"fired the observable")
+                return True
+            time.sleep(0.5)
+        print(f"[topbar] {label or row_substr}: WM_COMMAND({wid}) dispatched "
+              f"but the observable did not fire — falling back to hover")
     for attempt in range(max_attempts):
         menu = open_dropdown_menu(session)
         if not menu:
@@ -295,6 +312,63 @@ def activate_menu_item(session, hmenu: int, index: int) -> bool:
                                     0x0000 | 0x0002, 3000, ctypes.byref(result))
     print(f"[topbar] WM_COMMAND(id={item_id}) sent, completed={bool(ok)}")
     return True
+
+
+def dispatch_submenu(session, top, child, via=None, top_menu=None):
+    """Open a topbar menu ('file' | 'dropdown') and dispatch a row by
+    WM_COMMAND(item_id) — no hover anywhere.
+
+    2.4.2: hover-opening submenus is unreliable there, but while the PARENT
+    popup is open the whole HMENU tree is readable — GetSubMenu descends
+    without hovering (probe_242_submenu), and WM_COMMAND(child_id) still
+    reaches the handler through wxCurrentPopupMenu (wxMenu::MSWCommand's
+    FindItem descends into submenus). `via` = submenu label to descend
+    through ('Import' / 'Edit' / 'View'); `child` = row label substring or
+    the numeric command id; `top_menu` = an already-open (rect, hwnd,
+    hmenu) to skip reopening. Returns (dispatched, item_id)."""
+    menu = top_menu or (open_file_menu(session) if top == "file"
+                        else open_dropdown_menu(session))
+    if not menu:
+        print(f"[topbar] dispatch_submenu: {top!r} menu did not open")
+        return False, None
+    _rect, _hwnd, hmenu = menu
+    target = hmenu
+    if via:
+        via_idx = find_item(hmenu, via)
+        if via_idx is None:
+            print(f"[topbar] dispatch_submenu: no {via!r} row in menu")
+            close_menu_windows(session.pid)
+            return False, None
+        _vid, sub = item_info(hmenu, via_idx)
+        if not sub:
+            print(f"[topbar] dispatch_submenu: {via!r} has no submenu")
+            close_menu_windows(session.pid)
+            return False, None
+        target = sub
+    rows = menu_items(target)
+    idx = None
+    if isinstance(child, int):
+        for i, _label, _st in rows:
+            wid, _sub = item_info(target, i)
+            if wid == child:
+                idx = i
+                break
+    else:
+        needle = child.lower()
+        for i, label, _st in rows:
+            if needle in label.lower():
+                idx = i
+                break
+    if idx is None:
+        print(f"[topbar] dispatch_submenu: child {child!r} not in "
+              f"{[l for _i, l, _s in rows]}")
+        close_menu_windows(session.pid)
+        return False, None
+    item_id, _sub = item_info(target, idx)
+    ok = activate_menu_item(session, target, idx)
+    time.sleep(0.6)
+    close_menu_windows(session.pid)
+    return ok, item_id
 
 
 def close_menu_windows(pid: int) -> None:
