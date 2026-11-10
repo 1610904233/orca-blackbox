@@ -86,16 +86,31 @@ PITFALLS/提交信息里）。每项附证据与复现步骤；定性为「待�
   数字提示需产品确认；确认有意后测试接受新文案，否则按文案回归处理
 - **状态**：待产品侧确认
 
-## F-7 净化器 PLA strong 预设 ALARM_TEMP 默认值 45→48
+## F-7 净化器参数默认值整体变化（PLA/PETG 两向证据）
 
-- **现象**：#122 场景（PLA strong，切换前基线）导出 gcode 的净化器参数
-  `ALARM_TEMP='48'`，2.4.1 为 '45'（用例判定门即
-  `MODE=='1' and ALARM_TEMP=='45'`）。其余参数（MODE=1、DESIRE=42、
-  DELAY_OFF=0）与 ABS/PC 切换、keep-warm 全链路均正常。
-- **证据**：242d 全量日志 regress_m8d_purifier_gcode（
-  "#122 pre: PLA strong MODE=1: FAIL ({'MODE': '1', 'DESIRE_TEMP': '42',
-  'ALARM_TEMP': '48', ...})"）
-- **定性**：产品默认值变更，是否有意需确认；确认有意后测试门改为 48
+- **PLA strong**：`ALARM_TEMP` 默认 45→**48**（m8d：MODE/DESIRE/DELAY 均
+  符合预期，仅 ALARM 不符；m8x_123 A 侧同样 48）
+- **PETG 默认模式翻转**：2.4.1 默认**弱冷**（MODE=3 / DESIRE=0 / 无
+  ALARM_TEMP / DELAY_OFF=600）；2.4.2 默认**强冷**（MODE=1 / DESIRE=45 /
+  ALARM=51 / DELAY_OFF=0）。m8e 流程不做任何模式切换、直接切片导出，
+  2.4.1 全绿依赖的就是这个默认——2.4.2 导出为强冷参数。
+- **证据**：242d 全量 regress_m8d_purifier_gcode /
+  regress_m8e_purifier_weakcool / regress_m8x_123_softening_temp
+  （params 字典原文都在日志里）
+- **定性**：产品默认值/模板变更，是否有意需产品确认
+
+## F-8 软化温度行显示「弱冷」但导出 gcode 仍为强冷参数（UI/gcode 不一致）
+
+- **现象**：#123 把软化温度改到 80℃ 后，参数行**显示弱冷**（用例行文
+  判定 PASS，OCR 证据在日志），但随后导出的 gcode 净化器参数仍是
+  MODE=1 / DESIRE=45（强冷）。2.4.1 行为：软温进入弱冷区间时导出
+  gcode 自动转 MODE=3 / DESIRE=0。软温值本身有写进 gcode
+  （vitr 行号 51439→51433 变化），说明不是导出链路整体失效。
+- **证据**：242d 全量 regress_m8x_123_softening_temp ——
+  「#123 row wording vs build (80C -> 弱冷): PASS」与
+  「#123 B vitr=80 -> 弱冷 MODE=3 DESIRE_TEMP=0: FAIL」同帧成立
+- **定性**：疑似 2.4.2 回归（显示分类与导出参数脱钩），优先级高，
+  建议开发侧先查软温→净化器模式的参数传递
 
 ---
 
