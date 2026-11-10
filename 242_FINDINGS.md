@@ -86,6 +86,17 @@ PITFALLS/提交信息里）。每项附证据与复现步骤；定性为「待�
   数字提示需产品确认；确认有意后测试接受新文案，否则按文案回归处理
 - **状态**：待产品侧确认
 
+## F-7 净化器 PLA strong 预设 ALARM_TEMP 默认值 45→48
+
+- **现象**：#122 场景（PLA strong，切换前基线）导出 gcode 的净化器参数
+  `ALARM_TEMP='48'`，2.4.1 为 '45'（用例判定门即
+  `MODE=='1' and ALARM_TEMP=='45'`）。其余参数（MODE=1、DESIRE=42、
+  DELAY_OFF=0）与 ABS/PC 切换、keep-warm 全链路均正常。
+- **证据**：242d 全量日志 regress_m8d_purifier_gcode（
+  "#122 pre: PLA strong MODE=1: FAIL ({'MODE': '1', 'DESIRE_TEMP': '42',
+  'ALARM_TEMP': '48', ...})"）
+- **定性**：产品默认值变更，是否有意需确认；确认有意后测试门改为 48
+
 ---
 
 ## 记录纪律（本会话约定）
