@@ -170,23 +170,27 @@ def real_click_submenu_row(session, submenu_name: str, row_substr: str,
     geometry drifts ~12px from the naive formula. Reopens the menus between
     attempts. Returns True when the observable fired."""
     from . import winutil
-    # 2.4.2 fast path: while the dropdown popup is open the submenu HMENU
-    # is readable without hovering (GetSubMenu), and WM_COMMAND(row_id)
-    # drives the same handler a real click would — try the command route
-    # first; the hover ladder below stays as the fallback for builds/flows
-    # where the command route is dead.
-    ok, wid = dispatch_submenu(session, "dropdown", row_substr,
-                               via=submenu_name)
-    if ok:
+    # 2.4.2 fast path: WM_COMMAND is dead for dropdown rows there (see the
+    # probe_242_dddispatch note above) but every row's label carries its
+    # ACCELERATOR — read it live from the HMENU, close the menu, hand the
+    # app keyboard focus and send the keystroke. The hover ladder below
+    # stays as the fallback for rows without accelerators / dead keys.
+    accel = _row_accelerator(session, submenu_name, row_substr)
+    parsed = _parse_accel(accel) if accel else None
+    if parsed:
+        print(f"[topbar] {label or row_substr}: accelerator route "
+              f"{accel!r} (WM_COMMAND is dead on 2.4.2 dropdowns)")
+        _focus_click(session)
+        _send_accel(*parsed)
         deadline = time.monotonic() + 8.0
         while time.monotonic() < deadline:
             if success_fn():
-                print(f"[topbar] {label or row_substr}: WM_COMMAND({wid}) "
-                      f"fired the observable")
+                print(f"[topbar] {label or row_substr}: {accel} fired "
+                      f"the observable")
                 return True
             time.sleep(0.5)
-        print(f"[topbar] {label or row_substr}: WM_COMMAND({wid}) dispatched "
-              f"but the observable did not fire — falling back to hover")
+        print(f"[topbar] {label or row_substr}: {accel} did not fire the "
+              f"observable — falling back to the hover ladder")
     for attempt in range(max_attempts):
         menu = open_dropdown_menu(session)
         if not menu:
@@ -296,6 +300,93 @@ def find_item(hmenu: int, label_substr: str):
 # ---------------------------------------------------------------------------
 # activation
 # ---------------------------------------------------------------------------
+
+# 2.4.2 lesson (probe_242_dddispatch): dispatching a DROPDOWN submenu row by
+# WM_COMMAND(item_id) is DEAD there — id 348 (Delete All) / 354 (Top) sent to
+# BOTH the frame and the topbar child all 'complete' but nothing happens,
+# while the FILE menu's WM_COMMAND rows (Import id 330) still work (m7c).
+# Every dropdown row carries its ACCELERATOR in the label tail, so the
+# reliable route is the keyboard one a user takes.
+_VK = {"ctrl": 0x11, "shift": 0x10, "alt": 0x12, "del": 0x2E,
+       "delete": 0x2E, "esc": 0x1B, "escape": 0x1B, "enter": 0x0D,
+       "return": 0x0D, "tab": 0x09, "space": 0x20, "?": 0xBF, "&": 0x31 + 7}
+
+
+def _parse_accel(accel: str):
+    """'Ctrl+Shift+S' / 'Del' / 'Z' -> ([modifier VKs], key VK) or None."""
+    parts = [p.strip().lower() for p in accel.split("+") if p.strip()]
+    if not parts:
+        return None
+    mods, key = [], None
+    for p in parts:
+        if p in ("ctrl", "control"):
+            mods.append(_VK["ctrl"])
+        elif p == "shift":
+            mods.append(_VK["shift"])
+        elif p in ("alt", "menu"):
+            mods.append(_VK["alt"])
+        elif len(p) == 1 and p.isalnum():
+            key = ord(p.upper())
+        elif p in _VK:
+            key = _VK[p]
+        elif p.startswith("f") and p[1:].isdigit() and 1 <= int(p[1:]) <= 12:
+            key = 0x70 + int(p[1:]) - 1
+        else:
+            return None
+    if key is None:
+        return None
+    return mods, key
+
+
+def _send_accel(mods, key):
+    for vk in mods:
+        user32.keybd_event(vk, 0, 0, 0)
+        time.sleep(0.05)
+    user32.keybd_event(key, 0, 0, 0)
+    time.sleep(0.05)
+    user32.keybd_event(key, 0, 2, 0)
+    for vk in reversed(mods):
+        time.sleep(0.05)
+        user32.keybd_event(vk, 0, 2, 0)
+    time.sleep(0.6)
+
+
+def _row_accelerator(session, submenu_name: str, row_substr: str):
+    """Open the dropdown, read the matched row's FULL label (accelerators
+    live in the '\t' tail), close the menu; returns the accelerator text or
+    None."""
+    menu = open_dropdown_menu(session)
+    if not menu:
+        return None
+    _rect, _hwnd, hmenu = menu
+    try:
+        via_idx = find_item(hmenu, submenu_name)
+        if via_idx is None:
+            return None
+        _vid, sub = item_info(hmenu, via_idx)
+        if not sub:
+            return None
+        row_idx = find_item(sub, row_substr)
+        if row_idx is None:
+            return None
+        label = menu_items(sub)[row_idx][1]
+        return label.split("\t")[-1].strip() if "\t" in label else None
+    finally:
+        close_menu_windows(session.pid)
+
+
+def _focus_click(session):
+    """One real click inside the canvas band to hand the app REAL keyboard
+    focus (message clicks never grant it; without focus keybd_event
+    accelerators go to whatever window has it). Bottom-of-viewport bed
+    click: harmless for the submenu flows (at most deselects)."""
+    from . import winutil
+    l, t, r, b = winutil.window_rect(session.hwnd)
+    x, y = (l + r) // 2, t + (b - t) * 3 // 4
+    user32.SetCursorPos(x, y)
+    time.sleep(0.2)
+    winutil.real_click_screen(x, y)
+    time.sleep(0.5)
 
 def activate_menu_item(session, hmenu: int, index: int) -> bool:
     """Dispatch WM_COMMAND(item_id) to the frame — the same message a real
