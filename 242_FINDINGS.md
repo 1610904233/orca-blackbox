@@ -106,18 +106,25 @@ PITFALLS/提交信息里）。每项附证据与复现步骤；定性为「待�
   修改，m8e 判定门已改，commit 021c249）；PLA 的 ALARM_TEMP **2.4.1
   实测同为 48**，旧预期 45 是用例登记偏差（m8d 门已改 48）
 
-## F-8 软化温度行显示「弱冷」但导出 gcode 仍为强冷参数（UI/gcode 不一致）
+## F-8 [精化后仍成立，待开发确认] 80℃ 软化温度的模式分档：自动化=弱冷，手工=保温
 
-- **现象**：#123 把软化温度改到 80℃ 后，参数行**显示弱冷**（用例行文
-  判定 PASS，OCR 证据在日志），但随后导出的 gcode 净化器参数仍是
-  MODE=1 / DESIRE=45（强冷）。2.4.1 行为：软温进入弱冷区间时导出
-  gcode 自动转 MODE=3 / DESIRE=0。软温值本身有写进 gcode
-  （vitr 行号 51439→51433 变化），说明不是导出链路整体失效。
-- **证据**：242d 全量 regress_m8x_123_softening_temp ——
-  「#123 row wording vs build (80C -> 弱冷): PASS」与
-  「#123 B vitr=80 -> 弱冷 MODE=3 DESIRE_TEMP=0: FAIL」同帧成立
-- **定性**：疑似 2.4.2 回归（显示分类与导出参数脱钩），优先级高，
-  建议开发侧先查软温→净化器模式的参数传递
+- **官方参数映射**（用户手工 gcode 内嵌 machine_start_gcode 模板定准，
+  2026-11-11）：
+  - 保温 chamber_cooling_mode==0：`MODE=3 DESIRE_TEMP=45 FAN_SPEED=0.6 DELAY_OFF=600`
+  - 强冷 chamber_cooling_mode==2：`MODE=1 DESIRE_TEMP=42 ALARM_TEMP=48 DELAY_OFF=0`
+  - 弱冷 else：`MODE=1 DESIRE_TEMP=45 ALARM_TEMP=51 DELAY_OFF=0`
+- **现象**：同预设（Snapmaker PLA Silk）软化温度改 80℃ 并确认提交
+  （UI 回读 + gcode vitr 行都变了）：
+  - **手工**编辑导出 = 保温（MODE=3/45/600）——用户桌面
+    242测试模型/软化温度80.gcode 第 104 行
+  - **自动化**（消息驱动编辑）导出 = 弱冷（MODE=1/45/51/0）——
+    2/2 复现（242d 全量 + fb3bf99 复跑，gcode 原文已核）
+- **45℃ 档无差异**：自动化与手工都是强冷（1/42/48），m8x_123 A 门 PASS
+- **待确认**：模式分档是否只由软化温度决定？若还受预设里显式
+  chamber_cooling_mode 设置影响，请对手工与自动化环境各查一次该设置；
+  若设置一致，则是消息驱动编辑路径下的真实分档差异，需开发定位
+- **测试侧**：判定门已按手工结果（80℃→保温）更新（fb3bf99），
+  在差异解释清楚前 m8x_123 保持 RED
 
 ## F-9 非 Snapmaker 预设的颜色 chip 弹 Windows 标准取色器（行为变更）
 
