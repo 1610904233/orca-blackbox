@@ -563,9 +563,13 @@ def run_s4(args, results):
         # ——不再用 m7 的"质心+22"配方（薄片上那是床）。
         # 2.4.2 僵尸态差异（实测 11-11）：ESC 关闭的面板留下连授前台都
         # 救不回点击的状态；**槽位点击**关闭的则授前台+真实输入即可恢复
-        # 选中（probe_242_realinput L2/L4）。优先槽位关，ESC 兜底。
-        m7.click_slot(session, 1152)
-        time.sleep(1.2)
+        # 选中（probe_242_realinput L2/L4）。
+        # NOTE: op_gizmo_field 的收尾**已经用槽位点击关掉了面板**——这里
+        # 若无条件再点一次会把面板重新打开，随后的 ESC 兜底关闭又落进
+        # ESC 僵尸态（正是本用例长期失败的真根因，11-11 定位）。
+        if m7.gizmo_row_boxes(session, "scale"):
+            m7.click_slot(session, 1152)
+            time.sleep(1.2)
         _left = m7.gizmo_row_boxes(session, "scale")
         if _left:
             from harness import winutil as _wu_
