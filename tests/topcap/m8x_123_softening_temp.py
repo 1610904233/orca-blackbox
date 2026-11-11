@@ -91,14 +91,15 @@ def shot(name, rect=None):
     print(f"{LOG} shot -> m8x123_{name}.png")
 
 
-def open_preset_editor(session):
+def open_preset_editor(session, slot=2):
     """Slot row button -> #32768 menu -> first row (Edit) -> 'Material settings'.
 
     The slot menu is a wx popup whose HMENU enumeration is empty, so rows are
     addressed geometrically; its first row is Edit (menu.top + 12, left edge —
-    a 'Click to edit preset' tooltip covers the label area)."""
+    a 'Click to edit preset' tooltip covers the label area).
+    `slot` picks WHICH extruder's preset to edit (1 = the initial extruder)."""
     slots = m8.wait_slots(session)
-    hit = next((s for s in slots if s["slot"] == 2), None)
+    hit = next((s for s in slots if s["slot"] == slot), None)
     if not hit or not hit.get("picker"):
         return None
     r = hit["picker"]
@@ -411,21 +412,54 @@ def main() -> int:
         # matches expectation 2 (弱冷, DESIRE_TEMP=0), so that is what is
         # asserted, and the mismatch is recorded as its own evidence line rather
         # than silently smoothed over.
-        # 11-11 用户手工实证：80℃ 导出 = 保温（MODE=3/DESIRE=45/无ALARM/
-        # DELAY_OFF=600）。自动化历史轮在 80℃ 导出过弱冷参数集
-        # （MODE=1/DESIRE=45/ALARM=51），与手工不同——若复跑仍弱冷则
-        # 保持 FAIL 并按「消息驱动编辑 vs 手工编辑的模式分档差异」上报
-        results["#123 B vitr=80 -> 保温 MODE=3 DESIRE=45 DELAY=600"] = (
-            "PASS" if (vb == SOFT_NEW and pb.get("MODE") == "3"
+        # 11-11 官方分档规则定准（顶盖需求文档 V0.3，用户提供）：
+        #   软化温度 >70 保温 / 51-70 弱冷 / <=50 强冷；
+        #   同盘多耗材取**最敏感（最低）**软化温度决定模式。
+        # 本夹具 5 头向量 A=(70,45,45,45,45)→min45 强冷；
+        # B 只编辑了 2~5 号头共用预设(45→80)→(70,80,80,80,80)，
+        # 1 号头的 70 把 min 卡在 51-70 边界 → 弱冷（MODE=1/45/51/0）
+        results["#123 B 全盘最低软化温度=70 -> 弱冷 MODE=1/45/51"] = (
+            "PASS" if (vb == SOFT_NEW and pb.get("MODE") == "1"
                        and pb.get("DESIRE_TEMP") == "45"
-                       and pb.get("ALARM_TEMP") in (None, "None")
-                       and pb.get("DELAY_OFF") == "600")
+                       and pb.get("ALARM_TEMP") == "51"
+                       and pb.get("DELAY_OFF") == "0")
             else f"FAIL (vitr={vb}, params={pb})")
+
+        # --- C: 1 号头（初始头）预设也改 80 -> 全盘 min=80 -> 保温 -------
+        dlg = open_preset_editor(session, slot=1)
+        if not dlg:
+            results["#123 C slot1 编辑器打开"] = "FAIL"
+            return m7.m7_verdict(results)
+        results["#123 C slot1 编辑器打开"] = "PASS"
+        lab, _box = softening_box(dlg)
+        before1 = read_field(dlg, lab) if lab else None
+        ok_c = bool(before1)
+        if ok_c:
+            type_into(before1[0], before1[1], SOFT_NEW)
+            after1 = read_field(dlg, lab)
+            ok_c = bool(after1 and after1[2].strip() == SOFT_NEW)
+        results["#123 C slot1 软化温度 ->80 提交"] = (
+            "PASS" if ok_c else f"FAIL (before={before1})")
+        save_preset(session, dlg)
+        close_editor(dlg)
+        time.sleep(1.0)
+        gC = ART / "m8x123_C_slot1_80.gcode"
+        gC.unlink(missing_ok=True)
+        m7.op_slice(session, results, key="#123 C slice (min=80)",
+                    export_to=gC)
+        pc = m8.purifier_params(gC.read_bytes()) if gC.exists() else {}
+        results["#123 C 全盘最低=80 -> 保温 MODE=3/45/600"] = (
+            "PASS" if (pc.get("MODE") == "3"
+                       and pc.get("DESIRE_TEMP") == "45"
+                       and pc.get("ALARM_TEMP") in (None, "None")
+                       and pc.get("DELAY_OFF") == "600")
+            else f"FAIL (params={pc})")
         # m7_verdict() treats anything not starting with PASS as RED, so the
         # evidence line carries the PASS prefix with the numbers inline.
-        results["#123 模式分档证据行（A 强冷 / B 实测）"] = (
-            f"PASS (evidence: A={pa.get('MODE')}/{pa.get('DESIRE_TEMP')} "
-            f"B={pb.get('MODE')}/{pb.get('DESIRE_TEMP')}; 手工 B=保温 3/45)")
+        results["#123 模式分档证据行（A 强冷 / B 弱冷 / C 保温）"] = (
+            f"PASS (A={pa.get('MODE')}/{pa.get('DESIRE_TEMP')} 强冷, "
+            f"B={pb.get('MODE')}/{pb.get('DESIRE_TEMP')} 弱冷, "
+            f"C={pc.get('MODE')}/{pc.get('DESIRE_TEMP')} 保温)")
         results["#123 class change updates the GCode"] = (
             "PASS" if (pa and pb and pa != pb) else f"FAIL (A={pa}, B={pb})")
         pur_a, vit_a = purifier_line_no(gA) if gA.exists() else (None, None)
