@@ -121,9 +121,28 @@ def main() -> int:
             f"FAIL (grew={bool(grew)}, centered={bool(centered)})")
 
         # --- #19: Select All -> Fit -> the union bbox pulls back ----------
+        # success_fn is REAL here (the old lambda: True never verified the
+        # selection): if the accelerator route was eaten by the dropdown
+        # read-cycle, the hover ladder runs, and a bare title-bar-focus +
+        # Ctrl+A (no menu cycle — probe_242_recal A2: 70.6% fit diff) is
+        # the last resort.
         ok_all = topbar_util.real_click_submenu_row(
             session, "Edit", "Select All",
-            success_fn=lambda: True, label="select-all")
+            success_fn=lambda: m7.object_selected(session),
+            label="select-all")
+        if not ok_all:
+            l_, t_, r_, b_ = winutil.window_rect(session.hwnd)
+            winutil.user32.SetCursorPos((l_ + r_) // 2, t_ + 12)
+            winutil.real_click_screen((l_ + r_) // 2, t_ + 12)
+            time.sleep(0.5)
+            winutil.user32.keybd_event(0x11, 0, 0, 0)
+            winutil.user32.keybd_event(ord("A"), 0, 0, 0)
+            time.sleep(0.05)
+            winutil.user32.keybd_event(ord("A"), 0, 2, 0)
+            winutil.user32.keybd_event(0x11, 0, 2, 0)
+            time.sleep(1.5)
+            ok_all = m7.object_selected(session)
+            print(f"[m8a] #19 bare Ctrl+A retry selected={ok_all}")
         time.sleep(1.0)
         m8.fit_click(session)
         img2 = cap(session)
