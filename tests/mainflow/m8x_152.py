@@ -637,9 +637,9 @@ def run_s4(args, results):
             "PASS" if after == before - 1 else f"FAIL ({before} -> {after})")
         gB = ART / "m8x_152.gcode"
         gB.unlink(missing_ok=True)
-        m7.op_slice(session, results, key="合并后切片", export_to=gB)
+        m7.op_slice(session, results, key="删除后切片", export_to=gB)
         used_b = m8.used_filaments(gB.read_bytes()) if gB.exists() else []
-        print(f"{LOG} post-merge used filaments: {used_b} (target slot {tgt})")
+        print(f"{LOG} post-delete used filaments: {used_b} (deleted slot {used})")
         remapped = bool(used_b) and used_b != [used]
         results["删除后 gcode 用量重映射（模型丝跟随）"] = (
             f"PASS (used={used_b}, deleted {used})" if remapped
