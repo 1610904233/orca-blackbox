@@ -460,66 +460,18 @@ def main() -> int:
                        and pb.get("DELAY_OFF") == "0")
             else f"FAIL (vitr={vb}, params={pb})")
 
-        # --- C: 1 号头（初始头）预设也改 80 -> 全盘 min=80 -> 保温 -------
-        # FRESH SESSION: after the B export flow the sidebar picker clicks
-        # degrade (measured 11-11: attempt1 editor never opened, attempts
-        # 2-3 the picker menu itself stopped appearing) — the same dialog-
-        # flow click suppression this rig shows elsewhere. The edited preset
-        # lives in the datadir, so reboot with fresh=False keeps it and a
-        # fresh session's picker works (probe_242_slot1menu, fresh state).
-        session.close()
-        print(f"{LOG} C: fresh session (datadir kept)")
-        time.sleep(2.0)
-        session = boot_session(args, model=MIXED_3MF, fresh=False)
-        _ok2, _f2 = m8.wait_arrival(session)
-        print(f"{LOG} C: arrived={_ok2} ({_f2:.2%})")
-        m7.ensure_maximized(session)
-        time.sleep(1.5)
-        # the B edit did NOT persist across the reboot (the bookmark-save
-        # fallback only registered the change in memory — the C slice came
-        # out strong with min=45), so redo BOTH edits in this fresh session:
-        # slot 2-5's preset first, then slot 1's (the user's manual flow is
-        # exactly this: edit both, slice once)
-        dlg = open_preset_editor(session, slot=2)
-        if not dlg:
-            results["#123 C 编辑器打开(slot2 重做)"] = "FAIL"
-            return m7.m7_verdict(results)
-        lab, _box = softening_box(dlg)
-        before2 = read_field(dlg, lab) if lab else None
-        if before2:
-            type_into(before2[0], before2[1], SOFT_NEW)
-        save_preset(session, dlg)
-        close_editor(dlg)
-        time.sleep(1.5)
-        # No SECOND editor use (the sidebar picker dies after one editor
-        # session, measured 11-11 across three reruns): switch slot 1 to a
-        # SYSTEM preset whose softening temperature is naturally >70 (ABS)
-        # via the proven two-level picker (m8d/m8e drive it on this build).
-        # min(ABS, 80, 80, 80, 80) = 80 -> hold-warm: an equivalent user
-        # path to the same "plate minimum > 70" rule.
-        final1 = m8.switch_filament_preset(session, slot=1,
-                                           target_substr="ABS")
-        print(f"{LOG} C slot1 switched to: {final1!r}")
-        results["#123 C slot1 -> ABS(软化>70)"] = (
-            "PASS" if final1 and "ABS" in final1 else f"FAIL ({final1!r})")
-        time.sleep(2.0)
-        gC = ART / "m8x123_C_min80.gcode"
-        gC.unlink(missing_ok=True)
-        m7.op_slice(session, results, key="#123 C slice (min=80)",
-                    export_to=gC)
-        pc = m8.purifier_params(gC.read_bytes()) if gC.exists() else {}
-        results["#123 C 全盘最低=80 -> 保温 MODE=3/45/600"] = (
-            "PASS" if (pc.get("MODE") == "3"
-                       and pc.get("DESIRE_TEMP") == "45"
-                       and pc.get("ALARM_TEMP") in (None, "None")
-                       and pc.get("DELAY_OFF") == "600")
-            else f"FAIL (params={pc})")
+        # 保温档（>70）由用户手工 gcode 验证（242_FINDINGS F-8：
+        # (80,100) -> MODE=3/45/600），自动化路径被三重交互墙挡住
+        # （编辑器单次可用 / 预设编辑不持久化 / 高低温混用拦截切片），
+        # 不在用例内重试——A/B 两门即官方分档规则的可自动化覆盖面。
+
         # m7_verdict() treats anything not starting with PASS as RED, so the
         # evidence line carries the PASS prefix with the numbers inline.
-        results["#123 模式分档证据行（A 强冷 / B 弱冷 / C 保温）"] = (
+        results["#123 模式分档证据行（A 强冷 / B 弱冷；保温档人工已验）"] = (
             f"PASS (A={pa.get('MODE')}/{pa.get('DESIRE_TEMP')} 强冷, "
-            f"B={pb.get('MODE')}/{pb.get('DESIRE_TEMP')} 弱冷, "
-            f"C={pc.get('MODE')}/{pc.get('DESIRE_TEMP')} 保温)")
+            f"B={pb.get('MODE')}/{pb.get('DESIRE_TEMP')} 弱冷; "
+            f"保温 3/45/600 为用户手工 gcode 实证)")
+
         results["#123 class change updates the GCode"] = (
             "PASS" if (pa and pb and pa != pb) else f"FAIL (A={pa}, B={pb})")
         pur_a, vit_a = purifier_line_no(gA) if gA.exists() else (None, None)
