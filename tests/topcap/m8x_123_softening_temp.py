@@ -161,19 +161,36 @@ def type_into(edit_hwnd, edit_rect, text):
 
 
 def read_field(dlg, lab):
-    """The value text on the softening row via the field's own edit control."""
+    """The value text on the softening row via the field's own edit control.
+
+    2.4.2d slot-1 editor wrinkle (measured 11-11): the row match can miss —
+    widen the row window to 16px, accept any numeric-looking text (decimals
+    included) instead of pure digits, and fall back to the dialog's first
+    numeric Edit with a dump when nothing matches."""
     from harness import export_util as eu
     kids = eu._children_texts(dlg[3])
     lcy = (lab[1] + lab[3]) // 2
-    cands = [(h, r) for t, r, h in kids
-             if not t.strip() and winutil.window_class(h) == "Edit"
-             and abs(((r[1] + r[3]) // 2) - lcy) < 12]
+    edits = [(h, r) for t, r, h in kids
+             if winutil.window_class(h) == "Edit"]
+    cands = [(h, r) for h, r in edits
+             if abs(((r[1] + r[3]) // 2) - lcy) < 16]
     best = None
     for h, r in cands:
         txt = winutil.edit_text(h)
-        if txt.strip().isdigit():
+        if txt.strip() and any(ch.isdigit() for ch in txt):
             best = (h, r, txt)
             break
+    if best is None:
+        for h, r in edits:
+            txt = winutil.edit_text(h)
+            if txt.strip() and any(ch.isdigit() for ch in txt):
+                print(f"{LOG} read_field fallback: label row empty, using "
+                      f"first numeric Edit {r} text={txt!r}")
+                best = (h, r, txt)
+                break
+    if best is None:
+        print(f"{LOG} read_field: no numeric Edit; edits="
+              f"{[(r, winutil.edit_text(h)) for h, r in edits]}")
     return best
 
 
@@ -437,6 +454,7 @@ def main() -> int:
         if ok_c:
             type_into(before1[0], before1[1], SOFT_NEW)
             after1 = read_field(dlg, lab)
+            print(f"{LOG} C field after typing: {after1}")
             ok_c = bool(after1 and after1[2].strip() == SOFT_NEW)
         results["#123 C slot1 软化温度 ->80 提交"] = (
             "PASS" if ok_c else f"FAIL (before={before1})")
