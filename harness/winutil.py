@@ -450,6 +450,23 @@ class _INPUT(ctypes.Structure):
     _fields_ = [("type", wt.DWORD), ("value", _INPUTMOUSE)]
 
 
+def real_click_with_foreground(hwnd: int, x: int, y: int) -> bool:
+    """Grant the app REAL foreground, then physically click (x,y).
+
+    Feasibility probe 2026-11-11 (diag/probe_242_realinput): in the
+    unattended guest the app is deliberately kept OUT of the foreground by
+    the launch watchdog; message-free ("real") clicks on a non-foreground
+    window are swallowed by the placer after gizmo panels close (the F-10
+    zombie state: click/Ctrl+A/rubber-band all dead). force_set_foreground
+    + a real click selects normally (L2/L4 of the probe). Returns whether
+    the foreground grant took."""
+    ok = force_set_foreground(hwnd)
+    user32.SetCursorPos(x, y)
+    time.sleep(0.2)
+    real_click_screen(x, y)
+    return ok
+
+
 def real_click_screen(x: int, y: int) -> int:
     """A REAL left click at screen (x, y) via SendInput (moves the cursor).
 

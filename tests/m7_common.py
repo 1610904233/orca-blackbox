@@ -313,6 +313,12 @@ def select_object_strict(session, tries=2, offsets=((0, 0), (0, -8), (0, 8)),
     context menu' four times, then an 'Add Primitive...' menu). Click the
     centroid itself, then small nudges."""
     ensure_maximized(session)
+    # Grant REAL foreground: in the unattended guest the app never owns the
+    # foreground (launch watchdog), and after gizmo panels close a
+    # non-foreground placer swallows even real clicks (F-10 zombie state;
+    # diag/probe_242_realinput L2/L4: foreground + real click selects).
+    fg_ok = winutil.force_set_foreground(session.hwnd)
+    print(f"{LOG} strict select: foreground granted={fg_ok}")
     clicks = 0
     for _attempt in range(tries):
         for cx, cy in model_candidates(session):
@@ -407,6 +413,7 @@ def open_context_menu(session, where="model"):
         'no popup'). So walk the centroid candidates like select_model
         does, and accept only a menu that contains the click point."""
     ensure_maximized(session)
+    winutil.force_set_foreground(session.hwnd)
     if where == "model":
         candidates = [(cx, cy + 22) for cx, cy in model_candidates(session)]
         print(f"{LOG} model right-click candidates: {candidates}")
