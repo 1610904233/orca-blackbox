@@ -461,6 +461,20 @@ def main() -> int:
             else f"FAIL (vitr={vb}, params={pb})")
 
         # --- C: 1 号头（初始头）预设也改 80 -> 全盘 min=80 -> 保温 -------
+        # FRESH SESSION: after the B export flow the sidebar picker clicks
+        # degrade (measured 11-11: attempt1 editor never opened, attempts
+        # 2-3 the picker menu itself stopped appearing) — the same dialog-
+        # flow click suppression this rig shows elsewhere. The edited preset
+        # lives in the datadir, so reboot with fresh=False keeps it and a
+        # fresh session's picker works (probe_242_slot1menu, fresh state).
+        session.close()
+        print(f"{LOG} C: fresh session (datadir kept)")
+        time.sleep(2.0)
+        session = boot_session(args, model=MIXED_3MF, fresh=False)
+        _ok2, _f2 = m8.wait_arrival(session)
+        print(f"{LOG} C: arrived={_ok2} ({_f2:.2%})")
+        m7.ensure_maximized(session)
+        time.sleep(1.5)
         dlg = open_preset_editor(session, slot=1)
         if not dlg:
             results["#123 C slot1 编辑器打开"] = "FAIL"
