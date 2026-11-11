@@ -184,6 +184,15 @@ def _drag_candidates(session, pt, delta, row_label):
             out.append(((sx, sy), (sx, sy + 64)))
     out.append((pt, (pt[0] + delta[0], pt[1] + delta[1])))
     if row_label != "scale":
+        # 2.4.2: the single centroid drag misses the Move gizmo's grab zone
+        # (measured 11-10 full run: rotate needed 3 probe points and scale
+        # 13 before landing a hit, while position got exactly ONE candidate
+        # and failed with the value unchanged) — give position the same
+        # tolerance ladder: nudges around the centroid, same delta.
+        for dx, dy in ((0, -12), (0, 12), (-12, 0), (12, 0), (6, -6),
+                       (-6, 6)):
+            src = (pt[0] + dx, pt[1] + dy)
+            out.append((src, (src[0] + delta[0], src[1] + delta[1])))
         return out
     try:
         import m8_common as m8

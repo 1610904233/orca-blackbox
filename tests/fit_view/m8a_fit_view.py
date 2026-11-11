@@ -67,6 +67,23 @@ def other_plate_candidates(session, exclude_xy):
         if exclude_xy and abs(cx - exclude_xy[0]) < 260                 and abs(cy - exclude_xy[1]) < 260:
             continue  # the current plate itself
         cands.append((int(cx), int(cy)))
+    if not cands and n > 1:
+        # 2.4.2: zoomed out, the side-by-side plates render as ONE dark
+        # region (the morph close fuses them; measured 11-11, probe_
+        # 242_recal2 A2: a single 1480x862 blob where separate beds used
+        # to be) — no second component ever clears the size gate. Sample
+        # across the largest blob's width instead; the caller walks the
+        # list and keeps whichever click actually switches plates (diff).
+        i = max(range(1, n), key=lambda k: stats[k, cv2.CC_STAT_AREA])
+        bx, by = stats[i, cv2.CC_STAT_LEFT], stats[i, cv2.CC_STAT_TOP]
+        bw, bh = stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT]
+        sy = int(by + bh / 2) + y0
+        for frac in (0.1, 0.3, 0.7, 0.9, 0.2, 0.8, 0.45):
+            sx = int(bx + bw * frac) + x0
+            if exclude_xy and abs(sx - exclude_xy[0]) < 260 \
+                    and abs(sy - exclude_xy[1]) < 260:
+                continue
+            cands.append((sx, sy))
     return cands
 
 

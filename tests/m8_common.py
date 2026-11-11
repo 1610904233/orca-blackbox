@@ -983,6 +983,58 @@ def click_official_color_popup(session, slot, timeout_s=8.0, tries=3):
     return None
 
 
+def standard_colour_chooser(session, timeout_s=4.0):
+    """The Windows CHOOSECOLOR dialog ('Please choose the filament color').
+
+    2.4.2 behaviour change (242_FINDINGS F-9): a NON-Snapmaker preset's
+    colour chip opens THIS standard chooser instead of the official colour
+    library (2.4.1 opened the library for every preset; Snapmaker presets
+    on 2.4.2 still open the library — m8b stays on the official path).
+    Returns (title, rect, hwnd) or None."""
+    import time as _t
+    deadline = _t.monotonic() + timeout_s
+    while _t.monotonic() < deadline:
+        for cls, title, rect, hwnd in _visible_toplevels(session.pid):
+            if cls == "#32770" and "filament col" in (title or "").lower():
+                return title, rect, hwnd
+        _t.sleep(0.3)
+    return None
+
+
+def pick_standard_colour(session, dlg_hwnd, col=3, row=0):
+    """Pick a basic-colours grid cell in the CHOOSECOLOR dialog + click OK.
+
+    Grid = the dialog's big empty-text child (measured 11-11, probe_
+    242_recal2 C2: grid rect 17,54,227,194 on a 447x299 dialog -> 8 cols
+    x 5 rows, cell ~26x28). Cell (3,0) = pure blue — maximally unlike the
+    olive default swatch. Returns True when a cell + OK were clicked."""
+    from harness import export_util
+    kids = export_util._children_texts(dlg_hwnd)
+    grid = next((r for t, r, h in kids if not t.strip()
+                 and (r[3] - r[1]) > 100 and (r[2] - r[0]) > 100), None)
+    if not grid:
+        print(f"{LOG} standard chooser: no basic-colors grid child")
+        return False
+    cw = (grid[2] - grid[0]) / 8.0
+    ch = (grid[3] - grid[1]) / 5.0
+    cx = int(grid[0] + col * cw + cw / 2)
+    cy = int(grid[1] + row * ch + ch / 2)
+    winutil.user32.SetCursorPos(cx, cy)
+    time.sleep(0.3)
+    winutil.real_click_screen(cx, cy)
+    time.sleep(0.6)
+    print(f"{LOG} standard chooser: cell({col},{row}) clicked @({cx},{cy})")
+    for t, r, h in kids:
+        if t.strip().lower() == "ok":
+            ox, oy = (r[0] + r[2]) // 2, (r[1] + r[3]) // 2
+            winutil.user32.SetCursorPos(ox, oy)
+            winutil.real_click_screen(ox, oy)
+            time.sleep(1.0)
+            print(f"{LOG} standard chooser: OK clicked")
+            return True
+    return False
+
+
 def click_color_picker(session, slot, timeout_s=6.0, dialog_cls="#32770"):
     """Click the slot's colour control; return the OFFICIAL colour popup tuple
     or, when the slot holds a non-Snapmaker filament (which falls back to the

@@ -330,8 +330,19 @@ def main() -> int:
         import m8b_official_color as m8b
         before_rgb = m8.slot_swatch_rgb(session, 1)
         dlg = m8.click_official_color_popup(session, 1)
-        picked = m8b.pick_official_card(session, dlg) if dlg else None
-        ok_ok = m8.close_dialog_by_button(dlg, "OK") if dlg else False
+        if dlg:
+            picked = m8b.pick_official_card(session, dlg)
+            ok_ok = m8.close_dialog_by_button(dlg, "OK")
+        else:
+            # 2.4.2（242_FINDINGS F-9）：非 Snapmaker 预设的 chip 弹的是
+            # Windows 标准取色器（'Please choose the filament color'）而非
+            # 官方色卡库——直接在标准取色器里选基础色格 + OK，换色判定
+            # （前后 swatch rgb + gcode filament_colour）口径不变。
+            cho = m8.standard_colour_chooser(session)
+            picked = ("standard-chooser-cell"
+                      if cho and m8.pick_standard_colour(session, cho[2])
+                      else None)
+            ok_ok = picked is not None
         time.sleep(2.0)
         after_rgb = m8.slot_swatch_rgb(session, 1)
         print(f"{LOG} colour change: before={before_rgb} picked={picked!r} "

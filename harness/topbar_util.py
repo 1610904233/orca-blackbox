@@ -376,13 +376,17 @@ def _row_accelerator(session, submenu_name: str, row_substr: str):
 
 
 def _focus_click(session):
-    """One real click inside the canvas band to hand the app REAL keyboard
-    focus (message clicks never grant it; without focus keybd_event
-    accelerators go to whatever window has it). Bottom-of-viewport bed
-    click: harmless for the submenu flows (at most deselects)."""
+    """One real click on the main window's TITLE BAR to hand the app REAL
+    keyboard focus (message clicks never grant it; without focus keybd_event
+    accelerators go to whatever window has it). The title bar is deliberate:
+    the first cut clicked the canvas bed band, but on the 2.4.2 multi-plate
+    fixture that lands on a NEIGHBOURING plate's bed and silently switches
+    the current plate (measured 11-11, probe_242_recal A2: bed-click + Ctrl+A
+    -> fit diff 0.07% = nothing selected across plates; title-bar click ->
+    70.6% = select-all actually reached all plates)."""
     from . import winutil
     l, t, r, b = winutil.window_rect(session.hwnd)
-    x, y = (l + r) // 2, t + (b - t) * 3 // 4
+    x, y = (l + r) // 2, t + 12
     user32.SetCursorPos(x, y)
     time.sleep(0.2)
     winutil.real_click_screen(x, y)
