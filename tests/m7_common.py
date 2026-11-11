@@ -335,9 +335,15 @@ def select_object_strict(session, tries=2, offsets=((0, 0), (0, -8), (0, 8)),
                 winutil.real_click_with_foreground(session.hwnd, sx, sy)
                 clicks += 1
                 time.sleep(0.9)
-                if object_selected(session):
-                    print(f"{LOG} object selected @({cx + dx},{cy + dy})")
-                    return (cx + dx, cy + dy)
+                # poll the oracle: the info panel paints a beat AFTER the
+                # click registers (archive frames show the panel present a
+                # moment later, while a single immediate OCR read returns
+                # empty — measured 11-11)
+                for _poll in range(3):
+                    if object_selected(session):
+                        print(f"{LOG} object selected @({cx + dx},{cy + dy})")
+                        return (cx + dx, cy + dy)
+                    time.sleep(0.7)
         time.sleep(0.8)
     print(f"{LOG} strict select: no object-info panel after {clicks} clicks")
     return None
