@@ -130,19 +130,23 @@ def main() -> int:
             session, "Edit", "Select All",
             success_fn=lambda: m7.object_selected(session),
             label="select-all")
-        if not ok_all:
-            l_, t_, r_, b_ = winutil.window_rect(session.hwnd)
-            winutil.user32.SetCursorPos((l_ + r_) // 2, t_ + 12)
-            winutil.real_click_screen((l_ + r_) // 2, t_ + 12)
-            time.sleep(0.5)
-            winutil.user32.keybd_event(0x11, 0, 0, 0)
-            winutil.user32.keybd_event(ord("A"), 0, 0, 0)
-            time.sleep(0.05)
-            winutil.user32.keybd_event(ord("A"), 0, 2, 0)
-            winutil.user32.keybd_event(0x11, 0, 2, 0)
-            time.sleep(1.5)
-            ok_all = m7.object_selected(session)
-            print(f"[m8a] #19 bare Ctrl+A retry selected={ok_all}")
+        # ALWAYS top up with a bare title-bar-focus + Ctrl+A before fitting:
+        # object_selected cannot tell ONE stale selection from select-ALL,
+        # and the dropdown read-cycle can eat the accelerator's keypress
+        # (probe_242_recal A2: the bare route moves the fit 70.6%). Selecting
+        # all twice is idempotent, so no state risk.
+        l_, t_, r_, b_ = winutil.window_rect(session.hwnd)
+        winutil.user32.SetCursorPos((l_ + r_) // 2, t_ + 12)
+        winutil.real_click_screen((l_ + r_) // 2, t_ + 12)
+        time.sleep(0.5)
+        winutil.user32.keybd_event(0x11, 0, 0, 0)
+        winutil.user32.keybd_event(ord("A"), 0, 0, 0)
+        time.sleep(0.05)
+        winutil.user32.keybd_event(ord("A"), 0, 2, 0)
+        winutil.user32.keybd_event(0x11, 0, 2, 0)
+        time.sleep(1.5)
+        print(f"[m8a] #19 select-all topped up, selected="
+              f"{m7.object_selected(session)}")
         time.sleep(1.0)
         m8.fit_click(session)
         img2 = cap(session)
