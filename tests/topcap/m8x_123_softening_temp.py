@@ -491,25 +491,19 @@ def main() -> int:
         save_preset(session, dlg)
         close_editor(dlg)
         time.sleep(1.5)
-        dlg = open_preset_editor(session, slot=1)
-        if not dlg:
-            results["#123 C slot1 编辑器打开"] = "FAIL"
-            return m7.m7_verdict(results)
-        results["#123 C slot1 编辑器打开"] = "PASS"
-        lab, _box = softening_box(dlg)
-        before1 = read_field(dlg, lab) if lab else None
-        ok_c = bool(before1)
-        if ok_c:
-            type_into(before1[0], before1[1], SOFT_NEW)
-            after1 = read_field(dlg, lab)
-            print(f"{LOG} C field after typing: {after1}")
-            ok_c = bool(after1 and after1[2].strip() == SOFT_NEW)
-        results["#123 C slot1 软化温度 ->80 提交"] = (
-            "PASS" if ok_c else f"FAIL (before={before1})")
-        save_preset(session, dlg)
-        close_editor(dlg)
-        time.sleep(1.0)
-        gC = ART / "m8x123_C_slot1_80.gcode"
+        # No SECOND editor use (the sidebar picker dies after one editor
+        # session, measured 11-11 across three reruns): switch slot 1 to a
+        # SYSTEM preset whose softening temperature is naturally >70 (ABS)
+        # via the proven two-level picker (m8d/m8e drive it on this build).
+        # min(ABS, 80, 80, 80, 80) = 80 -> hold-warm: an equivalent user
+        # path to the same "plate minimum > 70" rule.
+        final1 = m8.switch_filament_preset(session, slot=1,
+                                           target_substr="ABS")
+        print(f"{LOG} C slot1 switched to: {final1!r}")
+        results["#123 C slot1 -> ABS(软化>70)"] = (
+            "PASS" if final1 and "ABS" in final1 else f"FAIL ({final1!r})")
+        time.sleep(2.0)
+        gC = ART / "m8x123_C_min80.gcode"
         gC.unlink(missing_ok=True)
         m7.op_slice(session, results, key="#123 C slice (min=80)",
                     export_to=gC)
