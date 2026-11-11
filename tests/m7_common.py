@@ -327,9 +327,12 @@ def select_object_strict(session, tries=2, offsets=((0, 0), (0, -8), (0, 8)),
                     print(f"{LOG} strict select: click budget spent")
                     return None
                 sx, sy = client(session, cx + dx, cy + dy)
-                winutil.user32.SetCursorPos(sx, sy)
-                time.sleep(0.2)
-                winutil.real_click_screen(sx, sy)
+                # per-click foreground grant: one grant at function entry can
+                # be stolen back during the multi-second OCR scan between
+                # clicks (measured 11-11: granted=True at entry, 12 clicks
+                # still dead), while the probe's grant-then-immediately-click
+                # sequence works (probe_242_realinput L2)
+                winutil.real_click_with_foreground(session.hwnd, sx, sy)
                 clicks += 1
                 time.sleep(0.9)
                 if object_selected(session):
