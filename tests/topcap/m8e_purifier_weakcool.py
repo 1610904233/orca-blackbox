@@ -102,14 +102,17 @@ def main() -> int:
 
         results["PETG slot used"] = (
             "PASS" if used and used[0] == 1 else f"FAIL (used={used})")
-        results["#114/#129 weak MODE=3"] = (
-            "PASS" if p and p["MODE"] == "3" else f"FAIL ({p})")
-        results["#114 DESIRE_TEMP=0"] = (
-            "PASS" if p and p["DESIRE_TEMP"] == "0" else f"FAIL ({p})")
-        results["#114/#129 no ALARM_TEMP"] = (
-            "PASS" if p and p["ALARM_TEMP"] is None else f"FAIL ({p})")
-        results["#129 DELAY_OFF=600 (app template)"] = (
-            "PASS" if p and p["DELAY_OFF"] == "600" else f"FAIL ({p})")
+        # 11-11 用户确认并把基线用例文档改为强冷：2.4.2 PETG 默认净化器
+        # 模式 = 强冷（MODE=1 / DESIRE=45 / ALARM=51 / DELAY_OFF=0），
+        # 2.4.1 的弱冷默认（MODE=3/DESIRE=0/无 ALARM/DELAY=600）不再成立
+        results["#114/#129 PETG default strong MODE=1"] = (
+            "PASS" if p and p["MODE"] == "1" else f"FAIL ({p})")
+        results["#114 strong DESIRE_TEMP=45"] = (
+            "PASS" if p and p["DESIRE_TEMP"] == "45" else f"FAIL ({p})")
+        results["#114/#129 ALARM_TEMP=51"] = (
+            "PASS" if p and p["ALARM_TEMP"] == "51" else f"FAIL ({p})")
+        results["#129 strong DELAY_OFF=0"] = (
+            "PASS" if p and p["DELAY_OFF"] == "0" else f"FAIL ({p})")
         results["#129 params complete"] = (
             "PASS" if p and p["FAN_SPEED"] is not None else f"FAIL ({p})")
 

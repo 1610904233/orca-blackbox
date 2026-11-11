@@ -115,8 +115,10 @@ def main() -> int:
                 pa = m8.purifier_params(g_a.read_bytes())
                 used = m8.used_filaments(g_a.read_bytes())
                 print(f"{LOG} A2 params={pa} used={used}")
-        results["#122 pre: PLA strong MODE=1"] = (
-            "PASS" if pa and pa["MODE"] == "1" and pa["ALARM_TEMP"] == "45"
+        # ALARM_TEMP 期望 = 48（2.4.1 实测同为 48，11-11 用户手工确认；
+        # 旧预期 45 是用例登记时的笔误级偏差，非产品变更）
+        results["#122 pre: PLA strong MODE=1 ALARM=48"] = (
+            "PASS" if pa and pa["MODE"] == "1" and pa["ALARM_TEMP"] == "48"
             else f"FAIL ({pa})")
 
         # --- switch slot 2 preset to ABS -> keep-warm ---------------------

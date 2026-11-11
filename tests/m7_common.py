@@ -794,7 +794,7 @@ def type_into_field(session, box, text, old_len=4, wake=False, recipe=0):
     time.sleep(0.7)
     probe = winutil.client_to_screen(session.hwnd, 600, 400)
     hwnd = winutil.deepest_child_at(session.hwnd, *probe) or session.hwnd
-    if recipe in (1, 3, 4):
+    if recipe in (1, 3, 4, 5):
         for _ in range(max(old_len, 4) + 2):
             winutil._send_msg(hwnd, WM_CHAR, 0x08, 0)   # backspace
             time.sleep(0.04)
@@ -802,6 +802,16 @@ def type_into_field(session, box, text, old_len=4, wake=False, recipe=0):
         if not _type_chars_verified(session, hwnd, box, text):
             print(f"{LOG} per-char typing did not converge — not committing")
             return
+    elif recipe == 5:
+        # real-keyboard chars (measured 11-11, user manual check: physical
+        # typing never drops chars — the WM_CHAR message channel does; F-3
+        # is a harness-channel artifact, so the last resort mirrors a user)
+        for ch in text:
+            vk = ord(ch.upper())
+            winutil.user32.keybd_event(vk, 0, 0, 0)
+            time.sleep(0.05)
+            winutil.user32.keybd_event(vk, 0, 2, 0)
+            time.sleep(0.12)
     else:
         for ch in text:
             winutil._send_msg(hwnd, WM_CHAR, ord(ch), 0)
@@ -1365,7 +1375,7 @@ def op_gizmo_field(session, slot_pred, row_label, index, value,
     text = ""
     for attempt, (recipe, wake) in enumerate(
             [(0, False), (1, False), (0, True), (2, False), (3, False),
-             (4, False)],
+             (4, False), (5, False)],
             start=1):
         boxes = gizmo_row_boxes(session, row_label)
         if attempt == 1:
