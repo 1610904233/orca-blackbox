@@ -586,11 +586,12 @@ def run_s4(args, results):
         # value box in editing state after the panel closes — the first real
         # clicks then go to the stale edit instead of selecting (hypothesis:
         # the probe's workflow typed with REAL keys and re-selected fine).
-        winutil.force_set_foreground(session.hwnd)
+        from harness import winutil as _wu_
+        _wu_.force_set_foreground(session.hwnd)
         fx, fy = m7.client(session, m7.VIEWPORT_X0 + 80,
                            m7.capture_bgr(session).shape[0] - 200)
-        winutil.user32.SetCursorPos(fx, fy)
-        winutil.real_click_screen(fx, fy)
+        _wu_.user32.SetCursorPos(fx, fy)
+        _wu_.real_click_screen(fx, fy)
         time.sleep(1.0)
         pt = m7.select_object_strict(session)
         results["合并前对象选中（信息面板）"] = "PASS" if pt else "FAIL"
