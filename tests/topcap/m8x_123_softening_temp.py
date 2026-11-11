@@ -118,8 +118,16 @@ def open_preset_editor(session, slot=2):
     time.sleep(0.2)
     winutil.real_click_screen(mrect[0] + 20, mrect[1] + 12)
     time.sleep(1.5)
-    return export_util.wait_toplevel(session.pid, lambda c, t, r2: c == "#32770",
-                                     timeout_s=6.0)
+    # match by TITLE: a bare '#32770' wait grabbed a leftover dialog once the
+    # flow had other popups in flight (measured 11-11, C-step after the B
+    # export: got a #32770 with ZERO Edit children). Slot 1's picker menu's
+    # first row IS Edit (probe_242_slot1menu) and the editor's title is
+    # 'Material settings'.
+    return export_util.wait_toplevel(
+        session.pid,
+        lambda c, t, r2: c == "#32770"
+        and "material" in (t or "").lower(),
+        timeout_s=6.0)
 
 
 def softening_box(dlg):
