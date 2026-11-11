@@ -475,6 +475,22 @@ def main() -> int:
         print(f"{LOG} C: arrived={_ok2} ({_f2:.2%})")
         m7.ensure_maximized(session)
         time.sleep(1.5)
+        # the B edit did NOT persist across the reboot (the bookmark-save
+        # fallback only registered the change in memory — the C slice came
+        # out strong with min=45), so redo BOTH edits in this fresh session:
+        # slot 2-5's preset first, then slot 1's (the user's manual flow is
+        # exactly this: edit both, slice once)
+        dlg = open_preset_editor(session, slot=2)
+        if not dlg:
+            results["#123 C 编辑器打开(slot2 重做)"] = "FAIL"
+            return m7.m7_verdict(results)
+        lab, _box = softening_box(dlg)
+        before2 = read_field(dlg, lab) if lab else None
+        if before2:
+            type_into(before2[0], before2[1], SOFT_NEW)
+        save_preset(session, dlg)
+        close_editor(dlg)
+        time.sleep(1.5)
         dlg = open_preset_editor(session, slot=1)
         if not dlg:
             results["#123 C slot1 编辑器打开"] = "FAIL"
