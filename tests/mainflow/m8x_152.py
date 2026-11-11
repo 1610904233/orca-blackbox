@@ -561,14 +561,22 @@ def run_s4(args, results):
         # 先强制关掉缩放面板：面板没收干净时后续一切右键都被吃（连空床菜单都
         # 不弹，实测 10-16）；随后用**信息面板口径**的严格选中拿回对象点击点
         # ——不再用 m7 的"质心+22"配方（薄片上那是床）。
-        from harness import winutil as _wu_
-        for _vk in (0x1B, 0x1B):
-            _wu_.user32.keybd_event(_vk, 0, 0, 0)
-            time.sleep(0.05)
-            _wu_.user32.keybd_event(_vk, 0, 2, 0)
-            time.sleep(0.5)
+        # 2.4.2 僵尸态差异（实测 11-11）：ESC 关闭的面板留下连授前台都
+        # 救不回点击的状态；**槽位点击**关闭的则授前台+真实输入即可恢复
+        # 选中（probe_242_realinput L2/L4）。优先槽位关，ESC 兜底。
+        m7.click_slot(session, 1152)
+        time.sleep(1.2)
         _left = m7.gizmo_row_boxes(session, "scale")
-        print(f"{LOG} scale panel after ESC x2: {'still open' if _left else 'closed'}")
+        if _left:
+            from harness import winutil as _wu_
+            for _vk in (0x1B, 0x1B):
+                _wu_.user32.keybd_event(_vk, 0, 0, 0)
+                time.sleep(0.05)
+                _wu_.user32.keybd_event(_vk, 0, 2, 0)
+                time.sleep(0.5)
+            _left = m7.gizmo_row_boxes(session, "scale")
+        print(f"{LOG} scale panel after slot-toggle close: "
+              f"{'still open' if _left else 'closed'}")
         pt = m7.select_object_strict(session)
         results["合并前对象选中（信息面板）"] = "PASS" if pt else "FAIL"
         if not pt:
