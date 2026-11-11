@@ -125,10 +125,9 @@ if (-not $NoSync) {
     "PULLED: $pull HEAD: " + (& $git -C $sb log --oneline -1)
   } -ArgumentList $guestGit, $guestSandbox
   Write-Host "    $sync"
-  # match the pull STATUS tokens only: a bare 'error' substring once
-  # false-positived on a commit TITLE containing "NameError" and blocked a
-  # batch launch (measured 11-11)
-  if ("$sync" -match 'DIRTY|fatal|error:|CONFLICT|refusing') {
+  # ANCHORED status prefixes only: an unanchored 'error' substring already
+  # false-positived TWICE on commit TITLES (11-11) and blocked batch launches
+  if ("$sync" -match '(?m)^(DIRTY|fatal|refusing|CONFLICT)') {
     throw "guest checkout sync failed — refusing to launch (pass -NoSync to override, e.g. deliberate bisect): $sync"
   }
 }
