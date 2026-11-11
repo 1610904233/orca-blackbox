@@ -246,6 +246,46 @@ def merge_slot_into(session, src_slot, want_slot):
     return False, None
 
 
+def slot_menu_delete(session, slot):
+    """点 slot 的 '...' → 'Delete'（删除桶），返回是否点中。
+
+    Merge-with 的存活规则是「保低槽」（11-11 两轮实测：1+3 保 1、4+1 保 1），
+    对象在最低槽时合并无法让其重映射——重映射验证改走 Delete。"""
+    import m7_common as m7
+    from harness import winutil as _wu
+    btn = slot_menu_button(session, slot)
+    if not btn:
+        print(f"{LOG} slot {slot}: '...' button not found")
+        return False
+    rect, _hwnd = btn
+    x, y = (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
+    menu = None
+    for attempt in range(3):
+        m7.dismiss_menus(session)
+        time.sleep(3.5 if attempt == 0 else 1.5)
+        _wu.user32.SetCursorPos(x, y)
+        time.sleep(0.3)
+        _wu.real_click_screen(x, y)
+        menu = _poll_menu_at(session, x, y, timeout_s=4.0, slack=60)
+        if menu:
+            break
+        print(f"{LOG} slot {slot} '...' menu attempt {attempt + 1} empty")
+    if not menu:
+        return False
+    mhwnd, mhmenu = menu
+    rows = m7.list_menu(mhmenu)
+    print(f"{LOG} slot {slot} '...' menu: {[l for _i, l in rows]}")
+    idx = next((i for i, l in rows if l.strip().lower() == "delete"), None)
+    if idx is None:
+        m7.dismiss_menus(session)
+        print(f"{LOG} slot {slot}: no Delete row")
+        return False
+    ok = click_menu_index(session, mhwnd, mhmenu, idx)
+    time.sleep(1.5)
+    m7.dismiss_menus(session)
+    return ok
+
+
 def _menu_rect_of(session, mhwnd):
     """#32768 菜单窗口的屏幕矩形（hover_row 需要）。"""
     import ctypes
@@ -578,36 +618,33 @@ def run_s4(args, results):
             f"PASS (used={used_a})" if used_a else f"FAIL ({used_a})")
         if not used_a:
             return False
-        # Merge-with 语义（11-11 实测反推）：点源槽 '...' → 选目标行 = 把
-        # **目标行并进源槽**（源槽存活），于是"对象所在的槽"要作为**目标行**
-        # 才能被并掉并重映射：点另一个槽（取最大槽号）的 '...' → 目标 = 对象槽。
+        # 删除桶（11-11 两轮实测后定案）：Merge-with 存活规则=「保低槽」
+        # （1+3 保 1、4+1 保 1），对象所在的 1 号永远存活、无法借合并重映射；
+        # 重映射验证改走同一 '...' 菜单的 Delete。
         used = used_a[0]
-        slots_now = sorted(s2["slot"] for s2 in m8.filament_slots(session))
-        src = max(s2 for s2 in slots_now if s2 != used)
-        target = used
         before = len(m8.filament_slots(session))
-        merged, tgt = merge_slot_into(session, src, want_slot=target)
-        results["耗材合并（... → Merge with → 所选目标槽）"] = (
-            f"PASS (slot {src} -> slot {tgt})" if merged
-            else "FAIL (merge did not take)")
-        if not merged:
+        deleted = slot_menu_delete(session, used)
+        results["耗材删除（... → Delete）"] = (
+            f"PASS (slot {used})" if deleted else "FAIL (delete did not take)")
+        if not deleted:
             return False
         time.sleep(2.5)
         after = len(m8.filament_slots(session))
         survivors = sorted(s2["slot"] for s2 in m8.filament_slots(session))
         print(f"{LOG} physical slots {before} -> {after} "
-              f"(survivors={survivors}, merged-away slot {tgt})")
-        results["耗材合并（物理并掉，槽位数-1）"] = (
+              f"(survivors={survivors}, deleted slot {used})")
+        results["耗材删除（物理槽位数-1）"] = (
             "PASS" if after == before - 1 else f"FAIL ({before} -> {after})")
         gB = ART / "m8x_152.gcode"
         gB.unlink(missing_ok=True)
         m7.op_slice(session, results, key="合并后切片", export_to=gB)
         used_b = m8.used_filaments(gB.read_bytes()) if gB.exists() else []
         print(f"{LOG} post-merge used filaments: {used_b} (target slot {tgt})")
-        results["合并后 gcode 用量重映射到存活槽"] = (
-            f"PASS (used={used_b}, expect [{src}])" if used_b == [src]
-            else f"FAIL (used={used_b}, expect [{src}], merged-away {tgt})")
-        return used_b == [src]
+        remapped = bool(used_b) and used_b != [used]
+        results["删除后 gcode 用量重映射（模型丝跟随）"] = (
+            f"PASS (used={used_b}, deleted {used})" if remapped
+            else f"FAIL (used={used_b}, deleted {used})")
+        return remapped
         return ok
     finally:
         session.close()
