@@ -306,9 +306,15 @@ def main() -> int:
         pa = m8.purifier_params(gA.read_bytes()) if gA.exists() else {}
         va = vitrification(gA) if gA.exists() else None
         print(f"{LOG} A: vitr={va} params={pa}")
-        results["#123 A vitr=45 -> 强冷 MODE=1 ALARM_TEMP=45"] = (
+        # 11-11 手工 gcode 模板定准官方参数映射（用户桌面
+        # 242测试模型/软化温度80.gcode 内嵌 machine_start_gcode）：
+        #   保温 = MODE=3 DESIRE=45 无ALARM DELAY_OFF=600
+        #   强冷 = MODE=1 DESIRE=42 ALARM=48 DELAY_OFF=0
+        #   弱冷 = MODE=1 DESIRE=45 ALARM=51 DELAY_OFF=0
+        results["#123 A vitr=45 -> 强冷 MODE=1 DESIRE=42 ALARM=48"] = (
             "PASS" if (va == SOFT_OLD and pa.get("MODE") == "1"
-                       and pa.get("ALARM_TEMP") == "45")
+                       and pa.get("DESIRE_TEMP") == "42"
+                       and pa.get("ALARM_TEMP") == "48")
             else f"FAIL (vitr={va}, params={pa})")
 
         # --- edit the preset: 45 -> 80, save as a user preset ----------------
@@ -405,16 +411,21 @@ def main() -> int:
         # matches expectation 2 (弱冷, DESIRE_TEMP=0), so that is what is
         # asserted, and the mismatch is recorded as its own evidence line rather
         # than silently smoothed over.
-        results["#123 B vitr=80 -> 弱冷 MODE=3 DESIRE_TEMP=0"] = (
+        # 11-11 用户手工实证：80℃ 导出 = 保温（MODE=3/DESIRE=45/无ALARM/
+        # DELAY_OFF=600）。自动化历史轮在 80℃ 导出过弱冷参数集
+        # （MODE=1/DESIRE=45/ALARM=51），与手工不同——若复跑仍弱冷则
+        # 保持 FAIL 并按「消息驱动编辑 vs 手工编辑的模式分档差异」上报
+        results["#123 B vitr=80 -> 保温 MODE=3 DESIRE=45 DELAY=600"] = (
             "PASS" if (vb == SOFT_NEW and pb.get("MODE") == "3"
-                       and pb.get("DESIRE_TEMP") == "0"
-                       and pb.get("ALARM_TEMP") in (None, "None"))
+                       and pb.get("DESIRE_TEMP") == "45"
+                       and pb.get("ALARM_TEMP") in (None, "None")
+                       and pb.get("DELAY_OFF") == "600")
             else f"FAIL (vitr={vb}, params={pb})")
         # m7_verdict() treats anything not starting with PASS as RED, so the
         # evidence line carries the PASS prefix with the numbers inline.
-        results["#123 row wording vs build (80C -> 弱冷, not 保温)"] = (
-            f"PASS (evidence: A mode/desire={pa.get('MODE')}/{pa.get('DESIRE_TEMP')} "
-            f"强冷, B={pb.get('MODE')}/{pb.get('DESIRE_TEMP')} 弱冷)")
+        results["#123 模式分档证据行（A 强冷 / B 实测）"] = (
+            f"PASS (evidence: A={pa.get('MODE')}/{pa.get('DESIRE_TEMP')} "
+            f"B={pb.get('MODE')}/{pb.get('DESIRE_TEMP')}; 手工 B=保温 3/45)")
         results["#123 class change updates the GCode"] = (
             "PASS" if (pa and pb and pa != pb) else f"FAIL (A={pa}, B={pb})")
         pur_a, vit_a = purifier_line_no(gA) if gA.exists() else (None, None)
