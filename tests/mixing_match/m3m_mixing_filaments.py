@@ -147,8 +147,13 @@ def main() -> int:
         results["gamut warning appears"] = (
             "PASS" if warn_text else "FAIL")
         if warn_text:
-            results["gamut text mentions 0-70%"] = (
-                "PASS" if ("0%" in warn_text or "70%" in warn_text)
+            # 2.4.2 文案改版（11-11 用户确认+截图，242d 日志同文）：
+            # 'The mix ratios for N in the Color Mapping list are outside
+            #  the recommended ranges. Adjust the mix ratios manually...'
+            # 不再含 0%-70% 数字——改为校验新文案关键词，旧文案留作兼容
+            results["gamut text advises range limits"] = (
+                "PASS" if ("recommended range" in warn_text.lower()
+                           or "0%" in warn_text or "70%" in warn_text)
                 else "FAIL")
         return verdict(results)
     finally:

@@ -91,43 +91,53 @@ def shot(name, rect=None):
     print(f"{LOG} shot -> m8x123_{name}.png")
 
 
-def open_preset_editor(session, slot=2):
+def open_preset_editor(session, slot=2, tries=3):
     """Slot row button -> #32768 menu -> first row (Edit) -> 'Material settings'.
 
     The slot menu is a wx popup whose HMENU enumeration is empty, so rows are
     addressed geometrically; its first row is Edit (menu.top + 12, left edge —
     a 'Click to edit preset' tooltip covers the label area).
-    `slot` picks WHICH extruder's preset to edit (1 = the initial extruder)."""
-    slots = m8.wait_slots(session)
-    hit = next((s for s in slots if s["slot"] == slot), None)
-    if not hit or not hit.get("picker"):
-        return None
-    r = hit["picker"]
-    sx, sy = winutil.client_to_screen(session.hwnd, (r[0] + r[2]) // 2,
-                                      (r[1] + r[3]) // 2)
-    winutil.user32.SetCursorPos(sx, sy)
-    time.sleep(0.25)
-    winutil.real_click_screen(sx, sy)
-    time.sleep(1.2)
-    menu = export_util.wait_toplevel(session.pid, lambda c, t, r2: c == "#32768",
-                                     timeout_s=4.0)
-    if not menu:
-        return None
-    mrect = menu[2]
-    winutil.user32.SetCursorPos(mrect[0] + 20, mrect[1] + 12)
-    time.sleep(0.2)
-    winutil.real_click_screen(mrect[0] + 20, mrect[1] + 12)
-    time.sleep(1.5)
-    # match by TITLE: a bare '#32770' wait grabbed a leftover dialog once the
-    # flow had other popups in flight (measured 11-11, C-step after the B
-    # export: got a #32770 with ZERO Edit children). Slot 1's picker menu's
-    # first row IS Edit (probe_242_slot1menu) and the editor's title is
-    # 'Material settings'.
-    return export_util.wait_toplevel(
-        session.pid,
-        lambda c, t, r2: c == "#32770"
-        and "material" in (t or "").lower(),
-        timeout_s=6.0)
+    `slot` picks WHICH extruder's preset to edit (1 = the initial extruder).
+    RETRY LADDER (measured 11-11): after a busy flow (e.g. the B export) the
+    picker click or the menu row click can be silently eaten — reopen up to
+    `tries` times, dismissing menu leftovers between attempts. The editor is
+    matched by TITLE ('Material settings'): a bare '#32770' wait once grabbed
+    a leftover dialog with ZERO Edit children."""
+    for attempt in range(max(1, tries)):
+        slots = m8.wait_slots(session)
+        hit = next((s for s in slots if s["slot"] == slot), None)
+        if not hit or not hit.get("picker"):
+            return None
+        r = hit["picker"]
+        sx, sy = winutil.client_to_screen(session.hwnd, (r[0] + r[2]) // 2,
+                                          (r[1] + r[3]) // 2)
+        winutil.user32.SetCursorPos(sx, sy)
+        time.sleep(0.3)
+        winutil.real_click_screen(sx, sy)
+        time.sleep(1.2)
+        menu = export_util.wait_toplevel(
+            session.pid, lambda c, t, r2: c == "#32768", timeout_s=4.0)
+        if not menu:
+            print(f"{LOG} preset editor attempt{attempt + 1}: no picker menu")
+            m7.dismiss_menus(session)
+            time.sleep(1.0)
+            continue
+        mrect = menu[2]
+        winutil.user32.SetCursorPos(mrect[0] + 20, mrect[1] + 12)
+        time.sleep(0.2)
+        winutil.real_click_screen(mrect[0] + 20, mrect[1] + 12)
+        time.sleep(1.5)
+        dlg = export_util.wait_toplevel(
+            session.pid,
+            lambda c, t, r2: c == "#32770"
+            and "material" in (t or "").lower(),
+            timeout_s=6.0)
+        if dlg:
+            return dlg
+        print(f"{LOG} preset editor attempt{attempt + 1}: editor did not open")
+        m7.dismiss_menus(session)
+        time.sleep(1.0)
+    return None
 
 
 def softening_box(dlg):
