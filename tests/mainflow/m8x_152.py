@@ -578,8 +578,13 @@ def run_s4(args, results):
             f"PASS (used={used_a})" if used_a else f"FAIL ({used_a})")
         if not used_a:
             return False
-        src = used_a[0]
-        target = 3 if src != 3 else 2
+        # Merge-with 语义（11-11 实测反推）：点源槽 '...' → 选目标行 = 把
+        # **目标行并进源槽**（源槽存活），于是"对象所在的槽"要作为**目标行**
+        # 才能被并掉并重映射：点另一个槽（取最大槽号）的 '...' → 目标 = 对象槽。
+        used = used_a[0]
+        slots_now = sorted(s2["slot"] for s2 in m8.filament_slots(session))
+        src = max(s2 for s2 in slots_now if s2 != used)
+        target = used
         before = len(m8.filament_slots(session))
         merged, tgt = merge_slot_into(session, src, want_slot=target)
         results["耗材合并（... → Merge with → 所选目标槽）"] = (
@@ -589,7 +594,9 @@ def run_s4(args, results):
             return False
         time.sleep(2.5)
         after = len(m8.filament_slots(session))
-        print(f"{LOG} physical slots {before} -> {after} (merged into {tgt})")
+        survivors = sorted(s2["slot"] for s2 in m8.filament_slots(session))
+        print(f"{LOG} physical slots {before} -> {after} "
+              f"(survivors={survivors}, merged-away slot {tgt})")
         results["耗材合并（物理并掉，槽位数-1）"] = (
             "PASS" if after == before - 1 else f"FAIL ({before} -> {after})")
         gB = ART / "m8x_152.gcode"
@@ -597,10 +604,10 @@ def run_s4(args, results):
         m7.op_slice(session, results, key="合并后切片", export_to=gB)
         used_b = m8.used_filaments(gB.read_bytes()) if gB.exists() else []
         print(f"{LOG} post-merge used filaments: {used_b} (target slot {tgt})")
-        results["合并后 gcode 用量落所选目标槽"] = (
-            f"PASS (used={used_b}, target {tgt})" if used_b == [tgt]
-            else f"FAIL (used={used_b}, target {tgt}, merged-away {src})")
-        return used_b == [tgt]
+        results["合并后 gcode 用量重映射到存活槽"] = (
+            f"PASS (used={used_b}, expect [{src}])" if used_b == [src]
+            else f"FAIL (used={used_b}, expect [{src}], merged-away {tgt})")
+        return used_b == [src]
         return ok
     finally:
         session.close()
