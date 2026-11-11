@@ -463,31 +463,40 @@ def real_click_with_foreground(hwnd: int, x: int, y: int) -> bool:
     ok = force_set_foreground(hwnd)
     user32.SetCursorPos(x, y)
     time.sleep(0.2)
-    real_click_screen(x, y)
+    real_click_screen(x, y, hold_ms=120)
     return ok
 
 
-def real_click_screen(x: int, y: int) -> int:
+def real_click_screen(x: int, y: int, hold_ms: int = 0) -> int:
     """A REAL left click at screen (x, y) via SendInput (moves the cursor).
 
     Unlike msg_click_screen this goes through the OS input queue, so modal
     loops (native menus, dialogs) see it as genuine user input. Returns the
-    number of events delivered."""
+    number of events delivered.
+    `hold_ms`: press-to-release hold. 0 sends down+up in ONE batch (the old
+    behaviour); a human click holds 50-150ms and per-frame-poller surfaces
+    (the placer's gizmo/canvas input) can MISS a 0ms press that starts and
+    ends between two frames (measured 11-11: hand clicks select in a state
+    where the 0ms robot click does nothing)."""
     sw = user32.GetSystemMetrics(0)   # SM_CXSCREEN
     sh = user32.GetSystemMetrics(1)   # SM_CYSCREEN
     absx = int(x * 65535 / sw)
     absy = int(y * 65535 / sh)
-    events = []
-    for flags in (MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTDOWN,
-                  MOUSEEVENTF_LEFTUP):
+
+    def _send(flags):
         ev = _INPUT()
         ev.type = 0  # INPUT_MOUSE
         ev.value.dx = absx
         ev.value.dy = absy
         ev.value.dwFlags = flags | MOUSEEVENTF_ABSOLUTE
-        events.append(ev)
-    arr = (_INPUT * 2)(*events)
-    return user32.SendInput(2, arr, ctypes.sizeof(_INPUT))
+        arr = (_INPUT * 1)(ev)
+        return user32.SendInput(1, arr, ctypes.sizeof(_INPUT))
+
+    n = _send(MOUSEEVENTF_MOVE | MOUSEEVENTF_LEFTDOWN)
+    if hold_ms > 0:
+        time.sleep(hold_ms / 1000.0)
+    n += _send(MOUSEEVENTF_LEFTUP)
+    return n
 
 
 def real_right_click_screen(x: int, y: int) -> int:
