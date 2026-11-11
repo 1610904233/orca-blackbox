@@ -581,6 +581,17 @@ def run_s4(args, results):
             _left = m7.gizmo_row_boxes(session, "scale")
         print(f"{LOG} scale panel after slot-toggle close: "
               f"{'still open' if _left else 'closed'}")
+        # flush the lingering ImGui text-edit state: op_gizmo_field typed via
+        # the WM_CHAR channel (works without foreground), which can leave the
+        # value box in editing state after the panel closes — the first real
+        # clicks then go to the stale edit instead of selecting (hypothesis:
+        # the probe's workflow typed with REAL keys and re-selected fine).
+        winutil.force_set_foreground(session.hwnd)
+        fx, fy = m7.client(session, m7.VIEWPORT_X0 + 80,
+                           m7.capture_bgr(session).shape[0] - 200)
+        winutil.user32.SetCursorPos(fx, fy)
+        winutil.real_click_screen(fx, fy)
+        time.sleep(1.0)
         pt = m7.select_object_strict(session)
         results["合并前对象选中（信息面板）"] = "PASS" if pt else "FAIL"
         if not pt:
