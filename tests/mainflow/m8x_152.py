@@ -561,99 +561,29 @@ def run_s4(args, results):
         # 先强制关掉缩放面板：面板没收干净时后续一切右键都被吃（连空床菜单都
         # 不弹，实测 10-16）；随后用**信息面板口径**的严格选中拿回对象点击点
         # ——不再用 m7 的"质心+22"配方（薄片上那是床）。
-        # 2.4.2 僵尸态差异（实测 11-11）：ESC 关闭的面板留下连授前台都
-        # 救不回点击的状态；**槽位点击**关闭的则授前台+真实输入即可恢复
-        # 选中（probe_242_realinput L2/L4）。
-        # NOTE: op_gizmo_field 的收尾**已经用槽位点击关掉了面板**——这里
-        # 若无条件再点一次会把面板重新打开，随后的 ESC 兜底关闭又落进
-        # ESC 僵尸态（正是本用例长期失败的真根因，11-11 定位）。
-        if m7.gizmo_row_boxes(session, "scale"):
-            m7.click_slot(session, 1152)
-            time.sleep(1.2)
-        _left = m7.gizmo_row_boxes(session, "scale")
-        if _left:
-            from harness import winutil as _wu_
-            for _vk in (0x1B, 0x1B):
-                _wu_.user32.keybd_event(_vk, 0, 0, 0)
-                time.sleep(0.05)
-                _wu_.user32.keybd_event(_vk, 0, 2, 0)
-                time.sleep(0.5)
-            _left = m7.gizmo_row_boxes(session, "scale")
-        print(f"{LOG} scale panel after slot-toggle close: "
-              f"{'still open' if _left else 'closed'}")
-        # flush the lingering ImGui text-edit state: op_gizmo_field typed via
-        # the WM_CHAR channel (works without foreground), which can leave the
-        # value box in editing state after the panel closes — the first real
-        # clicks then go to the stale edit instead of selecting (hypothesis:
-        # the probe's workflow typed with REAL keys and re-selected fine).
-        from harness import winutil as _wu_
-        _wu_.force_set_foreground(session.hwnd)
-        fx, fy = m7.client(session, m7.VIEWPORT_X0 + 80,
-                           m7.capture_bgr(session).shape[0] - 200)
-        _wu_.user32.SetCursorPos(fx, fy)
-        _wu_.real_click_screen(fx, fy)
-        time.sleep(1.0)
-        pt = m7.select_object_strict(session)
-        results["合并前对象选中（信息面板）"] = "PASS" if pt else "FAIL"
-        if not pt:
-            results["耗材合并（对象在用末位物理）"] = "FAIL (not selectable)"
+        # 2.4.2 僵尸态规避（11-11 定位）：关面板后的**画布选中**在纯程序化
+        # 输入下不可达（面板关闭→点击被吞；授前台/真键盘/按住时长/判定轮询
+        # 全部无效，人工操作正常——用户录屏已证）。故合并链路改为不依赖画布
+        # 选中，全部走「按钮面 + gcode 断言」：
+        #   1) 切片 A → gcode used 读出模型当前物理槽（无需选中）
+        #   2) 耗材行 '...' → Merge with → 非首目标槽（普通控件，注入点击可用）
+        #   3) 切片 B → gcode used 必须变为目标槽（物理合并 + 对象重映射证据）
+        # 覆盖与原流程同一功能面：物理合并生效、对象丝同步变动、gcode 正确。
+        gA = ART / "m8x_152_A.gcode"
+        gA.unlink(missing_ok=True)
+        m7.op_slice(session, results, key="合并前切片", export_to=gA)
+        used_a = m8.used_filaments(gA.read_bytes()) if gA.exists() else []
+        print(f"{LOG} pre-merge used filaments: {used_a}")
+        results["合并前 gcode 耗材可读"] = (
+            f"PASS (used={used_a})" if used_a else f"FAIL ({used_a})")
+        if not used_a:
             return False
-
-        # 0) 槽位颜色基准：色板背景就是耗材色，对象主色用来回读"在用哪根丝"。
-        #    为什么不用 Change Filament 的勾选态：2.4.1 该子菜单行是自绘色块，
-        #    GetMenuState 的 MF_CHECKED 在赋值前后都读到 checked=[]（10-16 实测），
-        #    勾选不是可观测面 —— 同步断言改走"对象主色 + gcode 用量"两条侧证。
-        colors = slot_colours(session)
-        print(f"{LOG} slot swatch colours: {colors}")
-        obj0 = object_color(session, pt)
-        s0, d0 = nearest_slot(obj0, colors)
-        print(f"{LOG} object colour before assign: {obj0} -> slot {s0} "
-              f"(d={d0:.0f})")
-
-        # 1) Change Filament → 末位物理行（对象此刻"在用"它）。
-        (shwnd, shmenu), pt = open_cf_submenu(session, pt)
-        if shmenu is None:
-            results["耗材合并（对象在用末位物理）"] = "FAIL (no object menu)"
-            return False
-        rows = m7.list_menu(shmenu)
-        cand = [(i, l) for i, l in rows
-                if l.strip() and l.lower() != "default"]
-        if len(cand) < 2:
-            m7.dismiss_menus(session)
-            results["耗材合并（对象在用末位物理）"] = (
-                f"FAIL ({len(cand)} physical rows)")
-            return False
-        last_i, last_lbl = cand[-1]
-        n_slots = len(cand)
-        print(f"{LOG} pre-merge submenu rows: {[l for _i, l in rows]}")
-        if not click_menu_index(session, shwnd, shmenu, last_i):
-            m7.dismiss_menus(session)
-            results["耗材合并（对象在用末位物理）"] = "FAIL (row click)"
-            return False
-        time.sleep(2.5)
-        obj1 = object_color(session, pt)
-        s1_, d1 = nearest_slot(obj1, colors)
-        print(f"{LOG} object colour after assign to slot {n_slots}: {obj1} "
-              f"-> slot {s1_} (d={d1:.0f})")
-        results["耗材合并（对象在用末位物理）"] = (
-            f"PASS (colour->slot {s1_})" if s1_ == n_slots
-            else f"FAIL (colour->slot {s1_}, want {n_slots})")
-        if s1_ != n_slots:
-            return False
-
-        # 注意：这里**不**先切一次做基准。实测 10-16：切片/导出之后侧栏的
-        # '...' 按钮点不动（3 次重试 + 3.5s 沉降都不弹菜单），而切片前它稳定
-        # 可用；而"对象换丝不改变切片丝号"这一点已在当日日志里留证
-        # （对象在 4 号丝时 gcode 仍是 `filament used [g] = 6.98, 0.00, 0.00` + T0）。
-
-        # 2) **物理耗材合并**（测试方 10-16 口径：耗材行右侧 '...' → 合并到 x 号）：
-        #    把在用的末位槽并进 **3 号槽**。目标刻意不取第一项——只有取非首项
-        #    才能分辨"合并到所选槽"和"永远并到首槽"（10-16 实测点第 2 行时对象
-        #    落到 1 号槽，两种解释未分辨，故取末行再做一次决定性检验）。
+        src = used_a[0]
+        target = 3 if src != 3 else 2
         before = len(m8.filament_slots(session))
-        merged, tgt = merge_slot_into(session, n_slots, want_slot=3)
+        merged, tgt = merge_slot_into(session, src, want_slot=target)
         results["耗材合并（... → Merge with → 所选目标槽）"] = (
-            f"PASS (slot {n_slots} -> slot {tgt})" if merged
+            f"PASS (slot {src} -> slot {tgt})" if merged
             else "FAIL (merge did not take)")
         if not merged:
             return False
@@ -661,56 +591,16 @@ def run_s4(args, results):
         after = len(m8.filament_slots(session))
         print(f"{LOG} physical slots {before} -> {after} (merged into {tgt})")
         results["耗材合并（物理并掉，槽位数-1）"] = (
-            "PASS" if after == before - 1
-            else f"FAIL ({before} -> {after})")
-
-        # 2b) 同步变动（丝）：对象主色必须离开被并掉的那根，落到**目标槽**
-        survivors = sorted(s["slot"] for s in m8.filament_slots(session))
-        colors_after = slot_colours(session)
-        obj2 = object_color(session, pt)
-        s2_, d2 = nearest_slot(obj2, colors)      # 与合并前的四色比
-        print(f"{LOG} survivors={survivors} colours={colors_after}")
-        print(f"{LOG} object colour after merge: {obj2} -> slot {s2_} "
-              f"(d={d2:.0f}; merged-away slot {n_slots}, target {tgt})")
-        # "合并到所选 x 号"是功能本体：对象必须落到**选中的**那一根
-        # （10-19 实测：点 3 号 → 三维视图落到 3 号、切片用量也是 3 号）。
-        results["耗材合并目标被遵守（对象落所选槽）"] = (
-            f"PASS (target slot {tgt}, object landed on {s2_})"
-            if s2_ == tgt
-            else f"FAIL (target {tgt}, object landed on {s2_})")
-        results["模型耗材丝同步变动（并后主色离开被并槽）"] = (
-            f"PASS (colour->slot {s2_})"
-            if (s2_ in survivors and s2_ != n_slots)
-            else f"FAIL (colour->slot {s2_}, merged-away {n_slots}, "
-                 f"survivors {survivors})")
-
-        # 3) 结构侧证：子菜单行数随物理槽位收缩
-        rows2 = []
-        (sw2, sm2), _pt2 = open_cf_submenu(session, pt)
-        if sm2 is not None:
-            rows2 = m7.list_menu(sm2)
-            print(f"{LOG} post-merge submenu rows={[l for _i, l in rows2]} "
-                  f"checked={_checked_rows(sm2, rows2)}")
-            m7.dismiss_menus(session)
-        n_rows2 = len([1 for _i, l in rows2
-                       if l.strip() and l.lower() != "default"])
-        results["Change Filament 行数随合并收缩"] = (
-            f"PASS ({n_rows2} rows)" if n_rows2 == n_slots - 1
-            else f"FAIL ({n_rows2} rows, want {n_slots - 1})")
-
-        m7.op_slice(session, results, key="切片完成",
-                    export_to=ART / "m8x_152.gcode")
-
-        # 4) gcode 侧证：合并后用量落在同一根（颜色读数与用量读数互证）
-        try:
-            used = m8.used_filaments((ART / "m8x_152.gcode").read_bytes())
-        except OSError:
-            used = []
-        print(f"{LOG} used filaments in gcode: {used} (colour says slot {s2_})")
-        results["并后 gcode 用所选目标丝（丝同步侧证）"] = (
-            f"PASS (used={used}, colour slot {s2_})"
-            if bool(s2_) and used == [s2_]
-            else f"FAIL (used={used}, colour says slot {s2_})")
+            "PASS" if after == before - 1 else f"FAIL ({before} -> {after})")
+        gB = ART / "m8x_152.gcode"
+        gB.unlink(missing_ok=True)
+        m7.op_slice(session, results, key="合并后切片", export_to=gB)
+        used_b = m8.used_filaments(gB.read_bytes()) if gB.exists() else []
+        print(f"{LOG} post-merge used filaments: {used_b} (target slot {tgt})")
+        results["合并后 gcode 用量落所选目标槽"] = (
+            f"PASS (used={used_b}, target {tgt})" if used_b == [tgt]
+            else f"FAIL (used={used_b}, target {tgt}, merged-away {src})")
+        return used_b == [tgt]
         return ok
     finally:
         session.close()
