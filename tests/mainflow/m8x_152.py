@@ -445,6 +445,115 @@ def open_cf_submenu(session, pt=None):
     return (shwnd, shmenu), pt
 
 
+def _ocr_band(session, y0, y1, x0=0, x1=430, scale=4):
+    from harness import mix_dialog_util as mdu
+    from harness.anchors import capture_bgr as _cap
+    img = _cap(session)
+    crop = img[y0:y1, x0:x1]
+    if crop.size == 0:
+        return []
+    return [(w[0], w[1] + x0, w[2] + y0, w[3], w[4])
+            for w in mdu.ocr_words_img(crop, scale=scale)]
+
+
+def objects_tab_select(session):
+    """工艺(Process)->对象(Objects) 标签页里点模型行选中对象（按钮面）。
+
+    probe_242_objlist3 实测（11-11）：点 'Objects' 标签 -> 展开 Plate 节点
+    -> 模型行 'Prusa.stl' 出现 -> 点行即选中（信息面板出现）。这是画布
+    选中在 2.4.2 程序化输入下失效后的唯一可用选中通道。返回行中心
+    (rx, ry)（屏幕坐标）或 None。"""
+    import m7_common as m7
+    from harness import export_util, winutil
+    rows = export_util._children_texts(session.hwnd)
+    proc = next(((t, r) for t, r, h in rows if t.strip() == "Process"), None)
+    adv = next(((t, r) for t, r, h in rows if t.strip() == "Advanced"), None)
+    if not (proc and adv):
+        print(f"{LOG} objects tab: Process/Advanced labels missing")
+        return None
+    y0, y1 = proc[1][1] - 8, proc[1][3] + 8
+    band = _ocr_band(session, y0, y1, scale=3)
+    objw = next((w for w in band if "bject" in w[0].lower()), None)
+    cx = objw[1] + objw[3] // 2 if objw else (proc[1][2] + adv[1][0]) // 2
+    cy = objw[2] + objw[4] // 2 if objw else (y0 + y1) // 2
+    winutil.user32.SetCursorPos(cx, cy)
+    time.sleep(0.3)
+    winutil.real_click_screen(cx, cy)
+    time.sleep(1.5)
+    # 展开 Plate 节点（若模型行还没出现）
+    words = _ocr_band(session, y1 + 2, 800)
+    if not any("prusa" in w[0].lower() or "untitled" in w[0].lower()
+               for w in words):
+        plate = next((w for w in words if w[0].lower() == "plate"), None)
+        if plate:
+            px, py = plate[1] + plate[3] // 2, plate[2] + plate[4] // 2
+            print(f"{LOG} objects tab: expand Plate @({px},{py})")
+            winutil.user32.SetCursorPos(px, py)
+            time.sleep(0.3)
+            winutil.real_click_screen(px, py)
+            time.sleep(1.2)
+            words = _ocr_band(session, y1 + 2, 800)
+    row = next((w for w in words if any(k in w[0].lower() for k in
+                                        ("untitled", "prusa", "cube"))),
+               None)
+    if not row:
+        print(f"{LOG} objects tab: no model row ({[w[0] for w in words][:12]})")
+        return None
+    rx = row[1] + row[3] // 2
+    ry = row[2] + row[4] // 2
+    print(f"{LOG} objects tab: click row {row[0]!r} @({rx},{ry})")
+    winutil.user32.SetCursorPos(rx, ry)
+    time.sleep(0.3)
+    winutil.real_click_screen(rx, ry)
+    time.sleep(1.2)
+    ok = m7.object_selected(session)
+    print(f"{LOG} objects tab select = {ok}")
+    return (rx, ry) if ok else None
+
+
+def assign_filament_via_row(session, row_xy, want_slot):
+    """对象树行右键 -> Change Filament -> 子菜单第 want_slot 行（default=0）。
+    返回是否成功。行菜单是 #32768 原生菜单（probe_242_objlist3 实证）。"""
+    import m7_common as m7
+    from harness import topbar_util, winutil
+    rx, ry = row_xy
+    menu = None
+    for attempt in range(3):
+        m7.dismiss_menus(session)
+        time.sleep(1.0 if attempt else 0.3)
+        winutil.user32.SetCursorPos(rx, ry)
+        time.sleep(0.3)
+        winutil.real_right_click_screen(rx, ry)
+        deadline = time.monotonic() + 4.0
+        while time.monotonic() < deadline:
+            ms = topbar_util._enum_menu_windows(session.pid)
+            if ms:
+                menu = (ms[0][4], topbar_util.menu_hmenu(ms[0][4]))
+                break
+            time.sleep(0.25)
+        if menu:
+            break
+        print(f"{LOG} row menu attempt {attempt + 1} empty")
+    if not menu:
+        return False
+    hwnd, hmenu = menu
+    got = m7.click_menu_row(session, hwnd, hmenu, "change filament",
+                            nested=True)
+    if not got or not isinstance(got, tuple):
+        print(f"{LOG} Change Filament row not found")
+        m7.dismiss_menus(session)
+        return False
+    _i, (shwnd, shmenu) = got
+    rows = m7.list_menu(shmenu)
+    print(f"{LOG} filament submenu: {[l for _i2, l in rows]}")
+    if not click_menu_index(session, shwnd, shmenu, want_slot):
+        m7.dismiss_menus(session)
+        return False
+    time.sleep(1.5)
+    m7.dismiss_menus(session)
+    return True
+
+
 def select_small_then(session, results):
     """模型选中（信息面板口径）。旧版拿 m7.select_model 的 tooltip 判据：
     无 tooltip 时它读到的是工具栏自身的标签（'we Vv Rotate [R]'），空床点击
@@ -601,49 +710,60 @@ def run_s4(args, results):
         # 先强制关掉缩放面板：面板没收干净时后续一切右键都被吃（连空床菜单都
         # 不弹，实测 10-16）；随后用**信息面板口径**的严格选中拿回对象点击点
         # ——不再用 m7 的"质心+22"配方（薄片上那是床）。
-        # 2.4.2 僵尸态规避（11-11 定位）：关面板后的**画布选中**在纯程序化
-        # 输入下不可达（面板关闭→点击被吞；授前台/真键盘/按住时长/判定轮询
-        # 全部无效，人工操作正常——用户录屏已证）。故合并链路改为不依赖画布
-        # 选中，全部走「按钮面 + gcode 断言」：
-        #   1) 切片 A → gcode used 读出模型当前物理槽（无需选中）
-        #   2) 耗材行 '...' → Merge with → 非首目标槽（普通控件，注入点击可用）
-        #   3) 切片 B → gcode used 必须变为目标槽（物理合并 + 对象重映射证据）
-        # 覆盖与原流程同一功能面：物理合并生效、对象丝同步变动、gcode 正确。
+        # 2.4.2 程序化输入约束（11-11 定位）：关面板后的**画布选中**不可达
+        # （授前台/真键盘/按住时长/轮询均无效，人工正常——用户录屏已证）。
+        # 按用户指引改用**对象标签页**（工艺→对象：行点击选中 + 行右键
+        # Change Filament 指定耗材，probe_242_objlist3 实证），合并链路：
+        #   1) 对象行选中 → Change Filament 指定末位槽（按钮面，无需画布）
+        #   2) 切片 A → gcode 用量必须 = 指定槽（指定生效的直接证据）
+        #   3) 该槽 '...' → Merge with 1（存活规则=保低槽：对象槽被并掉
+        #      后重映射到 1）
+        #   4) 切片 B → gcode 用量 = [1]（物理合并 + 对象丝跟随）
+        row_xy = objects_tab_select(session)
+        results["对象标签页选中（按钮面）"] = (
+            f"PASS (@{row_xy})" if row_xy else "FAIL (row not selectable)")
+        if not row_xy:
+            return False
+        n_slots = len([1 for _ in m8.filament_slots(session)])
+        assigned = assign_filament_via_row(session, row_xy, n_slots)
+        results["指定模型耗材（行菜单→末位槽）"] = (
+            f"PASS (slot {n_slots})" if assigned else "FAIL")
+        if not assigned:
+            return False
         gA = ART / "m8x_152_A.gcode"
         gA.unlink(missing_ok=True)
-        m7.op_slice(session, results, key="合并前切片", export_to=gA)
+        m7.op_slice(session, results, key="指定后切片", export_to=gA)
         used_a = m8.used_filaments(gA.read_bytes()) if gA.exists() else []
-        print(f"{LOG} pre-merge used filaments: {used_a}")
-        results["合并前 gcode 耗材可读"] = (
-            f"PASS (used={used_a})" if used_a else f"FAIL ({used_a})")
-        if not used_a:
+        print(f"{LOG} assigned used filaments: {used_a} (want [{n_slots}])")
+        results["指定后 gcode 用量 = 指定槽"] = (
+            f"PASS (used={used_a})" if used_a == [n_slots]
+            else f"FAIL (used={used_a}, want [{n_slots}])")
+        if used_a != [n_slots]:
             return False
-        # 删除桶（11-11 两轮实测后定案）：Merge-with 存活规则=「保低槽」
-        # （1+3 保 1、4+1 保 1），对象所在的 1 号永远存活、无法借合并重映射；
-        # 重映射验证改走同一 '...' 菜单的 Delete。
         used = used_a[0]
         before = len(m8.filament_slots(session))
-        deleted = slot_menu_delete(session, used)
-        results["耗材删除（... → Delete）"] = (
-            f"PASS (slot {used})" if deleted else "FAIL (delete did not take)")
-        if not deleted:
+        merged, tgt = merge_slot_into(session, used, want_slot=1)
+        results["耗材合并（在用槽 '...' → Merge with 1）"] = (
+            f"PASS (slot {used} -> slot {tgt})" if merged
+            else "FAIL (merge did not take)")
+        if not merged:
             return False
         time.sleep(2.5)
         after = len(m8.filament_slots(session))
         survivors = sorted(s2["slot"] for s2 in m8.filament_slots(session))
         print(f"{LOG} physical slots {before} -> {after} "
-              f"(survivors={survivors}, deleted slot {used})")
-        results["耗材删除（物理槽位数-1）"] = (
+              f"(survivors={survivors}, source slot {used})")
+        results["耗材合并（物理槽位数-1）"] = (
             "PASS" if after == before - 1 else f"FAIL ({before} -> {after})")
         gB = ART / "m8x_152.gcode"
         gB.unlink(missing_ok=True)
-        m7.op_slice(session, results, key="删除后切片", export_to=gB)
+        m7.op_slice(session, results, key="合并后切片", export_to=gB)
         used_b = m8.used_filaments(gB.read_bytes()) if gB.exists() else []
-        print(f"{LOG} post-delete used filaments: {used_b} (deleted slot {used})")
-        remapped = bool(used_b) and used_b != [used]
-        results["删除后 gcode 用量重映射（模型丝跟随）"] = (
-            f"PASS (used={used_b}, deleted {used})" if remapped
-            else f"FAIL (used={used_b}, deleted {used})")
+        print(f"{LOG} post-merge used filaments: {used_b} (merged-away {used})")
+        remapped = bool(used_b) and used_b == [1]
+        results["合并后 gcode 用量重映射（模型丝跟随到存活槽）"] = (
+            f"PASS (used={used_b}, merged-away {used})" if remapped
+            else f"FAIL (used={used_b}, expect [1], merged-away {used})")
         return remapped
         return ok
     finally:
