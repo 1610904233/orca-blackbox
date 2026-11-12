@@ -175,13 +175,11 @@ def main() -> int:
         still = dialog_visible(dlg)
         texts_a = dialog_texts(dlg) if still else []
         print(f"{LOG} A: dialog open after OK={still} texts={texts_a}")
-        # 全空格要么弹提示（对话框留着+文本变化），要么名称未生效
-        prompt_a = any("space" in t.lower() or "empty" in t.lower()
-                       or "invalid" in t.lower() or "空白" in t
-                       for t in texts_a)
-        results["全空格被拒（提示或未生效）"] = (
-            "PASS (dialog kept open)" if still else
-            "PASS (dialog closed — verify name unchanged via readback)")
+        # 基线已更新（2026-11-12 用户口径）：2.4.2 全空格「当前无限制」——
+        # 接受即可（无提示、对话框正常关闭）
+        results["全空格被接受（当前无限制，基线已更新）"] = (
+            "PASS (dialog closed)" if not still
+            else f"FAIL (dialog still open; texts={texts_a[:3]})")
         if still:
             cancel_dialog(dlg)
 
@@ -243,8 +241,9 @@ def main() -> int:
                         cand = [n for n in ns if n.startswith("XXX")]
                         got = cand[0] if cand else ""
                     print(f"{LOG} C: accepted len={len(got)}")
-                    results["100 字符被截断/拒绝（回读长度）"] = (
-                        "PASS (truncated)" if got and len(got) < 100
+                    # 基线已更新：2.4.2 长度「当前无限制」——100 字符完整接受
+                    results["100 字符被接受（当前无限制，基线已更新）"] = (
+                        f"PASS (len={len(got)})" if got and len(got) == 100
                         else f"FAIL (len={len(got)})")
             else:
                 results["100 字符被拒（提示）"] = "FAIL (no edit)"
