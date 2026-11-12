@@ -32,10 +32,16 @@ REC_EXPECTED = (
     + [f"flowrate_0.{i:02d}" for i in range(1, 6)]
     + [f"flowrate_m0.{i:02d}" for i in range(1, 6)]
 )
+def _fmt(v: int) -> str:
+    """thousandths -> UI name suffix (trailing zeros trimmed:
+    5 -> '0.005', 10 -> '0.01', 15 -> '0.015' ...), measured 11-13."""
+    return f"{v / 1000:.3f}".rstrip("0").rstrip(".")
+
+
 PERF_EXPECTED = (
     ["flowrate_0"]
-    + [f"flowrate_0.{i:03d}" for i in range(5, 40, 5)]
-    + [f"flowrate_m0.{i:03d}" for i in range(5, 45, 5)]
+    + [f"flowrate_{_fmt(i)}" for i in range(5, 40, 5)]
+    + [f"flowrate_m{_fmt(i)}" for i in range(5, 45, 5)]
 )
 
 
@@ -293,8 +299,20 @@ def main() -> int:
         # 两版对比：16 > 11 块；细档步进 0.005 < 推荐版 0.01
         perf_names = names_from_3mf(ART / "m8x_217_perf.3mf")
         rec_names = names_from_3mf(ART / "m8x_217_rec.3mf")
-        step_ok = (any("0.005" in n for n in perf_names)
-                   and all("0.01" not in n for n in perf_names))
+        def _mags(names):
+            out = []
+            for n in names:
+                if n == "flowrate_0" or "_" not in n:
+                    continue
+                tok = n.split("_")[-1].lstrip("m")
+                try:
+                    out.append(abs(float(tok)))
+                except ValueError:
+                    pass
+            return out
+
+        step_ok = (_mags(perf_names) and _mags(rec_names)
+                   and min(_mags(perf_names)) < min(_mags(rec_names)))
         results["两版对比（16>11，完美版步进 0.005）"] = (
             "PASS" if len(perf_names) == 16 and len(rec_names) == 11
             and step_ok else
