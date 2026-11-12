@@ -156,6 +156,7 @@ CASES: dict[str, dict] = {
     #     Fit/官方颜色/温类门/净化器/高流量; 2026-09-21 用户确认 b/c/d/f 也挂进
     #     regression —— 此前 suite=None 导致"实现了却没人跑"，是覆盖盲区) ------
     "m8a_fit_view": _r("m8", "A"),                       # GREEN 09-17 客机
+    "m8z_assembly_import": _r("m8", "A"),   # #20 导入含装配关系工程 + 装配视图（11-12 新增）
     "m8b_official_color": _r("m8", "A", known_limitation=True),
     "m8c_temp_mix_gate": _r("m8", "A", known_limitation=True),
     "m8d_purifier_gcode": _r("m8", "A", known_limitation=True),
