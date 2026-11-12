@@ -109,14 +109,19 @@ def main() -> int:
             print(f"{LOG} buttons={btns}")
             return sorted(btns, key=lambda b: b[1][0])
 
-        def press_ok(dlg):
-            """OK = 最左侧无文字 Button（owner-drawn；WM_COMMAND(1) 实测无效）。"""
-            cands = _btn_children(dlg)
-            if not cands:
-                print(f"{LOG} no Button children")
-                return False
-            _t, (x, y) = cands[0]
-            winutil.msg_click_screen(x, y, dlg[3])
+        def press_ok(dlg, edit):
+            """回车确认：点编辑框拿焦点后发真实 ENTER（wx 对话框默认按钮
+            = OK；行文口径就是"输入后回车确认"）。owner-drawn 按钮无文本、
+            标准 ID 无效、隐藏辅助按钮同坐标——键盘是唯一可靠通道。"""
+            r = edit[1]
+            cx, cy = (r[0] + r[2]) // 2, (r[1] + r[3]) // 2
+            winutil.user32.SetCursorPos(cx, cy)
+            time.sleep(0.2)
+            winutil.real_click_screen(cx, cy)
+            time.sleep(0.4)
+            winutil.user32.keybd_event(0x0D, 0, 0, 0)
+            time.sleep(0.06)
+            winutil.user32.keybd_event(0x0D, 0, 2, 0)
             time.sleep(1.5)
             return True
 
@@ -129,10 +134,9 @@ def main() -> int:
 
         def cancel_dialog(dlg):
             if dialog_visible(dlg):
-                cands = _btn_children(dlg)
-                if cands:
-                    _t, (x, y) = cands[-1]   # 最右 = Cancel
-                    winutil.msg_click_screen(x, y, dlg[3])
+                winutil.user32.keybd_event(0x1B, 0, 0, 0)
+                time.sleep(0.06)
+                winutil.user32.keybd_event(0x1B, 0, 2, 0)
                 time.sleep(1.0)
 
         # ---- A) 全空格：应被拒（提示或名称未生效）----
@@ -149,7 +153,7 @@ def main() -> int:
         before = winutil.edit_text(ed[0])
         readback = set_name(ed[0], "   ")
         print(f"{LOG} A: before={before!r} readback={readback!r}")
-        press_ok(dlg)
+        press_ok(dlg, ed)
         still = dialog_visible(dlg)
         texts_a = dialog_texts(dlg) if still else []
         print(f"{LOG} A: dialog open after OK={still} texts={texts_a}")
@@ -170,7 +174,7 @@ def main() -> int:
             ed = name_edit(dlg)
             if ed:
                 set_name(ed[0], "B@#1")
-                press_ok(dlg)
+                press_ok(dlg, ed)
                 ok_b = not dialog_visible(dlg)
                 if not ok_b:
                     print(f"{LOG} B: dialog still open; texts="
@@ -195,7 +199,7 @@ def main() -> int:
             ed = name_edit(dlg)
             if ed:
                 set_name(ed[0], long_name)
-                press_ok(dlg)
+                press_ok(dlg, ed)
                 still_c = dialog_visible(dlg)
                 texts_c = dialog_texts(dlg) if still_c else []
                 print(f"{LOG} C: dialog open={still_c} texts={texts_c}")
