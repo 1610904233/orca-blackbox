@@ -46,6 +46,12 @@ MIIM_SUBMENU = 0x00000004
 # dropdown tool ~offset 70-100 at 96 DPI). Probed in order.
 FILE_TOOL_OFFSETS = (10, 20, 30, 40, 50, 60)
 DROP_TOOL_OFFSETS = (70, 80, 90, 100, 110, 120, 130)
+# Calibration tool sits right of File and its icons (probe_242_calibmenu2:
+# offset 250 opens the popup at (243,29,443,233) with rows Temperature..VFA).
+# The probe order walks the measured neighborhood; open_calibration_menu
+# validates the popup by its rows so a neighbouring tool cannot be mistaken
+# for it.
+CALIB_TOOL_OFFSETS = (250, 240, 260, 230, 270, 220, 280, 290, 300, 210, 310, 320)
 
 
 class MENUITEMINFO(ctypes.Structure):
@@ -509,6 +515,42 @@ def open_dropdown_menu(session):
     """Open the topbar dropdown menu (Edit/View/Preferences/Help)."""
     menus, _ = click_topbar_tool(session, DROP_TOOL_OFFSETS, "Dropdown")
     return _menu_tuple(session, menus)
+
+
+def open_calibration_menu(session):
+    """Open the topbar Calibration tool; returns its (rect, hwnd, hmenu).
+
+    The tool is a drawn BBLTopbar button (no per-tool HWND), located by
+    message-clicking the measured offset neighborhood. A popup only counts
+    as the Calibration menu when its rows carry Temperature + Flow rate, so
+    hitting a neighbouring icon cannot return the wrong menu.
+    """
+    tb = _topbar(session.hwnd)
+    if not tb:
+        print("[topbar] Calibration: topbar not found")
+        return None
+    _, rect, _ch = tb
+    cy = (rect[1] + rect[3]) // 2
+    for off in CALIB_TOOL_OFFSETS:
+        x = rect[0] + off
+        winutil.user32.SetCursorPos(x, cy)
+        time.sleep(0.3)
+        winutil.msg_click_screen(x, cy, session.hwnd)
+        time.sleep(1.0)
+        menus = wait_menu_popup(session.pid, timeout_s=2.0)
+        if not menus:
+            continue
+        mrect, mhwnd = menus[0][:4], menus[0][4]
+        hm = menu_hmenu(mhwnd)
+        labels = [lb.lower() for _i, lb, _s in menu_items(hm)]
+        if any("temperature" in lb for lb in labels) and \
+                any("flow rate" in lb for lb in labels):
+            print(f"[topbar] Calibration opened at offset {off}")
+            return mrect, mhwnd, hm
+        close_menu_windows(session.pid)
+        time.sleep(0.4)
+    print("[topbar] Calibration: no popup with Temperature/Flow rate")
+    return None
 
 
 def _menu_tuple(session, menus):
