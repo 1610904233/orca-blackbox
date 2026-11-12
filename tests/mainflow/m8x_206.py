@@ -113,10 +113,11 @@ def main() -> int:
         results["检查期间菜单保持展开"] = (
             "PASS" if topbar_util._enum_menu_windows(session.pid)
             else "FAIL (closed early)")
-        m7.dismiss_menus(session)
-        time.sleep(0.6)
-        results["菜单可关闭"] = (
-            "PASS" if not topbar_util._enum_menu_windows(session.pid)
+        # 2.4.2 dismissal facts: WM_CANCELMODE ignored, m7.dismiss_menus's
+        # right-click fallback opens a canvas CONTEXT menu; the working
+        # channel is foreground + real ESC x2 (probe_242_calibdismiss{,2}).
+        results["菜单可关闭（前台 ESC）"] = (
+            "PASS" if topbar_util.close_calibration_menu(session)
             else "FAIL (still open)")
         results["app alive"] = "PASS" if session.alive() else "FAIL"
         return m7.m7_verdict(results)

@@ -553,6 +553,29 @@ def open_calibration_menu(session):
     return None
 
 
+def close_calibration_menu(session, timeout_s: float = 5.0) -> bool:
+    """Close the topbar Calibration popup; True when zero #32768 remain.
+
+    Measured on 2.4.2 (probe_242_calibdismiss{,2}): WM_CANCELMODE is ignored
+    by this self-drawn-topbar popup, m7.dismiss_menus's right-click fallback
+    OPENS a canvas context menu at the click point (a fresh #32768 window that
+    then reads as "menu still open"), and ESC only reaches the popup when the
+    frame is foreground. Working channel = foreground + real ESC x2 + poll.
+    """
+    winutil.user32.SetForegroundWindow(session.hwnd)
+    time.sleep(0.5)
+    for _ in range(2):
+        winutil.user32.keybd_event(0x1B, 0, 0, 0)
+        winutil.user32.keybd_event(0x1B, 0, 2, 0)
+        time.sleep(0.25)
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if not _enum_menu_windows(session.pid):
+            return True
+        time.sleep(0.3)
+    return not _enum_menu_windows(session.pid)
+
+
 def _menu_tuple(session, menus):
     if not menus:
         return None
