@@ -97,11 +97,26 @@ def main() -> int:
             return cands[0]
 
         def set_name(edit, text):
-            winutil.select_all(edit)
-            time.sleep(0.2)
-            winutil.msg_text(edit, text)
+            """真实点击拿焦点 → 真实 END + 连按 BACKSPACE 清空（消息级
+            EM_SETSEL/VK_BACK 实测无效，旧残留会粘进新名字）→ msg_text 输入。"""
+            h, r = edit[0], edit[1]
+            cx, cy = (r[0] + r[2]) // 2, (r[1] + r[3]) // 2
+            winutil.user32.SetCursorPos(cx, cy)
+            time.sleep(0.25)
+            winutil.real_click_screen(cx, cy)
+            time.sleep(0.4)
+            winutil.user32.keybd_event(0x23, 0, 0, 0)   # VK_END
+            time.sleep(0.05)
+            winutil.user32.keybd_event(0x23, 0, 2, 0)
+            time.sleep(0.15)
+            for _ in range(130):
+                winutil.user32.keybd_event(0x08, 0, 0, 0)   # VK_BACK
+                winutil.user32.keybd_event(0x08, 0, 2, 0)
+                time.sleep(0.008)
+            time.sleep(0.4)
+            winutil.msg_text(h, text)
             time.sleep(0.5)
-            return winutil.edit_text(edit)
+            return winutil.edit_text(h)
 
         def _btn_by_text(dlg, want):
             """按文本找对话框按钮（类无关）：OK/Cancel 是 wxWindowNR 带文本，
