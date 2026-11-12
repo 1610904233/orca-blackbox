@@ -164,26 +164,29 @@ def main() -> int:
                 outside_y = k
         if plate_y is None:
             return None, None
-        # 对象行 = Plate 与 Outside 之间（OCR 可能读不到校准件的对象名，
-        # 所以按几何位置点，不按文本挑行——上一版按文本会误点设置页签）。
-        target_y = (plate_y + outside_y) // 2 \
-            if (outside_y and outside_y > plate_y + 10) else plate_y + 22
+        # 对象行 = Plate 与 Outside 之间（OCR 读不到行文本时按几何位置点）。
+        # 加载后对象默认已选中；点 Outside 行清选，再点模型行选中，才能
+        # 证明"行点击产生选中"。#211 RED 复盘：直接点模型行会把已选中的
+        # 对象切成取消态（截图 L007 确认行名 tower_with_seam.stl）。
+        tower_y = (plate_y + outside_y) // 2 + 8 \
+            if (outside_y and outside_y > plate_y + 10) else plate_y + 30
+        cx = 200
         pre = m7.object_selected(session)
-        print(f"{LOG} selected before row click={pre}")
-        # 先取消选择，证明选中由行点击产生
-        user32.SetForegroundWindow(session.hwnd)
-        time.sleep(0.3)
-        for _ in range(2):
-            user32.keybd_event(0x1B, 0, 0, 0)
-            user32.keybd_event(0x1B, 0, 2, 0)
-            time.sleep(0.2)
-        time.sleep(0.6)
-        deselected = not m7.object_selected(session)
-        print(f"{LOG} deselected by ESC={deselected}")
-        cx, cy = m7.client(session, 200, target_y + 8)
-        real_click(cx, cy)
+        print(f"{LOG} selected before row click={pre} tower_y={tower_y}")
+        if outside_y:
+            real_click(*m7.client(session, cx, outside_y + 8))
+            time.sleep(1.0)
+        cleared = not m7.object_selected(session)
+        print(f"{LOG} cleared by Outside row={cleared}")
+        real_click(*m7.client(session, cx, tower_y))
         time.sleep(1.2)
-        return deselected, m7.object_selected(session)
+        sel = m7.object_selected(session)
+        if not sel:  # 首击落在行边缘时再点一次
+            print(f"{LOG} first tower-row click missed — retrying")
+            real_click(*m7.client(session, cx, tower_y))
+            time.sleep(1.2)
+            sel = m7.object_selected(session)
+        return cleared, sel
 
     ap = add_common_args(argparse.ArgumentParser())  # 空床
     args = ap.parse_args()
@@ -248,7 +251,7 @@ def main() -> int:
             return m7.m7_verdict(results)
 
         deselected, selected = select_model_row() or (None, None)
-        results["选中前可取消选择（ESC）"] = (
+        results["点击 Outside 行清除选择"] = (
             "PASS" if deselected else "FAIL (still selected)")
         results["PA 塔对象行可单独选中"] = (
             "PASS" if selected else "FAIL (info panel empty)")
