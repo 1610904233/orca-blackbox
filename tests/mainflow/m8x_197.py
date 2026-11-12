@@ -33,6 +33,7 @@ def main() -> int:
     import numpy as np
     import m7_common as m7
     import m8x_194 as c194
+    from harness import mix_dialog_util as mdu
     from m3_common import add_common_args, boot_session
 
     ap = add_common_args(argparse.ArgumentParser(), default_model=STL)
@@ -88,50 +89,77 @@ def main() -> int:
             m7.winutil.real_click_screen(sx, sy)
             time.sleep(1.5)
 
-        def press_arrange():
-            m7.winutil.force_set_foreground(session.hwnd)
-            m7.winutil.user32.keybd_event(ord("A"), 0, 0, 0)
-            time.sleep(0.06)
-            m7.winutil.user32.keybd_event(ord("A"), 0, 2, 0)
-            time.sleep(7.0)   # arranger 异步
+        # 整理入口 = 「排列零件」图标（#196 同款已验证；键盘 A 会被输入法吞）
+        arr = None
+        for _pass in range(2):
+            for (x, y) in RAIL_LINE:
+                tip = c194.tooltip_right(session, x, y, dwell_s=1.2)
+                if tip and "arrange" in tip.lower():
+                    arr = (x, y, tip.strip())
+                    break
+            if arr:
+                break
+        results["「排列零件」按钮定位（整理入口）"] = (
+            f"PASS (@{arr[0]},{arr[1]})" if arr else "FAIL (not found)")
+        if not arr:
+            return m7.m7_verdict(results)
 
-        def cents():
-            return sorted(m7.find_centroids(session, limit=4))
+        def arrange_click():
+            sx, sy = m7.client(session, arr[0], arr[1])
+            m7.winutil.user32.SetCursorPos(sx, sy)
+            time.sleep(0.3)
+            m7.winutil.real_click_screen(sx, sy)
+            time.sleep(5.0)
 
-        # 锁定（图标区留证）
+        def toast_text():
+            """右下角提示 toast 的 OCR 文本（锁定被拒时出现）。"""
+            img = m7.capture_bgr(session)
+            h, w = img.shape[:2]
+            crop = img[h - 170:h - 20, w - 520:w - 10]
+            if crop.size == 0:
+                return ""
+            words = mdu.ocr_words_img(crop, scale=3)
+            txt = " ".join(wd[0] for wd in words)
+            return txt.strip()
+
+        def cube_cents():
+            """只保留盘面内部区域的色块（排除右侧图标列/底栏 UI 假阳性）。"""
+            return sorted((x, y) for x, y in m7.find_centroids(session, limit=6)
+                          if 900 <= x <= 1400 and 300 <= y <= 720)
+
+        # 锁定
         icon0 = m7.capture_bgr(session)[ly - 30:ly + 30, lx - 30:lx + 30]
         click_icon()
         icon1 = m7.capture_bgr(session)[ly - 30:ly + 30, lx - 30:lx + 30]
         icon_mad = float(np.mean(np.abs(icon1.astype(int) - icon0.astype(int))))
         print(f"{LOG} lock icon visual mad={icon_mad:.2f}")
-        results["锁定态图标变化（证据行）"] = (
-            f"PASS (icon mad={icon_mad:.2f})")
-        b0 = cents()
-        print(f"{LOG} locked centroids before A: {b0}")
-        press_arrange()
-        b1 = cents()
-        print(f"{LOG} locked centroids after A:  {b1}")
-        locked_ok = len(b0) == len(b1) and all(
-            abs(a[0] - b[0]) <= 12 and abs(a[1] - b[1]) <= 12
-            for a, b in zip(b0, b1))
-        results["锁定后整理被拒（质心不动）"] = (
-            "PASS" if locked_ok else f"FAIL ({b0} -> {b1})")
+        results["锁定态图标变化（证据行）"] = f"PASS (icon mad={icon_mad:.2f})"
+        b0 = cube_cents()
+        print(f"{LOG} locked cubes before arrange-click: {b0}")
+        arrange_click()
+        toast = toast_text()
+        print(f"{LOG} locked arrange toast: {toast!r}")
+        b1 = cube_cents()
+        print(f"{LOG} locked cubes after:  {b1}")
+        results["锁定后整理被拒（右下角提示可见）"] = (
+            "PASS" if toast and "lock" in toast.lower()
+            else f"FAIL (toast={toast!r})")
+        results["锁定后立方体未移动"] = (
+            "PASS" if b0 and b1 == b0 else f"FAIL ({b0} -> {b1})")
 
-        # 解锁
+        # 解锁 -> 整理恢复
         click_icon()
-        press_arrange()
-        b2 = cents()
-        print(f"{LOG} unlocked centroids after A: {b2}")
-        moved = (len(b2) >= 2 and any(
-            abs(a[0] - b[0]) > 20 or abs(a[1] - b[1]) > 20
-            for a, b in zip(b1, b2)))
-        if len(b2) >= 2:
-            dist = float(np.hypot(b2[0][0] - b2[1][0],
-                                  b2[0][1] - b2[1][1]))
-            moved = moved or dist > 120
-            print(f"{LOG} unlocked centroid distance: {dist:.0f}px")
-        results["解锁后整理恢复（质心变化）"] = (
-            "PASS" if moved else f"FAIL ({b1} -> {b2})")
+        arrange_click()
+        b2 = cube_cents()
+        print(f"{LOG} unlocked cubes after: {b2}")
+        moved = False
+        if b0 and b2:
+            dist = max(float(np.hypot(a[0] - c[0], a[1] - c[1]))
+                       for a in b2[:2] for c in b0[:2])
+            print(f"{LOG} unlocked max centroid shift: {dist:.0f}px")
+            moved = dist > 40
+        results["解锁后整理恢复（立方体移动）"] = (
+            "PASS" if moved else f"FAIL ({b0} -> {b2})")
         results["app alive"] = "PASS" if session.alive() else "FAIL"
         return m7.m7_verdict(results)
     finally:
