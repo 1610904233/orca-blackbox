@@ -20,7 +20,6 @@ for _g in sorted((HERE / "tests").iterdir()):
     if _g.is_dir() and not _g.name.startswith("__"):
         sys.path.insert(0, str(_g))
 
-import m7_common as m7  # noqa: F401  (boot_session's shot archive hooks stdout)
 from m3_common import add_common_args, boot_session
 from harness import topbar_util, winutil
 
