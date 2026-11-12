@@ -29,18 +29,50 @@ LOG = "[m8z20]"
 ASSEMBLY_3MF = HERE / "fixtures" / "assembly_pokemon_box.3mf"
 
 
-def wait_loaded(session, timeout_s=240):
-    """载入门：对象标签页的盘内零件行出现即算载入成功。
+def swallow_load_dialogs(session, rounds=8):
+    """打开含自定义预设的工程会依次弹 'Snapmaker Orca information' 与
+    'Customized Preset' 提示框，挡在 Loading... 之前（实测 11-12：
+    不点掉时视口永远空、对象树为空）。循环点 OK 直到没有待处理弹窗。"""
+    from harness import export_util, winutil
+    for rnd in range(rounds):
+        dialogs = [(c, t, r, h) for c, t, r, h in
+                   m7._visible_toplevels(session.pid) if c == "#32770"]
+        pend = [d for d in dialogs
+                if "loading" not in (d[1] or "").lower()]
+        if not pend:
+            return
+        for c, t, r, h in pend:
+            kids = export_util._children_texts(h)
+            print(f"{LOG} dialog {t!r} kids="
+                  f"{[k[0][:20] for k in kids if k[0].strip()][:6]}")
+            btn = next(((kt, kr, kh) for kt, kr, kh in kids
+                        if kt.strip().lower() in
+                        ("ok", "yes", "确定", "是")), None)
+            if btn:
+                kt, kr, _kh = btn
+                cx, cy = (kr[0] + kr[2]) // 2, (kr[1] + kr[3]) // 2
+                winutil.user32.SetCursorPos(cx, cy)
+                winutil.real_click_screen(cx, cy)
+                print(f"{LOG} clicked {kt!r} on {t!r}")
+            else:
+                m7.user32.SendMessageW(h, 0x0111, 1, 0)
+                print(f"{LOG} WM_COMMAND IDOK on {t!r}")
+            time.sleep(3.0)
+        time.sleep(2.0)
 
-    不能用彩色占比：该夹具的零件按耗材分配（可能是灰色/其它盘），彩色
-    像素天然近乎为零（实测 11-12 首轮 0.06% 误判）。"""
+
+def wait_loaded(session, timeout_s=240):
+    """载入门：彩色占比（载入后实测 6.3%）或对象标签页零件行任一成立。
+
+    首轮 0.06% 的误判根因不是颜色缺失，而是提示框挡住了加载——现在
+    swallow_load_dialogs 先点掉提示框，占比判据即可用；对象行兜底。"""
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        row = c152.objects_tab_select(session)
-        if row:
-            return row
-        time.sleep(3.0)
-    return None
+        if m7.model_colored_frac(session) >= 0.0025:
+            print(f"{LOG} loaded by colored frac")
+            return "colored"
+        time.sleep(2.0)
+    return c152.objects_tab_select(session)
 
 
 def main() -> int:
@@ -53,6 +85,7 @@ def main() -> int:
     try:
         m7.ensure_maximized(session)
         time.sleep(2.0)
+        swallow_load_dialogs(session)
         row = wait_loaded(session)
         results["工程载入（对象标签页零件行）"] = (
             f"PASS (@{row})" if row else "FAIL (no object row)")
