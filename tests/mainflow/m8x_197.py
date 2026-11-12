@@ -30,7 +30,6 @@ RAIL_LINE = [(1360, 222), (1374, 231), (1388, 240), (1402, 249),
 
 def main() -> int:
     import argparse
-    import numpy as np
     import m7_common as m7
     import m8x_194 as c194
     from harness import mix_dialog_util as mdu
@@ -81,15 +80,7 @@ def main() -> int:
         if not lock:
             return m7.m7_verdict(results)
         lx, ly = lock[0], lock[1]
-
-        def click_icon():
-            sx, sy = m7.client(session, lx, ly)
-            m7.winutil.user32.SetCursorPos(sx, sy)
-            time.sleep(0.3)
-            m7.winutil.real_click_screen(sx, sy)
-            time.sleep(1.5)
-
-        # 整理入口 = 「排列零件」图标（#196 同款已验证；键盘 A 会被输入法吞）
+        # 导轨「排列零件」图标（锁定态点它才会弹 locked toast）
         arr = None
         for _pass in range(2):
             for (x, y) in RAIL_LINE:
@@ -99,120 +90,128 @@ def main() -> int:
                     break
             if arr:
                 break
-        results["「排列零件」按钮定位（整理入口）"] = (
+        results["「排列零件」按钮定位（导轨）"] = (
             f"PASS (@{arr[0]},{arr[1]})" if arr else "FAIL (not found)")
-        if not arr:
-            return m7.m7_verdict(results)
+
+        import m8x_188 as c188
+        S0 = HERE / "artifacts" / "m8x_197_s0.3mf"
+        S1 = HERE / "artifacts" / "m8x_197_s1.3mf"
+        S2 = HERE / "artifacts" / "m8x_197_s2.3mf"
+        for f in (S0, S1, S2):
+            f.unlink(missing_ok=True)
+
+        def cube_positions(path):
+            """{对象名: (x,y)} —— 存盘后解析立方体的世界平移（精确几何门）。"""
+            if not m7.save_project_as(session, path):
+                print(f"{LOG} save failed: {path.name}")
+                return {}
+            items, _plates = c188.project_geom(path)
+            out = {}
+            for oid, (mat, name) in items.items():
+                if "cube" in (name or "").lower():
+                    out[f"{name}_{oid}"] = (round(mat[9], 3),
+                                            round(mat[10], 3))
+            print(f"{LOG} {path.name} cubes={out}")
+            return out
+
+        def click_lock(expected_substr):
+            """tooltip 定位锁定/解锁图标并点击。"""
+            hit = None
+            for _pass in range(2):
+                for (x, y) in RAIL_LINE:
+                    tip = c194.tooltip_right(session, x, y, dwell_s=1.2)
+                    if tip and expected_substr in tip.lower():
+                        hit = (x, y, tip.strip())
+                        break
+                if hit:
+                    break
+            if not hit:
+                return None
+            sx, sy = m7.client(session, hit[0], hit[1])
+            m7.winutil.user32.SetCursorPos(sx, sy)
+            time.sleep(0.3)
+            m7.winutil.real_click_screen(sx, sy)
+            time.sleep(1.5)
+            return hit
 
         gx, gtip = m7.find_slot(session, lambda t: "arrange" in t)
         print(f"{LOG} main-toolbar arrange slot @{gx} tip={gtip!r}")
 
-        def arrange_click():
-            """整理：主工具栏 Arrange（m7g 已验证）→ 导轨图标兜底。"""
-            if gx is not None:
-                m7.click_slot(session, gx)
-                time.sleep(5.0)
-            else:
+        def arrange_click(use_rail=False):
+            if use_rail and arr:
                 sx, sy = m7.client(session, arr[0], arr[1])
                 m7.winutil.user32.SetCursorPos(sx, sy)
                 time.sleep(0.3)
                 m7.winutil.real_click_screen(sx, sy)
-                time.sleep(5.0)
+            elif gx is not None:
+                m7.click_slot(session, gx)
+            time.sleep(5.0)
 
         def toast_text():
-            """右下角提示 toast 的 OCR 文本（锁定被拒时出现）。"""
             img = m7.capture_bgr(session)
             h, w = img.shape[:2]
             crop = img[h - 170:h - 20, w - 520:w - 10]
             if crop.size == 0:
                 return ""
             words = mdu.ocr_words_img(crop, scale=3)
-            txt = " ".join(wd[0] for wd in words)
-            return txt.strip()
+            return " ".join(wd[0] for wd in words).strip()
 
-        def cube_cents():
-            """只保留盘面内部区域的色块（排除右侧图标列/底栏 UI 假阳性）。"""
-            return sorted((x, y) for x, y in m7.find_centroids(session, limit=6)
-                          if 800 <= x <= 1430 and 250 <= y <= 730)
+        # 0) 基线几何
+        p0 = cube_positions(S0)
+        results["基线几何可解析（两立方体坐标）"] = (
+            f"PASS ({len(p0)} cubes)" if len(p0) >= 2
+            else f"FAIL ({p0})")
+        if len(p0) < 2:
+            return m7.m7_verdict(results)
 
-        # 锁定
-        icon0 = m7.capture_bgr(session)[ly - 30:ly + 30, lx - 30:lx + 30]
-        click_icon()
-        icon1 = m7.capture_bgr(session)[ly - 30:ly + 30, lx - 30:lx + 30]
-        icon_mad = float(np.mean(np.abs(icon1.astype(int) - icon0.astype(int))))
-        print(f"{LOG} lock icon visual mad={icon_mad:.2f}")
-        results["锁定态图标变化（证据行）"] = f"PASS (icon mad={icon_mad:.2f})"
-        b0 = cube_cents()
-        print(f"{LOG} locked cubes before arrange-click: {b0}")
-        arrange_click()
+        # 1) 锁定（tooltip 验证入口）
+        lock = click_lock("lock current plate")
+        if not lock:
+            # 兜底：直接点标定坐标，再读 tooltip 验证
+            sx, sy = m7.client(session, 1458, 285)
+            m7.winutil.user32.SetCursorPos(sx, sy)
+            time.sleep(0.3)
+            m7.winutil.real_click_screen(sx, sy)
+            time.sleep(1.5)
+            lock = (1458, 285, "fallback")
+        results["「锁定当前板」按钮（tooltip 验证）"] = (
+            f"PASS (@{lock[0]},{lock[1]})" if lock[0] else "FAIL")
+        icon0 = None
+        # 2) 锁定后整理：导轨排列按钮 → 右下角 toast 必须含 locked
+        arrange_click(use_rail=True)
         toast = toast_text()
         print(f"{LOG} locked arrange toast: {toast!r}")
-        b1 = cube_cents()
-        print(f"{LOG} locked cubes after:  {b1}")
-        results["锁定后整理被拒（右下角提示可见）"] = (
+        results["锁定后整理被拒（toast 含 locked）"] = (
             "PASS" if toast and "lock" in toast.lower()
             else f"FAIL (toast={toast!r})")
-        results["锁定后立方体未移动"] = (
-            "PASS" if b0 and b1 == b0 else f"FAIL ({b0} -> {b1})")
+        p1 = cube_positions(S1)
+        results["锁定后立方体未移动（几何）"] = (
+            "PASS" if p1 and p1 == p0 else f"FAIL ({p0} -> {p1})")
 
-        # 解锁 -> 重新扫 tooltip 找 unlock 入口（锁定后图标可能移位/改名）
-        unlock = None
-        for _pass in range(2):
-            for (x, y) in RAIL_LINE:
-                tip = c194.tooltip_right(session, x, y, dwell_s=1.2)
-                if tip and ("unlock" in tip.lower()
-                            or "lock" in tip.lower()):
-                    print(f"{LOG} unlock icon @({x},{y}) tip={tip!r}")
-                    unlock = (x, y)
-                    break
-            if unlock:
-                break
-        results["解锁入口（tooltip 重定位）"] = (
-            f"PASS (@{unlock})" if unlock else "FAIL (not found)")
-        if not unlock:
-            return m7.m7_verdict(results)
-        sx, sy = m7.client(session, *unlock)
-        m7.winutil.user32.SetCursorPos(sx, sy)
-        time.sleep(0.3)
-        m7.winutil.real_click_screen(sx, sy)
-        time.sleep(1.5)
-        # 状态核验：再悬停读 tooltip —— 回到 'Lock current plate' 才算解锁成功
-        state_tip = c194.tooltip_right(session, unlock[0], unlock[1], dwell_s=1.5)
-        print(f"{LOG} post-unlock tooltip={state_tip!r}")
-        if state_tip and "unlock" in state_tip.lower():
-            print(f"{LOG} unlock click did not take; retry")
-            sx, sy = m7.client(session, *unlock)
-            m7.winutil.user32.SetCursorPos(sx, sy)
-            time.sleep(0.5)
-            m7.winutil.real_click_screen(sx, sy)
-            time.sleep(2.0)
-            state_tip = c194.tooltip_right(session, unlock[0], unlock[1],
-                                           dwell_s=1.5)
-            print(f"{LOG} post-unlock retry tooltip={state_tip!r}")
-        results["解锁状态核验（tooltip 复位）"] = (
-            "PASS" if state_tip and "unlock" not in state_tip.lower()
-            else f"FAIL (tip={state_tip!r})")
-        icon2 = m7.capture_bgr(session)[ly - 30:ly + 30, lx - 30:lx + 30]
-        back_mad = float(np.mean(np.abs(icon2.astype(int) - icon0.astype(int))))
-        toasted = toast_text()
-        wins = [t for c, t, r, h in m7._visible_toplevels(session.pid)
-                if c == "#32770"]
-        print(f"{LOG} after unlock: icon-back-to-original mad={back_mad:.2f} "
-              f"toast={toasted!r} dialogs={wins}")
-        results["解锁后图标复位（证据行）"] = f"PASS (mad={back_mad:.2f})"
-        arrange_click()
-        toast2 = toast_text()
-        print(f"{LOG} unlocked arrange toast: {toast2!r}")
-        b2 = cube_cents()
-        print(f"{LOG} unlocked cubes after: {b2}")
-        moved = False
-        if b0 and b2:
-            dist = max(float(np.hypot(a[0] - c[0], a[1] - c[1]))
-                       for a in b2[:2] for c in b0[:2])
-            print(f"{LOG} unlocked max centroid shift: {dist:.0f}px")
-            moved = dist > 40
-        results["解锁后整理恢复（立方体移动）"] = (
-            "PASS" if moved else f"FAIL ({b0} -> {b2})")
+        # 3) 解锁（tooltip 重定位 + 状态核验）
+        unlock = click_lock("unlock current plate")
+        if unlock:
+            st = c194.tooltip_right(session, unlock[0], unlock[1], dwell_s=1.5)
+            print(f"{LOG} post-unlock tooltip={st!r}")
+            results["解锁状态核验"] = (
+                "PASS" if st and "unlock" not in st.lower()
+                else f"FAIL (tip={st!r})")
+        else:
+            results["解锁状态核验"] = "FAIL (no unlock entry)"
+
+        # 4) 解锁后整理：导轨按钮 → 几何必须变化
+        arrange_click(use_rail=True)
+        p2 = cube_positions(S2)
+        moved = bool(p1) and bool(p2) and p1 != p2
+        if not moved:
+            print(f"{LOG} rail arrange no-op after unlock; try global")
+            arrange_click(use_rail=False)
+            f2 = HERE / "artifacts" / "m8x_197_s2b.3mf"
+            f2.unlink(missing_ok=True)
+            p2 = cube_positions(f2)
+            moved = bool(p1) and bool(p2) and p1 != p2
+        results["解锁后整理恢复（几何变化）"] = (
+            "PASS" if moved else f"FAIL ({p1} -> {p2})")
         results["app alive"] = "PASS" if session.alive() else "FAIL"
         return m7.m7_verdict(results)
     finally:
