@@ -169,7 +169,7 @@ def main() -> int:
             cancel_dialog(dlg)
             return m7.m7_verdict(results)
         before = winutil.edit_text(ed[0])
-        readback = set_name(ed[0], "   ")
+        readback = set_name(ed, "   ")
         print(f"{LOG} A: before={before!r} readback={readback!r}")
         press_ok(dlg, ed)
         still = dialog_visible(dlg)
@@ -191,7 +191,7 @@ def main() -> int:
         if dlg:
             ed = name_edit(dlg)
             if ed:
-                set_name(ed[0], "B@#1")
+                set_name(ed, "B@#1")
                 press_ok(dlg, ed)
                 ok_b = not dialog_visible(dlg)
                 if not ok_b:
@@ -216,7 +216,7 @@ def main() -> int:
         if dlg:
             ed = name_edit(dlg)
             if ed:
-                set_name(ed[0], long_name)
+                set_name(ed, long_name)
                 press_ok(dlg, ed)
                 still_c = dialog_visible(dlg)
                 texts_c = dialog_texts(dlg) if still_c else []
