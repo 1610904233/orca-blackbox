@@ -46,6 +46,7 @@ def main() -> int:
     from harness import export_util, topbar_util, winutil
 
     user32 = winutil.user32
+    prompt_state = {"n": 0}
 
     def real_click(x, y):
         user32.SetCursorPos(x, y)
@@ -104,6 +105,9 @@ def main() -> int:
                 print(f"{LOG} click {want!r} y={y} attempt={attempt}")
                 real_click(x, y)
                 time.sleep(1.8)
+                if accept_process_prompt():
+                    prompt_state["n"] += 1
+                    time.sleep(2.0)
                 f = m7.model_colored_frac(session)
                 print(f"{LOG}   frac={f:.4%} dialogs={[(c, t) for c, t, r, h in dialogs()]}")
                 if f > 0.003:
@@ -117,6 +121,22 @@ def main() -> int:
                     if bt.strip().lower() == "ok" and user32.IsWindowVisible(bh):
                         real_click((br[0] + br[2]) // 2, (br[1] + br[3]) // 2)
                         print(f"{LOG} STEP import accepted")
+                        return True
+        return False
+
+    def accept_process_prompt():
+        """'You have previously modified your settings' merge prompt raised by
+        loading the perfectionist template over modified process settings:
+        buttons Transfer / Discard. Discard keeps the preset values.
+        Measured 11-13 (probe_242_yolo217c)."""
+        for c, t, r, h in dialogs():
+            kids = export_util._children_texts(h)
+            if any("modified your settings" in (kt or "") for kt, kr, kh in kids):
+                for bt, br, bh in kids:
+                    if bt.strip().lower() == "discard" and                             user32.IsWindowVisible(bh):
+                        real_click((br[0] + br[2]) // 2,
+                                   (br[1] + br[3]) // 2)
+                        print(f"{LOG} process-settings prompt: Discard")
                         return True
         return False
 
@@ -153,6 +173,10 @@ def main() -> int:
         results[f"{tag} 加载（无参数弹窗）"] = (
             "PASS" if loaded and not unexpected else
             f"FAIL (loaded={loaded} dialogs={unexpected})")
+        if prompt_state["n"]:
+            results[f"{tag} 工艺设置合并框（Discard）"] = (
+                f"PASS (handled {prompt_state['n']})")
+            prompt_state["n"] = 0
         results[f"{tag} 模型落板（frac）"] = (
             "PASS" if frac > max(base + 0.003, base * 2) else
             f"FAIL (frac {base:.4%} -> {frac:.4%})")
