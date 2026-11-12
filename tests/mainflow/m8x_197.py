@@ -21,6 +21,7 @@ for _g in sorted((HERE / "tests").iterdir()):
         sys.path.insert(0, str(_g))
 
 LOG = "[m8x197]"
+STL = HERE / "fixtures" / "Prusa.stl"
 
 RAIL_LINE = [(1360, 222), (1374, 231), (1388, 240), (1402, 249),
              (1416, 258), (1430, 267), (1444, 276), (1458, 285),
@@ -31,14 +32,13 @@ def main() -> int:
     import argparse
     import numpy as np
     import m7_common as m7
-    import m8_common as m8
     import m8x_194 as c194
     from m3_common import add_common_args, boot_session
 
-    ap = add_common_args(argparse.ArgumentParser(), default_model=None)
+    ap = add_common_args(argparse.ArgumentParser(), default_model=STL)
     args = ap.parse_args()
     results = {}
-    session = boot_session(args, model=None)
+    session = boot_session(args, model=args.model)
     try:
         m7.ensure_maximized(session)
         time.sleep(6.0)
@@ -59,12 +59,21 @@ def main() -> int:
         time.sleep(2.0)
         # 自定位「锁定当前板」按钮
         lock = None
-        for (x, y) in RAIL_LINE:
-            tip = c194.tooltip_right(session, x, y, dwell_s=1.2)
-            if tip and "lock" in tip.lower():
-                print(f"{LOG} lock icon @({x},{y}) tip={tip!r}")
-                lock = (x, y, tip.strip())
+        for _pass in range(2):
+            for (x, y) in RAIL_LINE:
+                tip = c194.tooltip_right(session, x, y, dwell_s=1.2)
+                if tip and "lock" in tip.lower():
+                    print(f"{LOG} lock icon @({x},{y}) tip={tip!r}")
+                    lock = (x, y, tip.strip())
+                    break
+            if lock:
                 break
+        if not lock:
+            # 定点兜底：#196 同环境标定值（tooltip 抖动时仍可打中）
+            tip = c194.tooltip_right(session, 1450, 284, dwell_s=2.0)
+            print(f"{LOG} lock fallback @(1450,284) tip={tip!r}")
+            if tip and "lock" in tip.lower():
+                lock = (1450, 284, tip.strip())
         results["「锁定当前板」按钮定位"] = (
             f"PASS (@{lock[0]},{lock[1]})" if lock else
             "FAIL (no 'lock' tooltip on rail)")
