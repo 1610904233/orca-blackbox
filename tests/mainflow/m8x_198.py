@@ -104,11 +104,12 @@ def main() -> int:
             return winutil.edit_text(edit)
 
         def press_ok(dlg):
-            r = ctypes_ulong()
-            ok = winutil.user32.SendMessageTimeoutW(
-                dlg[3], 0x0111, 1, 0, 0x0000 | 0x0002, 2000, r)
+            # Plate Settings 的 OK 不是标准 ID（WM_COMMAND(1) 实测无效）——
+            # 用三级兜底：真按钮文本 → Owner-drawn OCR → 标准 ID
+            action = m7.click_dialog_button(dlg[3], "ok")
+            print(f"{LOG} OK action={action!r}")
             time.sleep(1.5)
-            return bool(ok)
+            return bool(action)
 
         def dialog_visible(dlg):
             return bool(winutil.user32.IsWindowVisible(dlg[3]))
@@ -119,9 +120,8 @@ def main() -> int:
 
         def cancel_dialog(dlg):
             if dialog_visible(dlg):
-                r = ctypes_ulong()
-                winutil.user32.SendMessageTimeoutW(
-                    dlg[3], 0x0111, 2, 0, 0x0000 | 0x0002, 2000, r)
+                act = m7.click_dialog_button(dlg[3], "cancel")
+                print(f"{LOG} Cancel action={act!r}")
                 time.sleep(1.0)
 
         # ---- A) 全空格：应被拒（提示或名称未生效）----
