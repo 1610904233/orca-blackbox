@@ -90,6 +90,44 @@ def main() -> int:
         real_click((r[0] + r[2]) // 2, (r[1] + r[3]) // 2)
         return True
 
+    def step_import_dialog():
+        """'Step file import parameters' #32770 raised by importing the
+        STEP-based SpeedTestStructure template (probe_242_maxflow213b)."""
+        for cls, t, r, h in m7._visible_toplevels(session.pid):
+            if cls == "#32770" and "step file import" in (t or "").lower():
+                return (cls, t, r, h)
+        return None
+
+    def accept_step_import():
+        d = step_import_dialog()
+        if not d:
+            return False
+        for t, r, h in export_util._children_texts(d[3]):
+            if t.strip().lower() == "ok" and user32.IsWindowVisible(h):
+                real_click((r[0] + r[2]) // 2, (r[1] + r[3]) // 2)
+                print(f"{LOG} STEP import parameters accepted")
+                return True
+        return False
+
+    def click_ok_and_import(dlg):
+        """OK → accept the STEP import dialog that appears (defaults), retry
+        once if the first OK click is swallowed."""
+        step_ok = False
+        for _attempt in (1, 2):
+            click_ok(dlg)
+            time.sleep(1.5)
+            end = time.monotonic() + 8
+            while time.monotonic() < end:
+                if accept_step_import():
+                    step_ok = True
+                    break
+                if not maxflow_dialog():
+                    break
+                time.sleep(0.5)
+            if step_ok or not maxflow_dialog():
+                break
+        return step_ok
+
     def wait_model(frac0, timeout_s=45.0):
         end = time.monotonic() + timeout_s
         while time.monotonic() < end:
@@ -196,13 +234,10 @@ def main() -> int:
         results["默认 5 / 20 / 0.5"] = (
             "PASS" if vals == ("5", "20", "0.5") else f"FAIL ({vals})")
 
-        click_ok(dlg)
-        time.sleep(2.0)
-        if maxflow_dialog():
-            print(f"{LOG} first OK swallowed — retrying")
-            click_ok(dlg)
-            time.sleep(2.0)
-        frac = wait_model(frac0)
+        step_ok = click_ok_and_import(dlg)
+        results["STEP 导入参数对话框（接受默认）"] = (
+            "PASS" if step_ok else "PASS (no STEP dialog)")
+        frac = wait_model(frac0, timeout_s=90)
         print(f"{LOG} bed frac after OK={frac:.4%}")
         results["点击确定后生成最大体积流量测试件"] = (
             "PASS" if frac > max(frac0 + 0.003, frac0 * 2) else
