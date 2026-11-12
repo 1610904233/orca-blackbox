@@ -104,12 +104,20 @@ def main() -> int:
         if not arr:
             return m7.m7_verdict(results)
 
+        gx, gtip = m7.find_slot(session, lambda t: "arrange" in t)
+        print(f"{LOG} main-toolbar arrange slot @{gx} tip={gtip!r}")
+
         def arrange_click():
-            sx, sy = m7.client(session, arr[0], arr[1])
-            m7.winutil.user32.SetCursorPos(sx, sy)
-            time.sleep(0.3)
-            m7.winutil.real_click_screen(sx, sy)
-            time.sleep(5.0)
+            """整理：主工具栏 Arrange（m7g 已验证）→ 导轨图标兜底。"""
+            if gx is not None:
+                m7.click_slot(session, gx)
+                time.sleep(5.0)
+            else:
+                sx, sy = m7.client(session, arr[0], arr[1])
+                m7.winutil.user32.SetCursorPos(sx, sy)
+                time.sleep(0.3)
+                m7.winutil.real_click_screen(sx, sy)
+                time.sleep(5.0)
 
         def toast_text():
             """右下角提示 toast 的 OCR 文本（锁定被拒时出现）。"""
@@ -168,6 +176,22 @@ def main() -> int:
         time.sleep(0.3)
         m7.winutil.real_click_screen(sx, sy)
         time.sleep(1.5)
+        # 状态核验：再悬停读 tooltip —— 回到 'Lock current plate' 才算解锁成功
+        state_tip = c194.tooltip_right(session, unlock[0], unlock[1], dwell_s=1.5)
+        print(f"{LOG} post-unlock tooltip={state_tip!r}")
+        if state_tip and "unlock" in state_tip.lower():
+            print(f"{LOG} unlock click did not take; retry")
+            sx, sy = m7.client(session, *unlock)
+            m7.winutil.user32.SetCursorPos(sx, sy)
+            time.sleep(0.5)
+            m7.winutil.real_click_screen(sx, sy)
+            time.sleep(2.0)
+            state_tip = c194.tooltip_right(session, unlock[0], unlock[1],
+                                           dwell_s=1.5)
+            print(f"{LOG} post-unlock retry tooltip={state_tip!r}")
+        results["解锁状态核验（tooltip 复位）"] = (
+            "PASS" if state_tip and "unlock" not in state_tip.lower()
+            else f"FAIL (tip={state_tip!r})")
         icon2 = m7.capture_bgr(session)[ly - 30:ly + 30, lx - 30:lx + 30]
         back_mad = float(np.mean(np.abs(icon2.astype(int) - icon0.astype(int))))
         toasted = toast_text()
