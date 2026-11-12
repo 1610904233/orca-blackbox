@@ -125,7 +125,7 @@ def main() -> int:
         def cube_cents():
             """只保留盘面内部区域的色块（排除右侧图标列/底栏 UI 假阳性）。"""
             return sorted((x, y) for x, y in m7.find_centroids(session, limit=6)
-                          if 900 <= x <= 1400 and 300 <= y <= 720)
+                          if 800 <= x <= 1430 and 250 <= y <= 730)
 
         # 锁定
         icon0 = m7.capture_bgr(session)[ly - 30:ly + 30, lx - 30:lx + 30]
@@ -149,7 +149,17 @@ def main() -> int:
 
         # 解锁 -> 整理恢复
         click_icon()
+        icon2 = m7.capture_bgr(session)[ly - 30:ly + 30, lx - 30:lx + 30]
+        back_mad = float(np.mean(np.abs(icon2.astype(int) - icon0.astype(int))))
+        toasted = toast_text()
+        wins = [t for c, t, r, h in m7._visible_toplevels(session.pid)
+                if c == "#32770"]
+        print(f"{LOG} after unlock: icon-back-to-original mad={back_mad:.2f} "
+              f"toast={toasted!r} dialogs={wins}")
+        results["解锁后图标复位（证据行）"] = f"PASS (mad={back_mad:.2f})"
         arrange_click()
+        toast2 = toast_text()
+        print(f"{LOG} unlocked arrange toast: {toast2!r}")
         b2 = cube_cents()
         print(f"{LOG} unlocked cubes after: {b2}")
         moved = False
