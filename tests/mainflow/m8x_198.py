@@ -103,40 +103,36 @@ def main() -> int:
             time.sleep(0.5)
             return winutil.edit_text(edit)
 
-        def _btn_children(dlg):
-            """对话框的 Button 子控件（owner-drawn，文本为空），按 x 排序。"""
-            btns = m7.dialog_buttons(dlg[3])
-            print(f"{LOG} buttons={btns}")
-            return sorted(btns, key=lambda b: b[1][0])
+        def _btn_by_text(dlg, want):
+            """按文本找对话框按钮（类无关）：OK/Cancel 是 wxWindowNR 带文本，
+            不是 class 'Button'（后者只有两个隐藏空按钮，11-12 实证）。"""
+            for t, r, h in export_util._children_texts(dlg[3]):
+                if t.strip().lower() == want:
+                    return t, r, h
+            return None
 
-        def press_ok(dlg, edit):
-            """回车确认：点编辑框拿焦点后发真实 ENTER（wx 对话框默认按钮
-            = OK；行文口径就是"输入后回车确认"）。owner-drawn 按钮无文本、
-            标准 ID 无效、隐藏辅助按钮同坐标——键盘是唯一可靠通道。"""
-            r = edit[1]
+        def press_ok(dlg, edit=None):
+            btn = _btn_by_text(dlg, "ok")
+            if not btn:
+                texts = [k[0][:16] for k in
+                         export_util._children_texts(dlg[3]) if k[0].strip()]
+                print(f"{LOG} no 'OK' child; texts={texts[:12]}")
+                return False
+            _t, r, _h = btn
             cx, cy = (r[0] + r[2]) // 2, (r[1] + r[3]) // 2
-            winutil.user32.SetCursorPos(cx, cy)
-            time.sleep(0.2)
-            winutil.real_click_screen(cx, cy)
-            time.sleep(0.4)
-            winutil.user32.keybd_event(0x0D, 0, 0, 0)
-            time.sleep(0.06)
-            winutil.user32.keybd_event(0x0D, 0, 2, 0)
+            winutil.msg_click_screen(cx, cy, dlg[3])
+            print(f"{LOG} OK clicked @({cx},{cy})")
             time.sleep(1.5)
             return True
 
-        def dialog_visible(dlg):
-            return bool(winutil.user32.IsWindowVisible(dlg[3]))
-
-        def dialog_texts(dlg):
-            return [k[0][:60] for k in export_util._children_texts(dlg[3])
-                    if k[0].strip()]
-
         def cancel_dialog(dlg):
             if dialog_visible(dlg):
-                winutil.user32.keybd_event(0x1B, 0, 0, 0)
-                time.sleep(0.06)
-                winutil.user32.keybd_event(0x1B, 0, 2, 0)
+                btn = _btn_by_text(dlg, "cancel")
+                if btn:
+                    _t, r, _h = btn
+                    cx, cy = (r[0] + r[2]) // 2, (r[1] + r[3]) // 2
+                    winutil.msg_click_screen(cx, cy, dlg[3])
+                    print(f"{LOG} Cancel clicked @({cx},{cy})")
                 time.sleep(1.0)
 
         # ---- A) 全空格：应被拒（提示或名称未生效）----
