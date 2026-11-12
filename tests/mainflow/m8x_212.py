@@ -93,7 +93,7 @@ def main() -> int:
         end = time.monotonic() + timeout_s
         while time.monotonic() < end:
             f = m7.model_colored_frac(session)
-            if f > frac0 + 0.005:
+            if f > max(frac0 + 0.003, frac0 * 2):
                 return f
             time.sleep(1.0)
         return m7.model_colored_frac(session)
@@ -205,11 +205,11 @@ def main() -> int:
         frac = wait_model(frac0)
         print(f"{LOG} bed frac after OK={frac:.4%}")
         results["点击确定后生成回抽测试塔"] = (
-            "PASS" if frac > frac0 + 0.005 else
+            "PASS" if frac > max(frac0 + 0.003, frac0 * 2) else
             f"FAIL (frac {frac0:.4%} -> {frac:.4%})")
         results["确定后对话框关闭"] = (
             "PASS" if not retract_dialog() else "FAIL (dialog still open)")
-        if frac <= frac0 + 0.005:
+        if frac <= max(frac0 + 0.003, frac0 * 2):
             results["app alive"] = "PASS" if session.alive() else "FAIL"
             return m7.m7_verdict(results)
 
