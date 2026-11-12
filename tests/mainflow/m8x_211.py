@@ -153,19 +153,37 @@ def main() -> int:
         for t, x, y, w, h in words:
             key = next((k for k in lines if abs(k - y) <= 10), y)
             lines.setdefault(key, []).append((x, t, y, h, w))
+        plate_y = outside_y = None
         for k in sorted(lines):
             parts = sorted(lines[k])
             text = " ".join(p[1] for p in parts).lower()
             print(f"{LOG}   y={k}: {text}")
-            if any(s in text for s in ("plate", "outside", "search")) or \
-                    not text.strip():
-                continue
-            x = max(p[0] + p[4] // 2 for p in parts)
-            cx, cy = m7.client(session, x, k + 8)
-            real_click(cx, cy)
-            time.sleep(1.2)
-            return m7.object_selected(session)
-        return None
+            if "plate" in text and plate_y is None:
+                plate_y = k
+            if "outside" in text and outside_y is None:
+                outside_y = k
+        if plate_y is None:
+            return None, None
+        # 对象行 = Plate 与 Outside 之间（OCR 可能读不到校准件的对象名，
+        # 所以按几何位置点，不按文本挑行——上一版按文本会误点设置页签）。
+        target_y = (plate_y + outside_y) // 2 \
+            if (outside_y and outside_y > plate_y + 10) else plate_y + 22
+        pre = m7.object_selected(session)
+        print(f"{LOG} selected before row click={pre}")
+        # 先取消选择，证明选中由行点击产生
+        user32.SetForegroundWindow(session.hwnd)
+        time.sleep(0.3)
+        for _ in range(2):
+            user32.keybd_event(0x1B, 0, 0, 0)
+            user32.keybd_event(0x1B, 0, 2, 0)
+            time.sleep(0.2)
+        time.sleep(0.6)
+        deselected = not m7.object_selected(session)
+        print(f"{LOG} deselected by ESC={deselected}")
+        cx, cy = m7.client(session, 200, target_y + 8)
+        real_click(cx, cy)
+        time.sleep(1.2)
+        return deselected, m7.object_selected(session)
 
     ap = add_common_args(argparse.ArgumentParser())  # 空床
     args = ap.parse_args()
@@ -229,9 +247,11 @@ def main() -> int:
             results["app alive"] = "PASS" if session.alive() else "FAIL"
             return m7.m7_verdict(results)
 
-        selected = select_model_row()
-        results["PA 塔对象可单独选中"] = (
-            "PASS" if selected else f"FAIL (selected={selected})")
+        deselected, selected = select_model_row() or (None, None)
+        results["选中前可取消选择（ESC）"] = (
+            "PASS" if deselected else "FAIL (still selected)")
+        results["PA 塔对象行可单独选中"] = (
+            "PASS" if selected else "FAIL (info panel empty)")
         m7.op_slice(session, results, key="PA 塔切片")
         results["app alive"] = "PASS" if session.alive() else "FAIL"
         return m7.m7_verdict(results)
