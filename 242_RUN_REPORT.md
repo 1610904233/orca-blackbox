@@ -65,6 +65,20 @@ m8x_191 的红是批次内进程中止（stdout 管道堵塞误判挂起后被�
 自动化状态无变化，未执行写回。产品侧 5 项发现（F-1/F-3/F-6/F-7/F-8）
 建议转交开发侧确认后再决定是否在飞书另开问题跟踪。
 
+## 11-12 增补二：#196/#197/#198 盘侧工具栏三条（用户逐条确认）
+
+- **#196 排列零件**（m8x_196）：自定位斜排线 arrange 图标
+  （tooltip 'Arrange objects on current plate'）+ 双零件分离判定
+- **#197 锁定当前板**（m8x_197）：lock 图标（'Lock current plate'）→
+  锁定态点整理：右下角 toast 原文 'This plate is locked. Cannot
+  auto-arrange on this plate.' + **3mf 几何回读立方体坐标未动** →
+  tooltip 状态核验解锁 → 再整理：坐标分离（29mm）
+- **#198 编辑盘名**（m8x_198）：Customize current plate → Plate Settings
+  的『Plate name』字段；三态按用户更新后的基线：全空格/100 字符
+  **当前无限制（接受）**、特殊字符 'B@#1' 存盘回读逐字一致
+- 飞书三条已写回「已自动化」并回读验证
+- **覆盖更新：61 个自动化脚本 / 83 行基线**
+
 ## 11-12 增补：#20 导入含装配关系（新用例 m8z_assembly_import）
 
 - 用户提供 3mf 夹具（下沉式宝可梦纸巾盒，8 对象/3 盘，装配关系完整），
