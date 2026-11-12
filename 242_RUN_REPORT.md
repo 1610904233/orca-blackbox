@@ -110,20 +110,46 @@ m8x_191 的红是批次内进程中止（stdout 管道堵塞误判挂起后被�
   **F-10（gizmo 面板关闭后无法选中，最高优先级回归嫌疑）**、
   F-11（Select All 疑似只选当前盘）
 
-## 11-12 收口：台账清零（62 行「不适用」）
+## 11-12 收口：台账状态与校准 13 行的更正
 
-- 全表 145 行实时回读：**79 已自动化 + 4 部分自动化 + 62 不适用**
-  （0 未覆盖 / 0 空行）
-- 本次补标 18 行（写回前为 15 未覆盖 + 3 空）：
-  - #184 内存占用（人工验证，黑盒不适用）
-  - #206–#222 校准 13 行（真机/校准依赖：菜单、非法输入、温度塔、
-    流量粗/细调、PA/回抽/最大体积流量/输入整形/YOLO 对比等）
-  - #223/#224 卸载流程 2 行（安装器范围外）
-  - #225/#226 打印头映射（局域网/云联机）
-- 写回：`tools/feishu_writeback.py --ids-file artifacts/feishu_base/na_plan_18.json
-  --ids-key 不适用 --value 不适用 --apply`，18/18 回读一致
-- 台账口径定版：**145 = 83 覆盖（61 脚本 = 79 已自动化 + 4 部分自动化）+ 62 不适用**
-- 同期把 2.4.1/2.4.2 适配期探针 46 个与两份历史交接文档入库（`36b397d`）
+### 更正：校准 13 行（#206–#222）不是「真机依赖」，可自动化
+
+第一版收口把「校准」整组按交接口径标成「不适用」，这是**错标**——逐条
+核对步骤后确认这些用例全部是本地操作：展开校准菜单 → 看弹窗默认值 →
+确认后从安装包自带 `resources/calib/*` 模板生成模型 → 本地切片 → 读
+gcode/对象列表，不需要连接打印机（与套件里全部切片用例同一环境）。
+
+离线探针实证（`diag/probe_242_calibmenu{,2}.py`，客机 orca242d）：
+
+- 入口是顶栏自绘工具，位于 topbar **offset 250**（截图 `artifacts/p242cm_top.png`）；
+  `GetMenu(frame)=0`，说明走的是 BBLTopbar 自绘菜单，不是原生菜单栏。
+- 点开后 HMENU 树完整可读（id 可直接用于 `WM_COMMAND` / 加速键路由）：
+  ```
+  Temperature 378
+  Flow rate (sub): Pass 1=379, Pass 2=380, YOLO (Recommended)=381,
+                   YOLO (perfectionist)=382
+  Pressure advance 383 / Retraction test 384 / Max flowrate 385
+  Cornering (sub): Junction Deviation 386
+  Input Shaping (sub): Frequency 387, Damping/zeta factor 388
+  VFA 389 / Tutorial 390
+  ```
+  与 #206 预期条目逐项对应（「粗调/细调」= UI 的 `Pass 1/Pass 2`）。
+- 安装包侧证据：`resources/calib/{temperature_tower, pressure_advance,
+  retraction, volumetric_speed, input_shaping, vfa}` 全部存在；
+  `i18n/en/Snapmaker_Orca.mo` 含 `Calibration` 字符串。
+- 结论：#206–#222 可按本地 UI+切片路径自动化，无真机/云依赖。
+
+因此 13 行已从「不适用」改回「未覆盖」并回读验证（`reopen_calib_13`），
+待后续逐条实现；真正不适用的只有 5 行：#184（人工验证）、#223/#224
+（卸载安装器，范围外）、#225/#226（局域网/云联机）。
+
+### 当前台账（145 行实时回读）
+
+**79 已自动化 + 4 部分自动化 + 13 未覆盖 + 49 不适用 = 145**
+
+- 覆盖口径不变：83 行 = 61 个脚本（79 已自动化 + 4 部分自动化）
+- 本轮入库：2.4.1/2.4.2 适配期探针 46 个与两份历史交接文档（`36b397d`）；
+  校准菜单探针 `probe_242_calibmenu{,2}.py` 一并入库
 
 ## 下一步（建议）
 
