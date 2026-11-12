@@ -135,6 +135,13 @@ def main() -> int:
                     print(f"{LOG} Cancel clicked @({cx},{cy})")
                 time.sleep(1.0)
 
+        def dialog_visible(dlg):
+            return bool(winutil.user32.IsWindowVisible(dlg[3]))
+
+        def dialog_texts(dlg):
+            return [k[0][:60] for k in
+                    export_util._children_texts(dlg[3]) if k[0].strip()]
+
         # ---- A) 全空格：应被拒（提示或名称未生效）----
         dlg = open_plate_settings()
         results["Plate Settings 对话框"] = "PASS" if dlg else "FAIL (no dialog)"
