@@ -497,6 +497,19 @@ def objects_tab_select(session):
                                         ("untitled", "prusa", "cube"))),
                None)
     if not row:
+        # 通用回退：Plate 行与 Outside 行之间的第一行内容 = 盘内零件行
+        # （其它夹具的零件名可能是数字/任意文本，如 assembly 夹具的 '6'）
+        plate = next((w for w in words if w[0].lower() == "plate"), None)
+        outside = next((w for w in words if "outside" in w[0].lower()), None)
+        if plate:
+            lo = plate[2] + 13
+            hi = outside[2] - 6 if outside else lo + 90
+            cand = [w for w in words
+                    if lo <= w[2] <= hi and w[1] > 20
+                    and w[0].lower() not in ("plate", "outside")]
+            cand.sort(key=lambda w: (w[2], w[1]))
+            row = cand[0] if cand else None
+    if not row:
         print(f"{LOG} objects tab: no model row ({[w[0] for w in words][:12]})")
         return None
     rx = row[1] + row[3] // 2

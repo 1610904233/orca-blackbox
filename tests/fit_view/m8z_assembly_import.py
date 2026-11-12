@@ -30,15 +30,17 @@ ASSEMBLY_3MF = HERE / "fixtures" / "assembly_pokemon_box.3mf"
 
 
 def wait_loaded(session, timeout_s=240):
-    """载入门：彩色占比（模型渲染）或对象标签页行出现。"""
+    """载入门：对象标签页的盘内零件行出现即算载入成功。
+
+    不能用彩色占比：该夹具的零件按耗材分配（可能是灰色/其它盘），彩色
+    像素天然近乎为零（实测 11-12 首轮 0.06% 误判）。"""
     deadline = time.monotonic() + timeout_s
-    frac = m7.model_colored_frac(session)
     while time.monotonic() < deadline:
-        if frac >= 0.0025:
-            return True, frac
-        time.sleep(2.0)
-        frac = m7.model_colored_frac(session)
-    return False, frac
+        row = c152.objects_tab_select(session)
+        if row:
+            return row
+        time.sleep(3.0)
+    return None
 
 
 def main() -> int:
@@ -49,18 +51,14 @@ def main() -> int:
     results = {}
     session = boot_session(args, model=args.model)
     try:
-        arrived, frac = wait_loaded(session)
-        results["工程载入（盘 1 渲染）"] = (
-            f"PASS ({frac:.2%})" if arrived else f"FAIL ({frac:.2%})")
-        if not arrived:
-            return m7.m7_verdict(results)
         m7.ensure_maximized(session)
         time.sleep(2.0)
-
-        # 2) 对象标签页：行存在且可选中（零件真实存在）
-        row = c152.objects_tab_select(session)
-        results["对象标签页零件行可选中"] = (
-            f"PASS (@{row})" if row else "FAIL (no selectable object row)")
+        row = wait_loaded(session)
+        results["工程载入（对象标签页零件行）"] = (
+            f"PASS (@{row})" if row else "FAIL (no object row)")
+        if not row:
+            return m7.m7_verdict(results)
+        results["对象标签页零件行可选中"] = f"PASS (@{row})"
         info = m7.object_info_text(session)
         print(f"{LOG} object info: {info[:60]!r}")
         results["对象信息面板可读（证据行）"] = (
