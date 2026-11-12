@@ -103,13 +103,22 @@ def main() -> int:
             time.sleep(0.5)
             return winutil.edit_text(edit)
 
+        def _btn_children(dlg):
+            """对话框的 Button 子控件（owner-drawn，文本为空），按 x 排序。"""
+            btns = m7.dialog_buttons(dlg[3])
+            print(f"{LOG} buttons={btns}")
+            return sorted(btns, key=lambda b: b[1][0])
+
         def press_ok(dlg):
-            # Plate Settings 的 OK 不是标准 ID（WM_COMMAND(1) 实测无效）——
-            # 用三级兜底：真按钮文本 → Owner-drawn OCR → 标准 ID
-            action = m7.click_dialog_button(dlg[3], "ok")
-            print(f"{LOG} OK action={action!r}")
+            """OK = 最左侧无文字 Button（owner-drawn；WM_COMMAND(1) 实测无效）。"""
+            cands = _btn_children(dlg)
+            if not cands:
+                print(f"{LOG} no Button children")
+                return False
+            _t, (x, y) = cands[0]
+            winutil.msg_click_screen(x, y, dlg[3])
             time.sleep(1.5)
-            return bool(action)
+            return True
 
         def dialog_visible(dlg):
             return bool(winutil.user32.IsWindowVisible(dlg[3]))
@@ -120,8 +129,10 @@ def main() -> int:
 
         def cancel_dialog(dlg):
             if dialog_visible(dlg):
-                act = m7.click_dialog_button(dlg[3], "cancel")
-                print(f"{LOG} Cancel action={act!r}")
+                cands = _btn_children(dlg)
+                if cands:
+                    _t, (x, y) = cands[-1]   # 最右 = Cancel
+                    winutil.msg_click_screen(x, y, dlg[3])
                 time.sleep(1.0)
 
         # ---- A) 全空格：应被拒（提示或名称未生效）----
