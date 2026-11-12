@@ -7,8 +7,10 @@
 # 入口 = 顶栏 Calibration（offset 250）→ Pressure advance 行（真实点击，
 # 候选 y 扫描）→ 原生 #32770 'PA Calibration'。字段结构（probe_242_pa207）：
 # Start PA / End PA / PA step / Accelerations / Speeds 五个 Edit + OK。
-# 输入通道 = 真实键盘（probe_242_pa207b/c：WM_CHAR 消息通道被字段忽略）：
-# 字母用 keybd_event，粘贴用剪贴板 + 真 Ctrl+V。
+# 输入通道：清空/粘贴走真实通道（真实 END+BACKSPACE / 剪贴板 Ctrl+V）；
+# A 步的 'abc' 用 EM_REPLACESEL 写入——客机中文输入法在系统层吞掉字母真实键
+# （keybd_event / WM_CHAR / VK_PACKET / 摘 IME 上下文 / 切 en-US 全无效，
+# probe_242_pa207d/e/f 实证），字段内容仍可见、提交校验路径不变。
 # 拒绝 oracle = 新的 #32770 'Snapmaker Orca info'，OCR 正文含
 # 'Please input valid values'（实测：Start PA >= 0.0 / End PA > Start PA /
 # PA step >= 0.001）；关掉后 PA 对话框仍在，热床彩色占比不上升（无模型）。
@@ -77,6 +79,14 @@ def main() -> int:
         user32.keybd_event(0x56, 0, 2, 0)
         user32.keybd_event(0x11, 0, 2, 0)
         time.sleep(0.5)
+
+    def insert_text(ed, text):
+        """Message-level insert (EM_REPLACESEL): the guest's Chinese IME
+        consumes letter keys before they reach the control, so real-key
+        typing cannot put 'abc' in the field (PITFALLS 21.21)."""
+        user32.SendMessageW(ed, 0x00C2, 1, ctypes.c_wchar_p(text))
+        time.sleep(0.4)
+        return winutil.edit_text(ed)
 
     def dialogs():
         return [(c, t, r, h) for c, t, r, h in m7._visible_toplevels(session.pid)
@@ -204,11 +214,12 @@ def main() -> int:
         # ---- A 输入 abc ----
         frac0 = m7.model_colored_frac(session)
         cleared = clear_start(ed)
-        for ch in "abc":
-            key(ord(ch.upper()))
-        time.sleep(0.4)
-        readback_a = winutil.edit_text(ed)
-        print(f"{LOG} A: cleared={cleared!r} readback={readback_a!r}")
+        readback_a = insert_text(ed, "abc")
+        print(f"{LOG} A: cleared={cleared!r} readback={readback_a!r} "
+              f"(EM_REPLACESEL: guest IME swallows letter keys)")
+        results["A 输入 abc 进入字段"] = (
+            "PASS" if readback_a.strip().lower() == "abc" else
+            f"FAIL (readback={readback_a!r})")
         txt, evidence, still, frac = submit_and_check("A", frac0, {dlg[3]})
         ok_a = bool(txt) and any(k in txt.lower() for k in WARN_KEYWORDS)
         results["A 输入 abc 被拒（警告框）"] = (
