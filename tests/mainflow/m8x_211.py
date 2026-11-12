@@ -158,7 +158,8 @@ def main() -> int:
             parts = sorted(lines[k])
             text = " ".join(p[1] for p in parts).lower()
             print(f"{LOG}   y={k}: {text}")
-            if "plate" in text and plate_y is None:
+            if "plate" in text and "search" not in text \
+                    and plate_y is None:
                 plate_y = k
             if "outside" in text and outside_y is None:
                 outside_y = k
