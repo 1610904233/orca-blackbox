@@ -147,8 +147,27 @@ def main() -> int:
         results["锁定后立方体未移动"] = (
             "PASS" if b0 and b1 == b0 else f"FAIL ({b0} -> {b1})")
 
-        # 解锁 -> 整理恢复
-        click_icon()
+        # 解锁 -> 重新扫 tooltip 找 unlock 入口（锁定后图标可能移位/改名）
+        unlock = None
+        for _pass in range(2):
+            for (x, y) in RAIL_LINE:
+                tip = c194.tooltip_right(session, x, y, dwell_s=1.2)
+                if tip and ("unlock" in tip.lower()
+                            or "lock" in tip.lower()):
+                    print(f"{LOG} unlock icon @({x},{y}) tip={tip!r}")
+                    unlock = (x, y)
+                    break
+            if unlock:
+                break
+        results["解锁入口（tooltip 重定位）"] = (
+            f"PASS (@{unlock})" if unlock else "FAIL (not found)")
+        if not unlock:
+            return m7.m7_verdict(results)
+        sx, sy = m7.client(session, *unlock)
+        m7.winutil.user32.SetCursorPos(sx, sy)
+        time.sleep(0.3)
+        m7.winutil.real_click_screen(sx, sy)
+        time.sleep(1.5)
         icon2 = m7.capture_bgr(session)[ly - 30:ly + 30, lx - 30:lx + 30]
         back_mad = float(np.mean(np.abs(icon2.astype(int) - icon0.astype(int))))
         toasted = toast_text()
