@@ -197,15 +197,40 @@ def main() -> int:
         return names
 
     def clear_bed():
+        """Sliced state blocks Ctrl+A+Del (measured 11-13: frac stayed
+        4.86%). Primary channel = Ctrl+N new project + Discard on the
+        process-settings prompt; Ctrl+A+Del stays as the fallback."""
+        def cleared():
+            return m7.model_colored_frac(session) <= base + 0.003
+
         user32.SetForegroundWindow(session.hwnd)
         time.sleep(0.4)
+        key_combo(0x11, 0x4E)   # Ctrl+N
+        time.sleep(2.0)
+        for c, t, r, h in dialogs():
+            kids = export_util._children_texts(h)
+            texts = [kt.lower() for kt, kr, kh in kids]
+            if any("modified your settings" in x for x in texts):
+                for bt, br, bh in kids:
+                    if bt.strip().lower() == "discard" and                             user32.IsWindowVisible(bh):
+                        real_click((br[0] + br[2]) // 2,
+                                   (br[1] + br[3]) // 2)
+                        print(f"{LOG} Ctrl+N prompt: Discard")
+                        break
+        end = time.monotonic() + 12
+        while time.monotonic() < end:
+            if cleared():
+                return m7.model_colored_frac(session)
+            time.sleep(0.5)
+        # fallback
+        user32.SetForegroundWindow(session.hwnd)
+        time.sleep(0.3)
         key_combo(0x11, 0x41)   # Ctrl+A
         key_combo(0x2E)         # Del
         end = time.monotonic() + 8
         while time.monotonic() < end:
-            f = m7.model_colored_frac(session)
-            if f <= base + 0.003:
-                return f
+            if cleared():
+                break
             time.sleep(0.5)
         return m7.model_colored_frac(session)
 
