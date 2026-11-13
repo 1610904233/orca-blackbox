@@ -65,3 +65,20 @@
 4. 证据：`artifacts/junit.xml`（74 tests / 18 failures）、
    `artifacts/failed_cases.txt`、客机 `artifacts/regress_<case>.log` 与
    `artifacts/shots/<case>/`。
+
+
+## 重跑失败的 18 例（2026-11-14）
+
+- 命令：`hv_go.ps1 -OnlyFailed -Exe <latest 2.4.2>`（无热身轮）
+- 结果：**17 PASS / 1 FAIL**（junit 18 tests / 1 failure）
+- 首轮 18 红中 **17 条重跑转绿**：m3e、m3j、m3k、m3l、m3m、m3r、m3s、m3t、
+  m3u、m3v、m3x、m3y、m4a、m4b、m4d、m4e、m4i
+  → 首轮混色族/导出模式的 RED 是**不稳定/交互时序**，不是稳定产品缺陷。
+- 唯一稳定红：**m8x_153**（#153，部分自动化）
+  - 两模型重合检测 PASS；Arrange 后仍只有 1 个 blob：
+    `blobs=[(1169, 544, 1126, 516, 1203, 571, 1783)]`
+  - 本构建 2/2 次一致；plate 包上也红 → 需人工确认 Arrange 是否真的未分离，
+    或测试的 blob 分离判据（两对象投影粘连）是否过严。
+  - 录屏：`artifacts/m8x_153_plate_run.mp4`（15,102,193 B，01:50:51）
+- 结论修正：m3j 的 Auto 门禁在重跑中 PASS，不能据此判产品缺陷；
+  m8x_153 是唯一需要在人工界面上复核的行为。
