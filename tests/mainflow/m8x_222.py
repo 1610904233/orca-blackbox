@@ -236,13 +236,16 @@ def main() -> int:
             real_click(*m7.client(session, cx, outside_y + 8))
             time.sleep(1.0)
         cleared = not m7.object_selected(session)
-        real_click(*m7.client(session, cx, tower_y))
-        time.sleep(1.2)
-        sel = m7.object_selected(session)
-        if not sel:
-            real_click(*m7.client(session, cx, tower_y))
-            time.sleep(1.2)
-            sel = m7.object_selected(session)
+        # V 形模型的行高/位置与 PA 塔略有差异，扫 ±12px 找到可点中的行
+        sel = False
+        for ty in (tower_y, tower_y - 6, tower_y - 12,
+                   tower_y + 6, tower_y + 12):
+            real_click(*m7.client(session, cx, ty))
+            time.sleep(1.0)
+            if m7.object_selected(session):
+                print(f"{LOG} model row selected at y={ty}")
+                sel = True
+                break
         return cleared, sel
 
     ap = add_common_args(argparse.ArgumentParser())  # 空床
