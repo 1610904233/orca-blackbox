@@ -282,6 +282,9 @@ def main() -> int:
 
         load_and_check("YOLO 推荐版", "yolo (recommended)", REC_EXPECTED,
                        ART / "m8x_217_rec.3mf")
+        # 两版各自都要切片验证（用户口径 11-13）：推荐版先切片，再清场换
+        # 完美版；飞书步骤 1 的"删除该模型"不等于跳过切片。
+        m7.op_slice(session, results, key="YOLO 推荐版切片")
         frac_after_clear = clear_bed()
         print(f"{LOG} after clear frac={frac_after_clear:.4%}")
         results["Ctrl+A+Del 清场"] = (
