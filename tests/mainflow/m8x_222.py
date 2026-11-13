@@ -89,18 +89,18 @@ def main() -> int:
         lab = next((r for t, r, h in kids() if t.strip() == label), None)
         if not lab:
             return False
-        ly = (lab[1][1] + lab[1][3]) // 2
+        ly = (lab[1] + lab[3]) // 2
         circles = [r for t, r, h in kids()
                    if not t.strip()
                    and winutil.window_class(h) in ("Static", "Button")
                    and abs(((r[1] + r[3]) // 2) - ly) <= 12
-                   and lab[1][0] - 40 < r[0] < lab[1][0]
+                   and lab[0] - 40 < r[0] < lab[0]
                    and (r[2] - r[0]) <= 30]
         if circles:
             r = circles[0]
             real_click((r[0] + r[2]) // 2, (r[1] + r[3]) // 2)
         else:
-            real_click((lab[1][0] + lab[1][2]) // 2, ly)
+            real_click((lab[0] + lab[2]) // 2, ly)
         return True
 
     def pn_state_visual():
