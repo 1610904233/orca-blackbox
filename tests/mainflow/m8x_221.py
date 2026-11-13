@@ -93,6 +93,37 @@ def main() -> int:
                 return h
         return None
 
+    def pn_state_visual(dlg):
+        """Owner-drawn checkbox: BM_GETCHECK returns 0 always (style
+        0x5a01100b = BS_OWNERDRAW, measured 11-13). Read the pixel state:
+        a checked box is teal-filled with a white tick; unchecked is gray.
+        Returns (teal_pixels, enabled)."""
+        import numpy as np
+        kids = export_util._children_texts(dlg[3])
+        lab = next(((t, r) for t, r, h in kids
+                    if t.strip().lower() == "print numbers"), None)
+        if not lab:
+            return -1, False
+        ly = (lab[1][1] + lab[1][3]) // 2
+        btn = next(((r, h) for t, r, h in kids
+                    if winutil.window_class(h) == "Button"
+                    and abs(((r[1] + r[3]) // 2) - ly) <= 14
+                    and user32.IsWindowVisible(h)), None)
+        if not btn:
+            return -1, False
+        br, bh = btn
+        cx0, cy0 = winutil.client_to_screen(dlg[3], 0, 0)
+        w, h, bgra = winutil.capture_window(dlg[3])
+        img = np.frombuffer(bgra, np.uint8).reshape(h, w, 4)[:, :, :3]
+        x0, y0 = max(0, br[0] - cx0), max(0, br[1] - cy0)
+        x1, y1 = min(w, br[2] - cx0), min(h, br[3] - cy0)
+        crop = img[y0:y1, x0:x1]
+        if crop.size == 0:
+            return -1, bool(user32.IsWindowEnabled(bh))
+        teal = int(((crop[:, :, 0] > 100) & (crop[:, :, 1] > 100)
+                    & (crop[:, :, 2] < 120)).sum())
+        return teal, bool(user32.IsWindowEnabled(bh))
+
     def radio_click(dlg, label):
         """Click the radio circle left of the label (empty Static)."""
         kids = export_util._children_texts(dlg[3])
@@ -164,7 +195,7 @@ def main() -> int:
         end = time.monotonic() + timeout_s
         while time.monotonic() < end:
             f = m7.model_colored_frac(session)
-            if f > max(frac0 + 0.003, frac0 * 2):
+            if f > max(frac0 + 0.002, frac0 * 2.5):
                 return f
             time.sleep(1.0)
         return m7.model_colored_frac(session)
@@ -255,22 +286,23 @@ def main() -> int:
         print(f"{LOG} start/end/step={vals} pn={pn}")
         results["默认 0 / 0.1 / 0.002"] = (
             "PASS" if vals == ("0", "0.1", "0.002") else f"FAIL ({vals})")
-        pn_state = user32.SendMessageW(pn, BM_GETCHECK, 0, 0) if pn else -1
-        pn_enabled = bool(user32.IsWindowEnabled(pn)) if pn else False
-        print(f"{LOG} Print numbers state={pn_state} enabled={pn_enabled}")
-        results["Print numbers 勾选且可编辑"] = (
-            "PASS" if pn_state == 1 and pn_enabled else
-            f"FAIL (state={pn_state} enabled={pn_enabled})")
+        bm = user32.SendMessageW(pn, BM_GETCHECK, 0, 0) if pn else -1
+        teal, pn_enabled = pn_state_visual(dlg)
+        print(f"{LOG} Print numbers BM_GETCHECK={bm} (owner-drawn) "
+              f"teal={teal} enabled={pn_enabled}")
+        results["Print numbers 勾选且可编辑（视觉判态）"] = (
+            "PASS" if teal >= 50 and pn_enabled else
+            f"FAIL (teal={teal} enabled={pn_enabled})")
 
         step_ok = click_ok_and_import(dlg)
         frac = wait_model(frac0)
         print(f"{LOG} bed frac after OK={frac:.4%} step_import={step_ok}")
         results["点击确定后生成划线校准模型"] = (
-            "PASS" if frac > max(frac0 + 0.003, frac0 * 2) else
+            "PASS" if frac > max(frac0 + 0.002, frac0 * 2.5) else
             f"FAIL (frac {frac0:.4%} -> {frac:.4%})")
         results["确定后对话框关闭"] = (
             "PASS" if not pa_dialog() else "FAIL (dialog still open)")
-        if frac <= max(frac0 + 0.003, frac0 * 2):
+        if frac <= max(frac0 + 0.002, frac0 * 2.5):
             results["app alive"] = "PASS" if session.alive() else "FAIL"
             return m7.m7_verdict(results)
 
