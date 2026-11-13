@@ -311,7 +311,9 @@ def main() -> int:
             "PASS" if deselected else "FAIL (still selected)")
         results["划线模型对象行可单独选中"] = (
             "PASS" if selected else "FAIL (info panel empty)")
-        m7.op_slice(session, results, key="PA 划线模式切片")
+        # 已知缺陷（F-12，用户 11-13 确认已录入修复）：PA 划线模型切片后
+        # 会提示 gcode 路径超出热床边界；本条只判切片完成，告警留痕不判红。
+        m7.op_slice(session, results, key="PA 划线模式切片（已知越界告警 F-12）")
         results["app alive"] = "PASS" if session.alive() else "FAIL"
         return m7.m7_verdict(results)
     finally:
