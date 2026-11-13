@@ -196,13 +196,39 @@ def main() -> int:
             f"FAIL (got {len(names)}: {sorted(names)[:6]}...)")
         return names
 
+    def switch_to_prepare():
+        """Slicing switches the app to Preview; the Objects tab and object
+        deletion only exist on Prepare. Click the Prepare page tab
+        (frame child, screen coords)."""
+        for t, r, h in export_util._children_texts(session.hwnd):
+            if t.strip().lower() == "prepare":
+                cx = (r[0] + r[2]) // 2
+                cy = (r[1] + r[3]) // 2
+                real_click(cx, cy)
+                time.sleep(2.0)
+                print(f"{LOG} switched to Prepare @({cx},{cy})")
+                return True
+        print(f"{LOG} Prepare tab not found")
+        return False
+
     def clear_bed():
-        """Sliced state blocks Ctrl+A+Del (measured 11-13: frac stayed
-        4.86%). Primary channel = Ctrl+N new project + Discard on the
-        process-settings prompt; Ctrl+A+Del stays as the fallback."""
+        """After a slice the app sits on Preview, where Ctrl+A+Del does
+        nothing. Return to Prepare first, then delete all objects; the
+        Ctrl+N+Discard path stays as the fallback."""
         def cleared():
             return m7.model_colored_frac(session) <= base + 0.003
 
+        switch_to_prepare()
+        user32.SetForegroundWindow(session.hwnd)
+        time.sleep(0.4)
+        key_combo(0x11, 0x41)   # Ctrl+A
+        key_combo(0x2E)         # Del
+        end = time.monotonic() + 8
+        while time.monotonic() < end:
+            if cleared():
+                return m7.model_colored_frac(session)
+            time.sleep(0.5)
+        # fallback: new project + Discard
         user32.SetForegroundWindow(session.hwnd)
         time.sleep(0.4)
         key_combo(0x11, 0x4E)   # Ctrl+N
