@@ -853,3 +853,14 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   `SendMessage(edit, EM_REPLACESEL, 1, text)` 写入并在用例里回读断言
   （视频可见、提交校验路径不变）；**不要**继续在真实字母键上重试浪费
   会话。其余输入仍优先真实通道（剪贴板粘贴已验证可用）。
+
+### 21.22 PA 校准对话框的复选框是 owner-drawn：BM_GETCHECK 恒 0（11-13，#221/#222）
+
+- `Print numbers` 的 Button 样式 `0x5a01100b` = **BS_OWNERDRAW**，
+  `BM_GETCHECK`/`BM_CLICK`/`BM_SETCHECK` 全部无效（实测恒 0，强塞无效）。
+- 只能截图判态，且两种勾选颜色不同：
+  - 启用+勾选（PA Line）：青色方块 + 白勾，teal 像素 ≈130；
+  - 禁用+勾选（PA Pattern/V 形）：**灰色勾**，teal=0、暗像素（gray<190）≈13；
+  - 未勾选（PA Tower）：teal=0、dark=0。
+- 判据：`checked = teal>=50 or dark>=5`；`enabled` 另读 IsWindowEnabled。
+  probe_242_pa222b 三态实测 + 用户中文界面截图确认。
