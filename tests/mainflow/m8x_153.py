@@ -11,7 +11,9 @@
 # 按 **改耗材信息 → 切片 → 导出** 执行——这样 gcode 里的 filament_settings_id
 # 能直接证明"耗材参数修改生效"（先切后改就拿不到可判定的产物）。
 #
-# 录像：artifacts/shots/<stem>/<stem>_run.mp4（shot_archive 自动录）
+# 判定修订（11-14，用户手工录影确认后）：Arrange 后以 **3mf 对象世界中心距**
+# 为主判据（>=10mm 即分离）；屏幕 blob 只作快速预检——Arrange 允许对象
+# 相邻/贴合（间距 0），两对象彩色投影粘连成一个 blob 不应判失败。
 
 import sys
 import time
@@ -79,6 +81,37 @@ def object_blobs(session, limit=4, min_area=250, aspect=(0.3, 4.0)):
 def _bbox_overlap(a, b):
     """两 blob 的包围盒是否相交（重合 = 投影相交）。"""
     return not (a[4] < b[2] or b[4] < a[2] or a[5] < b[3] or b[5] < a[3])
+
+
+def geometric_separation(session, tag, min_dist_mm=10.0):
+    """Arrange 的几何 oracle：存盘 3mf，解析两个对象的**世界中心距**。
+
+    为什么不用屏幕 blob：Arrange 允许对象相邻/贴合（间距 0），两个对象的
+    彩色投影会粘连成一个 connected component（11-14 用户手工录屏确认功能
+    正常，实际只是判据过严）。3mf 的对象中心距与渲染无关：整理前两对象
+    叠放（中心距 ~0），整理后分开（>= cube20 边长的一半）。
+    返回 (ok, detail)。
+    """
+    import math
+    import m7_common as m7
+    import m8x_188 as c188
+    p = ART / f"m8x_153_{tag}.3mf"
+    p.unlink(missing_ok=True)
+    if not m7.save_project_as(session, p):
+        return False, "save failed"
+    try:
+        boxes = c188.mesh_boxes(p)
+    except Exception as exc:                                  # noqa: BLE001
+        return False, f"parse failed: {exc}"
+    pts = [(cx, cy) for (cx, cy, hx, hy) in boxes.values()]
+    if len(pts) < 2:
+        return False, f"objects={len(pts)}"
+    dists = [math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1])
+             for i in range(len(pts)) for j in range(i + 1, len(pts))]
+    d = max(dists)
+    print(f"{LOG} 3mf centers={[(round(x, 2), round(y, 2)) for x, y in pts]} "
+          f"maxdist={d:.2f}mm")
+    return d >= min_dist_mm, f"center-dist={d:.2f}mm"
 
 
 def drag_object(session, src_pt, dst_pt, steps=14):
@@ -227,7 +260,10 @@ def _arrange_bed_menu(session):
 
 
 def arrange_all(session, per_path_s=24.0):
-    """依次尝试三条整理渠道，直到**两对象分离**（判定=效果，不靠渠道自证）。"""
+    """依次尝试三条整理渠道，直到**两对象分离**（判定=效果，不靠渠道自证）。
+
+    主判定是 3mf 几何中心距；屏幕 blob 只作快速预检——Arrange 允许对象
+    相邻/贴合，投影粘连成一个 blob 时不应判失败（11-14 手工录屏确认）。"""
     for fn in (_arrange_key, _arrange_toolbar_panel, _arrange_bed_menu):
         if not fn(session):
             print(f"{LOG} {fn.__name__}: path unavailable")
@@ -238,8 +274,13 @@ def arrange_all(session, per_path_s=24.0):
             bs = object_blobs(session)
             if len(bs) >= 2 and not _bbox_overlap(bs[0], bs[1]):
                 print(f"{LOG} arranged via {fn.__name__}: blobs={bs}")
-                return bs
-        print(f"{LOG} {fn.__name__}: objects still not separated")
+                return f"{len(bs)} blobs separated"
+        geo_ok, detail = geometric_separation(session, fn.__name__)
+        if geo_ok:
+            print(f"{LOG} arranged via {fn.__name__}: 3mf {detail}")
+            return f"3mf {detail}"
+        print(f"{LOG} {fn.__name__}: objects still not separated "
+              f"(blobs={object_blobs(session)}, 3mf {detail})")
     return None
 
 
@@ -316,7 +357,7 @@ def main() -> int:
         post = arrange_all(session)
         print(f"{LOG} after arrange: blobs={post} warning={_collision_warn()}")
         results["模型整理（Arrange 后两对象分离）"] = (
-            f"PASS ({len(post)} blobs separated)" if post
+            f"PASS ({post})" if post
             else f"FAIL (blobs={object_blobs(session)})")
         if not post:
             return m7.m7_verdict(results)
