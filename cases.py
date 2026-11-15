@@ -60,7 +60,6 @@ CASES: dict[str, dict] = {
         "milestone": "m0", "tier": "A",
         "suite": "smoke", "enabled": True,
     },
-    "m0_platform_contract": _o("m0", "A"),
     "m1_minimal_loop": {
         "milestone": "m1", "tier": "A",
         "suite": "smoke", "enabled": True,
@@ -223,16 +222,6 @@ CASES: dict[str, dict] = {
 
 # 分组目录的 slug ↔ 飞书基线表「二级分类」中文名（目录命名用 slug，避开非 ASCII
 # 路径在这条 PowerShell/PSDirect 工具链上的编码坑；中文名只作展示与映射）。
-# --- 平台元数据（macOS 移植 Phase 0） --------------------------------------
-# 现有 74 条基线全部在 Windows 机台上校准；将来若某条用例同时支持 macOS，
-# 在它的注册项里写 platforms=("windows", "macos") 即可（或只写 "macos"）。
-# 默认值在这里统一补齐，不在每个注册项里重复；批量选择器按平台过滤。
-DEFAULT_PLATFORMS: tuple[str, ...] = ("windows",)
-
-for _meta in CASES.values():
-    _meta.setdefault("platforms", DEFAULT_PLATFORMS)
-
-
 GROUP_LABELS: dict[str, str] = {
     "mixing_match": "混色匹配映射",
     "mixing": "混色功能",
@@ -323,37 +312,23 @@ def summary(name: str) -> str:
     return ""
 
 
-def case_platforms(name: str) -> tuple[str, ...]:
-    """该用例声明的平台集合（默认 Windows；未知用例返回空元组）。"""
-    meta = CASES.get(name)
-    return tuple(meta.get("platforms", DEFAULT_PLATFORMS)) if meta else ()
-
-
-def enabled_cases(suite: str | None = None, *,
-                  platform: str | None = None) -> list[str]:
+def enabled_cases(suite: str | None = None) -> list[str]:
     """Enabled case names, optionally filtered to a suite (None = all enabled).
 
     suite="baseline" = 只在飞书基线表里有映射的用例（注解 `# feishu: baseline#N`），
     即"基线用例文档里"的那些 —— 日常只跑它们即可，其余引擎/链路用例按需再跑。
-
-    platform="macos" = 只保留声明支持该平台的用例（None = 不过滤）。当前基线
-    全部是 Windows 校准，macOS 端口接入后再逐条加 platforms。
     """
     if suite == "baseline":
-        return baseline_cases(platform=platform)
+        return baseline_cases()
     return [k for k, v in CASES.items()
-            if v["enabled"]
-            and (suite is None or v["suite"] == suite)
-            and (platform is None or platform in case_platforms(k))]
+            if v["enabled"] and (suite is None or v["suite"] == suite)]
 
 
-def baseline_cases(*, platform: str | None = None) -> list[str]:
+def baseline_cases() -> list[str]:
     """启用的、在飞书基线表里有用例映射的用例（按注册表顺序）。"""
     return [k for k, v in CASES.items()
-            if v["enabled"]
-            and (platform is None or platform in case_platforms(k))
-            and any(r.startswith("baseline#")
-                    for r in (feishu_refs(k) or []))]
+            if v["enabled"] and any(r.startswith("baseline#")
+                                    for r in (feishu_refs(k) or []))]
 
 
 def case_path(name: str) -> Path | None:
