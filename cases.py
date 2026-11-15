@@ -334,3 +334,18 @@ def baseline_cases() -> list[str]:
 def case_path(name: str) -> Path | None:
     v = CASES.get(name)
     return HERE / v["file"] if v else None
+
+
+# --- 非基线用例软关闭（2026-11-15，用户要求） ------------------------------
+# 只把「没有 # feishu: baseline#N 注解」的用例置为 enabled=False：文件、注册
+# 项、文档引用和历史索引全部保留（不物理删除）；基线 74 个脚本 / 96 行不受
+# 影响。需要恢复某条时，把它自己的 enabled 改回 True，或把下面总开关改
+# False 一次性恢复全部非基线用例。
+_SOFT_OFF_NON_BASELINE = True
+if _SOFT_OFF_NON_BASELINE:
+    for _name, _meta in CASES.items():
+        if not _meta["enabled"]:
+            continue
+        if not any(r.startswith("baseline#")
+                   for r in (feishu_refs(_name) or [])):
+            _meta["enabled"] = False
