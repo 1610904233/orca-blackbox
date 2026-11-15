@@ -48,6 +48,7 @@ ui_runner.py        薄 UI 封装（CustomTkinter）：选模型→跑 m1/m2/批
 BLACKBOX_CASES.md   用例登记册（35 例判定标准/证据链）
 PITFALLS_0901.md    实测坑册（§1–§17，全部有日志/帧证据）
 FEISHU_MAPPING.md   飞书证据表映射
+docs/MACOS_PORT_PHASE0.md  macOS 移植 Phase 0/1：Win32 原语盘点 + 最小 driver 接口
 artifacts/          运行产物（gitignored）
 ```
 
