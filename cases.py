@@ -342,6 +342,12 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m7", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m7h_macos_context_delete": {
+        "file": "tests/engine/macos_pilot/m7h_context_delete.py",
+        "windows_case": "m7h_context_delete",
+        "milestone": "m7", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
 }
 for _name, _meta in MACOS_BASELINE.items():
     _meta.setdefault("platforms", ("macos",))
