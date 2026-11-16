@@ -96,6 +96,32 @@ def frame_ok(frame: Frame, min_nonblack: float = 0.01,
     return ok, stats
 
 
+def wait_for_model(driver, app, win, *, timeout_s: float = 60.0,
+                   threshold: float = 0.03, poll_s: float = 1.0):
+    """Wait for the 3D viewport's chromatic content to reach the model threshold.
+
+    Returns (ok, frame, colored_fraction, seen_dialog_ids).  Two consecutive
+    polls above threshold rule out transient UI animation.
+    """
+    deadline = time.monotonic() + timeout_s
+    last_frame = None
+    last_frac = 0.0
+    seen: set = set()
+    while time.monotonic() < deadline:
+        seen = dismiss_dialogs(driver, app, win, seen)
+        frame = driver.capture(win)
+        frac = frame.stats()["colored_fraction"]
+        last_frame, last_frac = frame, frac
+        if frac >= threshold:
+            time.sleep(poll_s)
+            frame2 = driver.capture(win)
+            frac2 = frame2.stats()["colored_fraction"]
+            if frac2 >= threshold:
+                return True, frame2, max(frac, frac2), seen
+        time.sleep(poll_s)
+    return False, last_frame, last_frac, seen
+
+
 def teal_fraction(frame: Frame, rect: Rect) -> float:
     """Fraction of teal pixels (active wx notebook tab colour 0,150,136)."""
     crop = frame.crop(rect)
