@@ -18,6 +18,10 @@ Rules:
 - summary: NOT stored — extracted live from the script's line-2 header
   comment ("# <stem>.py — ..."), so the script stays the single home for
   it (sync enforced by tools/check_registry.py).
+- platforms: tuple of platforms the case can run on.  Default ("windows",)
+  keeps every existing case Windows-only; a future macOS-migrated case
+  opts in with platforms=("windows", "macos").  ``enabled`` stays the
+  authoritative on/off switch — platform filtering never changes it.
 """
 
 from __future__ import annotations
@@ -26,6 +30,13 @@ import re
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+
+# Platform registry: canonical names are "windows" / "macos".
+DEFAULT_PLATFORMS: tuple[str, ...] = ("windows",)
+_PLATFORM_ALIASES = {
+    "windows": "windows", "win": "windows", "win32": "windows",
+    "macos": "macos", "darwin": "macos", "mac": "macos",
+}
 
 
 def _r(milestone: str, tier: str, **extra) -> dict:
@@ -261,6 +272,43 @@ for _k, _v in CASES.items():
         _g = _group_of(_k)
         _v["file"] = f"tests/{_g}/{_k}.py" if _g else f"tests/{_k}.py"
     _v["group"] = _group_of(_k) or "engine"
+    # Every existing case is Windows-only unless it explicitly opts in.
+    _v.setdefault("platforms", DEFAULT_PLATFORMS)
+
+
+def normalize_platform(name: str | None) -> str:
+    """Canonical platform name ('windows' / 'macos' / unchanged)."""
+    if not name:
+        return ""
+    low = str(name).lower()
+    return _PLATFORM_ALIASES.get(low, low)
+
+
+def case_platforms(name: str) -> tuple[str, ...]:
+    """Platforms a registered case declares (default: Windows-only)."""
+    return tuple(CASES.get(name, {}).get("platforms", DEFAULT_PLATFORMS))
+
+
+def supports_platform(name: str, platform: str | None) -> bool:
+    """Whether `name` declares support for `platform` (aliases accepted)."""
+    plat = normalize_platform(platform)
+    if not plat:
+        return True
+    return plat in {normalize_platform(p) for p in case_platforms(name)}
+
+
+def enabled_cases_for(platform: str, suite: str | None = None) -> list[str]:
+    """Enabled case names that declare support for `platform`.
+
+    This is an additive filter: ``enabled_cases`` keeps its historical
+    behaviour (no platform filtering) so existing Windows entry points are
+    untouched.  ``suite="baseline"`` intersects the baseline set.
+    """
+    if suite == "baseline":
+        names = baseline_cases()
+    else:
+        names = enabled_cases(suite)
+    return [n for n in names if supports_platform(n, platform)]
 
 
 def group_label(name: str) -> str:
