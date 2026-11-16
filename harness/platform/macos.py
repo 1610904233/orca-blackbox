@@ -548,6 +548,28 @@ class MacOSDriver:
             time.sleep(0.4)
         return dismissed
 
+    def dismiss_boot_blockers(self, pid: int, main: WindowRef, *,
+                              grace_s: float = 8.0,
+                              budget_s: float = 6.0) -> list[str]:
+        """Dismiss known blockers that appear *after* an action.
+
+        Opening a project with customized presets raises "Customized Preset"
+        again (the same title the launcher clears at boot); while it is up the
+        main menus stay disabled and the window title stays empty.  Wait a
+        grace period for such a window, then clear it.
+        """
+        deadline = time.monotonic() + max(0.0, grace_s)
+        while time.monotonic() < deadline:
+            for win in self.windows_for_pid(pid):
+                if not win.on_screen or win.id == main.id:
+                    continue
+                low = (win.title or "").lower()
+                if any(b in low for b in _BLOCKER_TITLES):
+                    return self._dismiss_boot_blockers(
+                        pid, main, budget_s=budget_s)
+            time.sleep(0.4)
+        return []
+
     def _ax_close_any(self, axw) -> bool:
         close_btn = _ax_copy(axw, AS.kAXCloseButtonAttribute)
         if close_btn is not None and _ax_perform(close_btn, AS.kAXPressAction):
@@ -742,6 +764,11 @@ class MacOSDriver:
         queue = [(root, 0)]
         seen = set()
         yielded = 0
+        # AXUIElement proxies are freed between yields; their ObjC address can
+        # then be reused, which made the address-keyed ``seen`` set drop real
+        # children (observed on NSOpenPanel: 14 of 144 elements).  Keep every
+        # element alive for the duration of the walk.
+        keep = [root]
         while queue and yielded < limit:
             elem, depth = queue.pop(0)
             key = _ax_id(elem)
@@ -754,6 +781,7 @@ class MacOSDriver:
                 continue
             children = _ax_copy(elem, AS.kAXChildrenAttribute)
             if children:
+                keep.extend(children)
                 for child in children:
                     queue.append((child, depth + 1))
 
@@ -907,11 +935,19 @@ class MacOSDriver:
             time.sleep(0.25)
 
     def _dialog_widgets(self, panel: WindowRef):
-        """(filename field, Save button, Cancel button, Replace button)."""
+        """(filename field, Save button, Cancel button, Replace button).
+
+        Keep the *first* match: the panel tree also contains display-only
+        proxies with the same role/rect (a field whose value includes the
+        extension, a Save button that accepts AXPress but does nothing).
+        The first BFS match is the real control.
+        """
         field = save = cancel = replace = None
         for elem in self._walk(panel.handle, max_depth=12):
             role = _ax_str(elem, AS.kAXRoleAttribute)
             if role == "AXTextField":
+                if field is not None:
+                    continue
                 title = _ax_str(elem, AS.kAXTitleAttribute)
                 value = _ax_copy(elem, AS.kAXValueAttribute)
                 content = f"{title} {value if isinstance(value, str) else ''}".strip()
@@ -923,11 +959,14 @@ class MacOSDriver:
             elif role == "AXButton":
                 title = _ax_str(elem, AS.kAXTitleAttribute).strip().lower()
                 if title in ("save", "save as", "open", "import", "export"):
-                    save = elem
+                    if save is None:
+                        save = elem
                 elif title == "cancel":
-                    cancel = elem
+                    if cancel is None:
+                        cancel = elem
                 elif title in ("replace", "yes"):
-                    replace = elem
+                    if replace is None:
+                        replace = elem
         return field, save, cancel, replace
 
     @staticmethod
@@ -942,17 +981,116 @@ class MacOSDriver:
                 continue
         return False
 
+    def _wait_panel_closed(self, pid: int, panel_id: int,
+                           timeout_s: float) -> bool:
+        deadline = time.monotonic() + max(0.0, timeout_s)
+        while time.monotonic() < deadline:
+            if not self._panel_still_open(pid, panel_id):
+                return True
+            time.sleep(0.25)
+        return not self._panel_still_open(pid, panel_id)
+
+    def _wait_sidebar_cell(self, panel: WindowRef, label: str,
+                           timeout_s: float = 12.0):
+        """The panel's sidebar cell for ``label`` (AX tree can lag)."""
+        deadline = time.monotonic() + max(0.0, timeout_s)
+        while time.monotonic() < deadline:
+            cell = self._find_sidebar_open(panel.handle, label)
+            if cell is not None:
+                return cell
+            panel.handle = None
+            self._attach_ax_window(panel)
+            time.sleep(0.5)
+        return None
+
+    def navigate_panel_to(self, panel: WindowRef, directory: Path | str,
+                          win: WindowRef, *, timeout_s: float = 60.0) -> bool:
+        """Navigate an NSSavePanel/NSOpenPanel to ``directory`` (under $HOME).
+
+        File rows are not AX-exposed, so this uses the same route as
+        ``open_file_dialog``: AXOpen/click the sidebar home row, then OCR the
+        panel and single-click each path component (right-most match = the
+        column just opened).
+        """
+        home = Path.home().resolve()
+        target = Path(directory).expanduser().resolve()
+        try:
+            components = list(target.relative_to(home).parts)
+        except ValueError:
+            print(f"[macos] navigate_panel_to: {target} is outside {home}")
+            return False
+
+        self.set_foreground(win)
+        time.sleep(0.4)
+        cell = self._wait_sidebar_cell(panel, home.name)
+        if cell is None:
+            print(f"[macos] navigate_panel_to: sidebar row {home.name!r} missing")
+            return False
+        opened = _ax_perform(cell, "AXOpen") or _ax_perform(
+            cell, AS.kAXPressAction)
+        if not opened:
+            rect = self._ax_rect(cell)
+            if rect is not None and rect.area > 0:
+                self.click(*rect.center)
+        time.sleep(1.2)
+
+        deadline = time.monotonic() + timeout_s
+        for component in components:
+            word = None
+            while time.monotonic() < deadline:
+                word = self._pick_rightmost(
+                    self._panel_ocr_words(panel), component)
+                if word is not None:
+                    break
+                time.sleep(0.7)
+            if word is None:
+                from .macos_ocr import joined_text
+                print(f"[macos] navigate_panel_to: {component!r} not visible; "
+                      f"panel OCR={joined_text(self._panel_ocr_words(panel))[:200]!r}")
+                return False
+            print(f"[macos] navigate_panel_to: open {component!r} at "
+                  f"({word.rect.center[0]:.0f},{word.rect.center[1]:.0f})")
+            # Save panels remember icon/list view; a double-click descends in
+            # every view mode (column view also accepts it).
+            self.click(*word.rect.center, clicks=2)
+            time.sleep(1.4)
+        return True
+
+    def _replace_button_in_sheets(self, panel: WindowRef, main: WindowRef):
+        """A Replace/OK button inside an AXSheet attached to the panel/main."""
+        roots = [panel.handle, main.handle]
+        for root in roots:
+            if root is None:
+                continue
+            sheets = _ax_copy(root, "AXSheets")
+            for sheet in list(sheets or []):
+                for elem in self._walk(sheet, max_depth=10):
+                    if _ax_str(elem, AS.kAXRoleAttribute) != "AXButton":
+                        continue
+                    label = (_ax_str(elem, AS.kAXTitleAttribute) + " "
+                             + _ax_str(elem, AS.kAXValueAttribute)).lower()
+                    if any(k in label for k in ("replace", "yes", "ok")):
+                        return elem
+        return None
+
     def save_file_dialog(self, win: WindowRef, path: Path | str, *,
                          default_dir: Path | str | None = None,
                          titles: Sequence[str] | None = None,
-                         timeout_s: float = 25.0) -> bool:
+                         timeout_s: float = 25.0,
+                         navigate_dir: bool = False,
+                         name_is_stem: bool = False) -> bool:
         """Fill the open native save panel and commit it.
 
         The panel is expected to be open already (File > Save Project as...,
         Export STL, ...).  macOS save panels show only the *file name*; the
-        directory is the panel's current folder, which follows the directory
-        of the model passed on the command line.  ``default_dir`` names that
-        folder so a save into a different directory can be detected and moved.
+        directory is the panel's current folder.  For Save Project as... that
+        follows the model's directory (see ``default_dir``), but the STL
+        export panel remembers a global last-used folder.  ``navigate_dir``
+        walks the panel sidebar + OCR to ``path.parent`` first.
+
+        ``name_is_stem`` sets only the stem and lets the app append its own
+        extension (the STL export appends ``.stl`` even to a name that already
+        has one).
 
         Returns True when the requested ``path`` exists afterwards.
         """
@@ -964,14 +1102,49 @@ class MacOSDriver:
         if panel is None:
             print(f"[macos] save_file_dialog: no save panel for pid {win.pid}")
             return False
-        field, save, cancel, _replace = self._dialog_widgets(panel)
+        field = save = cancel = _replace = None
+        widget_deadline = time.monotonic() + 12.0
+        while time.monotonic() < widget_deadline:
+            field, save, cancel, _replace = self._dialog_widgets(panel)
+            if field is not None and save is not None:
+                break
+            # The CGWindow can appear before its AX subtree is populated.
+            panel.handle = None
+            self._attach_ax_window(panel)
+            time.sleep(0.4)
         if field is None or save is None:
             print(f"[macos] save_file_dialog: widgets missing "
                   f"(field={field is not None}, save={save is not None})")
             return False
+        where = next((elem for elem in self._walk(panel.handle, max_depth=12)
+                      if _ax_str(elem, AS.kAXRoleAttribute) == "AXPopUpButton"
+                      and _ax_str(elem, AS.kAXTitleAttribute)
+                      .lower().startswith("where")), None)
+        if where is not None:
+            print(f"[macos] save_file_dialog: panel folder="
+                  f"{_ax_str(where, AS.kAXTitleAttribute)!r} "
+                  f"{(str(_ax_copy(where, AS.kAXValueAttribute) or ''))!r}")
 
         started = time.time()
-        name = target.name
+        if navigate_dir and not self.navigate_panel_to(panel, target.parent, win):
+            print(f"[macos] save_file_dialog: cannot navigate to "
+                  f"{target.parent}")
+            return False
+        if navigate_dir:
+            # Navigating rebuilds the panel's AX subtree; the old widget
+            # wrappers become invalid (readback None) and Save would use an
+            # empty name.
+            field = save = None
+            refresh_deadline = time.monotonic() + 8.0
+            while time.monotonic() < refresh_deadline:
+                field, save, cancel, _replace = self._dialog_widgets(panel)
+                if field is not None and save is not None:
+                    break
+                time.sleep(0.3)
+            if field is None or save is None:
+                print("[macos] save_file_dialog: widgets lost after navigation")
+                return False
+        name = target.stem if name_is_stem else target.name
         if not _ax_set(field, AS.kAXValueAttribute, name):
             _ax_set(field, AS.kAXFocusedAttribute, True)
             self.send_key("a", modifiers=("cmd",))
@@ -979,14 +1152,43 @@ class MacOSDriver:
         time.sleep(0.4)
         readback = _ax_copy(field, AS.kAXValueAttribute)
         print(f"[macos] save_file_dialog: name={name!r} readback={readback!r}")
-        pressed = _ax_perform(save, AS.kAXPressAction)
-        print(f"[macos] save_file_dialog: press Save -> {pressed}")
 
-        # An overwrite prompt may appear on top of the panel ("Replace").
+        if navigate_dir:
+            # Export panel: it ignores AXPress and is not a key window (real
+            # keyboard/mouse focus never lands on its field), so commit with a
+            # real click and rely on the fresh-file discovery below for the
+            # actual name.
+            save_rect = self._ax_rect(save)
+            if save_rect is not None and save_rect.area > 0:
+                print("[macos] save_file_dialog: real-click Save")
+                self.click(*save_rect.center)
+            if not self._wait_panel_closed(win.pid, panel.id, 12.0):
+                print(f"[macos] save_file_dialog: AXPress Save -> "
+                      f"{_ax_perform(save, AS.kAXPressAction)}")
+                self._wait_panel_closed(win.pid, panel.id, 5.0)
+        else:
+            # Save Project as...: AXPress is the working channel; the panel is
+            # not a key window, so real clicks/keys never reach it.
+            for attempt in range(3):
+                pressed = _ax_perform(save, AS.kAXPressAction)
+                print(f"[macos] save_file_dialog: AXPress Save -> {pressed}")
+                if pressed and self._wait_panel_closed(win.pid, panel.id, 4.0):
+                    break
+                time.sleep(0.5)
+
+        # An overwrite prompt may appear on top of the panel ("Replace") as
+        # either a separate window or an AXSheet.
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             if not self._panel_still_open(win.pid, panel.id):
                 break
+            sheet_replace = self._replace_button_in_sheets(panel, win)
+            if sheet_replace is not None:
+                print("[macos] save_file_dialog: sheet overwrite -> Replace "
+                      f"{_ax_str(sheet_replace, AS.kAXTitleAttribute)!r}")
+                _ax_perform(sheet_replace, AS.kAXPressAction)
+                time.sleep(1.0)
+                continue
             for cand in self.windows_for_pid(win.pid):
                 if not cand.on_screen or cand.id == panel.id:
                     continue
@@ -998,7 +1200,9 @@ class MacOSDriver:
                     continue
                 _f, _s, _c, replace = self._dialog_widgets(cand)
                 if replace is not None:
-                    print(f"[macos] save_file_dialog: overwrite prompt -> Replace")
+                    print(f"[macos] save_file_dialog: overwrite prompt "
+                          f"id={cand.id} title={cand.title!r} -> "
+                          f"Replace {_ax_str(replace, AS.kAXTitleAttribute)!r}")
                     _ax_perform(replace, AS.kAXPressAction)
                     time.sleep(1.0)
                     break
@@ -1008,22 +1212,35 @@ class MacOSDriver:
             print(f"[macos] save_file_dialog: wrote {target}")
             return True
 
-        # The panel may have saved into its own folder (default_dir).
+        # The panel may have saved into another folder, or the app may have
+        # appended its own extension.  Look for a fresh file whose name starts
+        # with the requested stem.
         candidates: list[Path] = []
+        folders = []
         if default_dir is not None:
-            folder = Path(default_dir).expanduser().resolve()
-            direct = folder / name
-            if direct.exists():
-                candidates.append(direct)
-            if folder.is_dir():
-                stem = Path(name).stem
-                for cand in folder.iterdir():
-                    try:
-                        if (cand.is_file() and cand.stem == stem
-                                and cand.stat().st_mtime >= started - 2.0):
-                            candidates.append(cand)
-                    except OSError:
-                        continue
+            folders.append(Path(default_dir).expanduser().resolve())
+        folders.append(target.parent)
+        stem = Path(name).stem
+        for folder in folders:
+            if not folder.is_dir():
+                continue
+            fresh: list[Path] = []
+            for cand in folder.iterdir():
+                try:
+                    if (cand.is_file()
+                            and cand.stat().st_mtime >= started - 2.0):
+                        fresh.append(cand)
+                except OSError:
+                    continue
+            named = [p for p in fresh if p.name.startswith(stem)]
+            if named:
+                candidates.extend(named)
+            elif navigate_dir and len(fresh) == 1:
+                # Export panels ignore the programmatic name and use the
+                # project's own default (e.g. "Untitled.stl").  In navigate
+                # mode the destination folder is dedicated and starts empty,
+                # so the single fresh file is the export.
+                candidates.append(fresh[0])
         for cand in candidates:
             if cand == target:
                 break
@@ -1038,6 +1255,195 @@ class MacOSDriver:
             return True
         print(f"[macos] save_file_dialog: {target} not found after save "
               f"(candidates={[str(c) for c in candidates]})")
+        return False
+
+    # -- open ------------------------------------------------------------
+
+    @staticmethod
+    def _find_sidebar_open(root, label: str):
+        """The AXCell of the sidebar row whose text equals ``label``."""
+        for elem in MacOSDriver._walk_static(root):
+            if _ax_str(elem, AS.kAXRoleAttribute) != "AXCell":
+                continue
+            if "AXOpen" not in _ax_actions(elem):
+                continue
+            for child in (MacOSDriver._walk_static(elem, max_depth=2)):
+                value = _ax_copy(child, AS.kAXValueAttribute)
+                if isinstance(value, str) and value.strip().lower() == label.lower():
+                    return elem
+        return None
+
+    @staticmethod
+    def _walk_static(root, max_depth: int = 16):
+        """BFS over AXChildren without requiring ``self`` (static helper)."""
+        if root is None:
+            return
+        queue = [(root, 0)]
+        seen = set()
+        # See _walk: hold the AX proxies so their addresses cannot be reused
+        # while the address-keyed ``seen`` set is in use.
+        keep = [root]
+        while queue:
+            elem, depth = queue.pop(0)
+            key = _ax_id(elem)
+            if key in seen:
+                continue
+            seen.add(key)
+            yield elem
+            if depth >= max_depth:
+                continue
+            children = _ax_copy(elem, AS.kAXChildrenAttribute)
+            if children:
+                keep.extend(children)
+                for child in children:
+                    queue.append((child, depth + 1))
+
+    @staticmethod
+    def _pick_rightmost(words, token: str):
+        """OCR word matching ``token`` in the right-most column."""
+        token = token.strip().lower()
+        if not token:
+            return None
+        exact = [w for w in words if w.text.strip().lower() == token]
+        hits = exact or [w for w in words if token in w.text.strip().lower()]
+        if not hits:
+            return None
+        return max(hits, key=lambda w: w.rect.x)
+
+    def _panel_ocr_words(self, panel: WindowRef):
+        from .macos_ocr import recognize_text  # local import: PyObjC OCR
+        frame = self.capture_screen()
+        return recognize_text(frame, panel.rect)
+
+    def open_file_dialog(self, win: WindowRef, path: Path | str, *,
+                         titles: Sequence[str] | None = None,
+                         timeout_s: float = 90.0) -> bool:
+        """Navigate the open native panel to ``path`` and press Open.
+
+        macOS's NSOpenPanel opens on "Recents" and exposes its file rows as
+        empty ``AXScrollArea`` columns, so the rows are addressed visually:
+
+        1. AXOpen the sidebar "home" row;
+        2. OCR the panel and single-click each path component under ``$HOME``,
+           always taking the right-most match (the column just opened);
+        3. single-click the file (this enables Open) and AXPress Open.
+
+        Paths outside ``$HOME`` are not supported by this route (Cmd+Shift+G
+        does not submit on this build) and return False.
+        """
+        self._require_ax()
+        target = Path(path).expanduser().resolve()
+        panel = self.find_file_dialog(
+            win.pid, titles=titles or self._OPEN_PANEL_TITLES,
+            exclude_id=win.id, timeout_s=12.0)
+        if panel is None:
+            print(f"[macos] open_file_dialog: no open panel for pid {win.pid}")
+            return False
+
+        home = Path.home().resolve()
+        try:
+            components = list(target.parent.relative_to(home).parts)
+        except ValueError:
+            print(f"[macos] open_file_dialog: {target} is outside {home}; "
+                  f"unsupported (no Go-to-folder submit)")
+            return False
+
+        self.set_foreground(win)
+        time.sleep(0.4)
+        home_cell = None
+        home_deadline = time.monotonic() + 12.0
+        while time.monotonic() < home_deadline:
+            home_cell = self._find_sidebar_open(panel.handle, home.name)
+            if home_cell is not None:
+                break
+            # The panel's AX subtree can lag the CGWindow by a second or two.
+            panel.handle = None
+            self._attach_ax_window(panel)
+            time.sleep(0.5)
+        if home_cell is None:
+            print(f"[macos] open_file_dialog: sidebar row {home.name!r} missing")
+            return False
+        opened = _ax_perform(home_cell, "AXOpen")
+        if not opened:
+            opened = _ax_perform(home_cell, AS.kAXPressAction)
+        if not opened:
+            rect = self._ax_rect(home_cell)
+            if rect is not None and rect.area > 0:
+                cx, cy = rect.center
+                print(f"[macos] open_file_dialog: click home row at "
+                      f"({cx:.0f},{cy:.0f})")
+                self.click(cx, cy)
+                opened = True
+        print(f"[macos] open_file_dialog: home row -> {opened}")
+        time.sleep(1.2)
+
+        deadline = time.monotonic() + timeout_s
+        for component in components:
+            word = None
+            while time.monotonic() < deadline:
+                word = self._pick_rightmost(
+                    self._panel_ocr_words(panel), component)
+                if word is not None:
+                    break
+                time.sleep(0.7)
+            if word is None:
+                print(f"[macos] open_file_dialog: folder {component!r} "
+                      f"not visible in the panel")
+                return False
+            cx, cy = word.rect.center
+            print(f"[macos] open_file_dialog: open {component!r} at "
+                  f"({cx:.0f},{cy:.0f})")
+            self.click(cx, cy)
+            time.sleep(1.4)
+
+        word = None
+        while time.monotonic() < deadline:
+            words = self._panel_ocr_words(panel)
+            word = (self._pick_rightmost(words, target.name)
+                    or self._pick_rightmost(words, target.stem))
+            if word is not None:
+                break
+            time.sleep(0.7)
+        if word is None:
+            print(f"[macos] open_file_dialog: {target.name!r} not visible")
+            return False
+        cx, cy = word.rect.center
+        print(f"[macos] open_file_dialog: select {target.name!r} at "
+              f"({cx:.0f},{cy:.0f})")
+        self.click(cx, cy)
+        time.sleep(1.0)
+
+        _field, open_btn, _cancel, _replace = self._dialog_widgets(panel)
+        if open_btn is None:
+            print("[macos] open_file_dialog: Open button missing")
+            return False
+        enable_deadline = time.monotonic() + 5.0
+        while time.monotonic() < enable_deadline:
+            if _ax_bool(open_btn, AS.kAXEnabledAttribute, False):
+                break
+            time.sleep(0.3)
+        if not _ax_bool(open_btn, AS.kAXEnabledAttribute, False):
+            print("[macos] open_file_dialog: Open button stayed disabled")
+            return False
+        pressed = _ax_perform(open_btn, AS.kAXPressAction)
+        print(f"[macos] open_file_dialog: press Open -> {pressed}")
+
+        close_deadline = time.monotonic() + 30.0
+        while time.monotonic() < close_deadline:
+            if not self._panel_still_open(win.pid, panel.id):
+                # A project with customized presets re-raises the same
+                # "Customized Preset" blocker the launcher clears at boot;
+                # it keeps the title empty and the menus disabled until
+                # dismissed.
+                dismissed = self.dismiss_boot_blockers(
+                    win.pid, win, grace_s=6.0, budget_s=4.0)
+                if dismissed:
+                    print(f"[macos] open_file_dialog: cleared blockers "
+                          f"{dismissed}")
+                print(f"[macos] open_file_dialog: opened {target.name}")
+                return True
+            time.sleep(0.3)
+        print("[macos] open_file_dialog: panel did not close")
         return False
 
     # ------------------------------------------------------------------
