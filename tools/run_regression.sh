@@ -1,8 +1,12 @@
 #!/bin/bash
 # Single source of truth for the case list: cases.py (see docs/STRUCTURING_PLAN.md).
 # Do NOT hardcode case names here. Suite filter and only-failed live below.
+# Run from anywhere: resolve the repo root from this script's location.
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT" || exit 2
 PY=./.venv/Scripts/python.exe
 [ -x "$PY" ] || PY=python
+mkdir -p artifacts
 CASES=$($PY -c "from cases import enabled_cases; print(' '.join(enabled_cases('regression')))")
 if [ -z "$CASES" ]; then echo "ERROR: empty regression list from cases.py"; exit 2; fi
 # --only-failed: rerun just artifacts/failed_cases.txt if present and non-empty
@@ -15,7 +19,13 @@ BATCH=""
 rm -f artifacts/junit.xml artifacts/failed_cases.txt
 for c in $CASES; do
   echo "=== $c ==="
-  $PY tests/${c}.py > artifacts/regress_${c}.log 2>&1
+  CASE_FILE=$($PY -c "from cases import case_path; p=case_path('$c'); print(p.as_posix() if p else '')")
+  if [ -z "$CASE_FILE" ] || [ ! -f "$CASE_FILE" ]; then
+    echo "[$c] RED: case file not found"
+    FAIL=$((FAIL+1)); FAILED="$FAILED $c"; echo "$c" >> artifacts/failed_cases.txt
+    continue
+  fi
+  $PY "$CASE_FILE" > artifacts/regress_${c}.log 2>&1
   rc=$?
   BATCH="$BATCH ${c}|${rc}|artifacts/regress_${c}.log"
   if [ $rc -eq 0 ]; then PASS=$((PASS+1)); echo "[$c] GREEN (rc=0)";

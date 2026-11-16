@@ -1,7 +1,7 @@
 """harness/case_runner.py — shared post-run analysis of a case log.
 
 Extracted verbatim from mcp_server.py tool_run_case's verdict-parsing logic
-so batch entries (run_regression.sh via emit_junit, hv_go guest suite) and
+so batch entries (tools/run_regression.sh via emit_junit, hv_go guest suite) and
 the MCP tool agree on ONE convention:
 
 - verdict block: lines between "=== verdict ===" and the next "[...]" line,

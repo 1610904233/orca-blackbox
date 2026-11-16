@@ -1,6 +1,6 @@
 """harness/junit_report.py — JUnit XML emitter for batch entries (stdlib only).
 
-Consumed by run_regression.sh after each case finishes: read the case log,
+Consumed by tools/run_regression.sh after each case finishes: read the case log,
 parse the verdict via case_runner.parse_case_result, accumulate into one
 <testsuite>, write artifacts/junit.xml. Single-case direct runs pay nothing —
 emission happens only at the batch layer, and the verdict output format of
@@ -68,7 +68,7 @@ def write(suite: ET.Element, out_path: Path) -> Path:
 
 
 def main(argv: list[str]) -> int:
-    """CLI with two modes (stdlib only, consumed by run_regression.sh):
+    """CLI with two modes (stdlib only, consumed by tools/run_regression.sh):
 
     single: python harness/junit_report.py <case> <rc> <log_path> [out_path]
     batch:  python harness/junit_report.py --batch <out_path> <case>|<rc>|<log_path> ...

@@ -4,7 +4,7 @@ Validates that cases.py stays the single source of truth:
 1. every registry entry's file exists and its stem == the key;
 2. the file actually looks like a case script (m<digit>* naming);
 3. the summary matches the script's line-2 header comment ("# <stem>.py — ...");
-4. run_regression.sh contains NO hardcoded case list (reads cases.py);
+4. tools/run_regression.sh contains NO hardcoded case list (reads cases.py);
 5. runner/hv_go.ps1 contains NO hardcoded case list;
 6. no case script on disk is missing from the registry (m<digit>* only —
    diag_* and _CASE_SKIP helpers are intentionally outside).
@@ -47,9 +47,9 @@ for key in CASES:
     check(f"summary extractable: {key}", bool(s), "no '# <stem>.py — ...' header in first 5 lines")
 
 # 4+5: no hardcoded lists in batch entries
-sh = (ROOT / "run_regression.sh").read_text(encoding="utf-8")
-check("run_regression.sh reads cases.py", "from cases import enabled_cases" in sh)
-check("run_regression.sh has no hardcoded m-case list",
+sh = (ROOT / "tools" / "run_regression.sh").read_text(encoding="utf-8")
+check("tools/run_regression.sh reads cases.py", "from cases import enabled_cases" in sh)
+check("tools/run_regression.sh has no hardcoded m-case list",
       not re.search(r"CASES=[\"']m\w", sh.replace("CASES=$(", "")))
 ps1 = (ROOT / "runner" / "hv_go.ps1").read_text(encoding="utf-8")
 check("hv_go.ps1 reads cases.py", "from cases import enabled_cases" in ps1)

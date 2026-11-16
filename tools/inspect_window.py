@@ -12,8 +12,8 @@ import sys
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE))
+ROOT = Path(__file__).resolve().parents[1]  # repo root (this file lives in tools/)
+sys.path.insert(0, str(ROOT))
 
 from harness import launcher, profile, winutil  # noqa: E402
 
@@ -47,9 +47,9 @@ def dump_children(root: int) -> list[dict]:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--exe", default=None)
-    ap.add_argument("--datadir", default=HERE / "artifacts" / "profile", type=Path)
+    ap.add_argument("--datadir", default=ROOT / "artifacts" / "profile", type=Path)
     ap.add_argument("--model", default=None)
-    ap.add_argument("--out", default=HERE / "artifacts" / "inspect", type=Path)
+    ap.add_argument("--out", default=ROOT / "artifacts" / "inspect", type=Path)
     ap.add_argument("--keep", action="store_true")
     args = ap.parse_args()
 

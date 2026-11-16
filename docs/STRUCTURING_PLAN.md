@@ -7,7 +7,7 @@
 
 ```
 ┌─ 编排层（可替换，本期落地的就是这层的地基） ─────────────┐
-│ cases.py registry → run_regression.sh / hv_go.ps1 / mcp   │
+│ cases.py registry → tools/run_regression.sh / hv_go.ps1 / mcp   │
 │ (第二期) tests/ pytest subprocess 壳 + conftest 硬门禁    │
 ├─ 用例层（脚本骨架）────────────────────────────────────┤
 │ m*.py 用例脚本 + m3_common.verdict()（exit code = 判定）  │
@@ -46,7 +46,7 @@ ORCA_GUI_TEST_MODE 默认为 1 只发生在测试 exe 的 bootstrap（不进 sna
   原脚本保留独立入口、挂起可外部处决、JUnit/marks/--lf 白拿。
 
 **为什么 case registry 比接 pytest 紧迫**：用例清单曾维护在三处
-（hv_go.ps1 默认列表 / run_regression.sh 的 CASES / mcp run_case 扫描），
+（hv_go.ps1 默认列表 / tools/run_regression.sh 的 CASES / mcp run_case 扫描），
 27→35 时被迫手工同步过一次。registry 是 mark 分层的前置。
 
 **为什么自研只到 JUnit emitter 为止**：在 ps1/bash/mcp 三处重造 `-m smoke`
@@ -57,7 +57,7 @@ ORCA_GUI_TEST_MODE 默认为 1 只发生在测试 exe 的 bootstrap（不进 sna
 1. **cases.py 唯一事实源**（纯数据）：name → file/milestone/tier/suite/summary/enabled。
    - name = 脚本 stem，**永不重命名**（push_verify / zlog / 飞书表历史链路依赖名字）。
    - 增删改查 = 改一条数据；停跑用 `enabled: False`（软删，不物理删）。
-2. **三入口改读 registry**：run_regression.sh、runner/hv_go.ps1、mcp_server.py。
+2. **三入口改读 registry**：tools/run_regression.sh、runner/hv_go.ps1、mcp_server.py。
 3. **verdict 层 JUnit XML**：harness/junit_report.py（标准库，无新依赖），
    由跑批入口在用例结束后解析日志 verdict 块生成（复用 mcp 已有解析逻辑，
    抽到 harness/case_runner.py 共享）。单用例直跑零开销，verdict 输出格式不变。

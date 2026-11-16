@@ -1,6 +1,6 @@
 """cases.py — the single source of truth for runnable black-box cases.
 
-Pure data, no batch logic. Every batch entry point (run_regression.sh,
+Pure data, no batch logic. Every batch entry point (tools/run_regression.sh,
 runner/hv_go.ps1, mcp_server.py run_case/list_cases) consumes THIS dict —
 never keep a second hardcoded list anywhere.
 

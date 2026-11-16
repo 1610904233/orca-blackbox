@@ -17,9 +17,9 @@
   `(-7,-7,1373,727)` = 小屏上的最大化）。所有按 1920×1032 client 标定的
   判定全部失效。
 - **修法**：重启 VM（控制台重连）+ 保持一个 vmconnect 会话 +
-  `setres_1080.py`（交互会话内 ChangeDisplaySettings 1920×1080，rc=0 且
+  `tools/setres_1080.py`（交互会话内 ChangeDisplaySettings 1920×1080，rc=0 且
   生效）。跑套件前必查分辨率。
-- **证据/复跑**：`setres_1080.py`（自报交互会话分辨率）；diag 日志
+- **证据/复跑**：`tools/setres_1080.py`（自报交互会话分辨率）；diag 日志
   `re-maximized: rect=(-7,-7,1373,727)`。
 - **附**：PS Direct 会话里 `Screen.AllScreens` 的读数（1024×768）是它自己
   会话的，**不代表交互桌面**，不可信；要在交互会话内读
@@ -201,7 +201,7 @@
 
 - `Screen.AllScreens` 的读数是 **PS Direct 自己会话的**，不代表交互
   桌面（实测它报 1024×768 而交互桌面是 1366/1920）——分辨率只能在
-  交互会话内自报（如 `setres_1080.py` 走 hv_go）。
+  交互会话内自报（如 `tools/setres_1080.py` 走 hv_go）。
 - 复杂 PowerShell（多层引号/管道/Here-String）内联进 relay_cmd 必炸
   （实测 `Select-String "a|b"`、Add-Type C#）——写成 `.ps1` 文件用
   `& 文件名` 调用（见 `clean_guest.ps1` / `max_vmconnect.ps1` 模式）。

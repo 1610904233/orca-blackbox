@@ -1,6 +1,7 @@
 @echo off
 rem build_ui.bat — package the vision_gui UI shell into a self-contained
-rem onedir app with PyInstaller. Run from the repo root.
+rem onedir app with PyInstaller. Run from the repo root or from tools/;
+rem the script cd's to the repo root itself.
 rem
 rem Result:  dist\vision_gui_runner\vision_gui_runner.exe
 rem Layout (packaged): the driver scripts + harness + templates ship as DATA
@@ -12,18 +13,18 @@ rem mss/MaaFw are excluded: mss is unused by the sandbox code and MaaFw is
 rem only needed by the settled m1b experiment (not part of the runner).
 
 setlocal
-cd /d %~dp0
+cd /d "%~dp0.."
 
 .venv\Scripts\pip install pyinstaller || goto :err
 
 .venv\Scripts\pyinstaller --noconfirm --clean --onedir --console ^
   --name vision_gui_runner ^
   --collect-all customtkinter ^
-  --add-data "m0_boot_check.py;." ^
-  --add-data "m1_minimal_loop.py;." ^
-  --add-data "m1b_maa.py;." ^
-  --add-data "m2_slice_chain.py;." ^
-  --add-data "inspect_window.py;." ^
+  --add-data "tests\engine\m0_boot_check.py;." ^
+  --add-data "tests\engine\m1_minimal_loop.py;." ^
+  --add-data "tests\engine\m1b_maa.py;." ^
+  --add-data "tests\engine\m2_slice_chain.py;." ^
+  --add-data "tools\inspect_window.py;." ^
   --add-data "harness;harness" ^
   --add-data "resource;resource" ^
   --exclude-module mss ^

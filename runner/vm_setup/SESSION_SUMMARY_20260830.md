@@ -44,7 +44,7 @@
 4. 回滚点：`Restore-VMSnapshot -Name suite-26of27-green`
 
 ## 遗留
-- m4d menu-reopen 需 VM 内交互调试（inspect_window.py 观察 wx 菜单捕获态）
+- m4d menu-reopen 需 VM 内交互调试（tools/inspect_window.py 观察 wx 菜单捕获态）
 - mix_dialog_util.py 中的 MDU DEBUG 打印待清理
 - 分辨率依赖提示：harness 坐标耦合 1920×1080 + 窗口位置，换环境需重校准（长期应改坐标无关判定）
 hv_go.ps1 -Cases @('m3j_mixing_entry')

@@ -57,12 +57,12 @@ artifacts/          运行产物（gitignored）
 
 ```bash
 python -m venv .venv && .venv/Scripts/pip install -r requirements.txt
-.venv/Scripts/python m0_boot_check.py --grab     # 启动+截图（模板裁剪素材）
-.venv/Scripts/python m1_minimal_loop.py          # M1：tab 切换闭环（纯自研层）
-.venv/Scripts/python m1b_maa.py                  # M1b：MaaFw pipeline + 注入对比
-.venv/Scripts/python m2_slice_chain.py           # M2：切片业务链（默认 fresh profile）
-.venv/Scripts/python ui_runner.py                # 薄 UI 封装（CustomTkinter）
-.venv/Scripts/python inspect_window.py           # 子控件枚举 + 截图（开发辅助）
+.venv/Scripts/python tests/engine/m0_boot_check.py --grab     # 启动+截图（模板裁剪素材）
+.venv/Scripts/python tests/engine/m1_minimal_loop.py          # M1：tab 切换闭环（纯自研层）
+.venv/Scripts/python tests/engine/m1b_maa.py                  # M1b：MaaFw pipeline + 注入对比
+.venv/Scripts/python tests/engine/m2_slice_chain.py           # M2：切片业务链（默认 fresh profile）
+.venv/Scripts/python ui_runner.py                             # 薄 UI 封装（CustomTkinter）
+.venv/Scripts/python tools/inspect_window.py                  # 子控件枚举 + 截图（开发辅助）
 ```
 
 App 定位链：`ORCA_VISION_APP_EXE` 环境变量 → `<repo>/orca/snapmaker-orca.exe` →
@@ -259,7 +259,7 @@ WCP 云端订阅回调（datadir/web 与 %LOCALAPPDATA% Sentry/WebView2 数据�
 ## 打包为自包含 exe（2026-08-28）
 
 ```bat
-build_ui.bat        rem 在本仓根目录运行
+tools/build_ui.bat        rem 可在任意目录运行（脚本会 cd 到仓根）
 ```
 
 产物：`dist\vision_gui_runner\vision_gui_runner.exe`（onedir，~183MB，含

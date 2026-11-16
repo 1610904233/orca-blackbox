@@ -149,7 +149,7 @@ if ("$res" -notmatch '^1920') {
     param($sb, $py)
     $inner = @"
 Set-Location $sb
-& '$py' $sb\setres_1080.py *>> C:\coil\setres_out.txt
+& '$py' $sb\tools\setres_1080.py *>> C:\coil\setres_out.txt
 "@
     [IO.File]::WriteAllText('C:\coil\run_setres.ps1', $inner)
     $a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass -File C:\coil\run_setres.ps1'

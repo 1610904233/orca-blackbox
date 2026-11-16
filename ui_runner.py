@@ -402,7 +402,7 @@ if __name__ == "__main__":
         # In the frozen build sys.executable is this exe (not python), so the
         # UI cannot spawn driver scripts directly — it re-invokes itself and
         # we dispatch here. Driver scripts are shipped as data next to the
-        # exe (see build_ui.bat) and imported from there.
+        # exe (see tools/build_ui.bat) and imported from there.
         script = Path(sys.argv[2])
         # PyInstaller 6.x onedir ships add-data files under _internal/
         exe_dir = Path(sys.executable).resolve().parent
