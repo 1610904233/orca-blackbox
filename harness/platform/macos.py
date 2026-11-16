@@ -241,9 +241,24 @@ class MacOSDriver:
         self._ax_apps: dict[int, object] = {}
         self._shareable = None
         self._shareable_ts = 0.0
+        self._event_source_obj = None
         if check_permissions:
             self._require_ax()
             self._require_screen()
+
+    def _event_source(self):
+        """Explicit CGEventSource for synthetic input.
+
+        Events created with a NULL source were observed to be dropped while
+        AweSun/UURemote was attached; an explicit private/HID source is
+        delivered (verified on a System Settings button, 2026-11-16).
+        """
+        if self._event_source_obj is None:
+            self._event_source_obj = (
+                Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStatePrivate)
+                or Quartz.CGEventSourceCreate(
+                    Quartz.kCGEventSourceStateHIDSystemState))
+        return self._event_source_obj
 
     # ------------------------------------------------------------------
     # TCC / platform helpers
@@ -951,9 +966,10 @@ class MacOSDriver:
             buf, width, height, 8, width * 4, space, info)
         if ctx is None:
             raise CaptureError("CGBitmapContextCreate failed")
-        # CGBitmapContext's origin is bottom-left; flip so row 0 is the top.
-        Quartz.CGContextTranslateCTM(ctx, 0, height)
-        Quartz.CGContextScaleCTM(ctx, 1, -1)
+        # ScreenCaptureKit's CGImage already has the top row at the top:
+        # drawing it without a flip produces a top-down BGRA buffer.  (An
+        # extra translate/scale flip turns the whole app UI upside down —
+        # caught by visual inspection of the first m2 capture.)
         Quartz.CGContextDrawImage(ctx, Quartz.CGRectMake(0, 0, width, height), image)
         return Frame(width, height, bytes(buf))
 
@@ -1022,6 +1038,7 @@ class MacOSDriver:
     def click(self, x: float, y: float, *, button: str = "left",
               clicks: int = 1) -> None:
         self._require_ax()
+        source = self._event_source()
         scale = self._scale_for_point(x, y)
         point = Quartz.CGPointMake(x / scale, y / scale)
         button = button.lower()
@@ -1038,12 +1055,12 @@ class MacOSDriver:
                                        Quartz.kCGEventLeftMouseUp,
                                        Quartz.kCGMouseButtonLeft)
         move = Quartz.CGEventCreateMouseEvent(
-            None, Quartz.kCGEventMouseMoved, point, Quartz.kCGMouseButtonLeft)
+            source, Quartz.kCGEventMouseMoved, point, Quartz.kCGMouseButtonLeft)
         if move is not None:
             Quartz.CGEventPost(Quartz.kCGHIDEventTap, move)
         for i in range(max(1, int(clicks))):
-            down = Quartz.CGEventCreateMouseEvent(None, down_t, point, cg_button)
-            up = Quartz.CGEventCreateMouseEvent(None, up_t, point, cg_button)
+            down = Quartz.CGEventCreateMouseEvent(source, down_t, point, cg_button)
+            up = Quartz.CGEventCreateMouseEvent(source, up_t, point, cg_button)
             if down is None or up is None:
                 raise DriverError("CGEventCreateMouseEvent returned nil")
             Quartz.CGEventSetIntegerValueField(
@@ -1058,15 +1075,16 @@ class MacOSDriver:
 
     def wheel(self, x: float, y: float, notches: int) -> None:
         self._require_ax()
+        source = self._event_source()
         scale = self._scale_for_point(x, y)
         point = Quartz.CGPointMake(x / scale, y / scale)
         move = Quartz.CGEventCreateMouseEvent(
-            None, Quartz.kCGEventMouseMoved, point, Quartz.kCGMouseButtonLeft)
+            source, Quartz.kCGEventMouseMoved, point, Quartz.kCGMouseButtonLeft)
         if move is not None:
             Quartz.CGEventPost(Quartz.kCGHIDEventTap, move)
             time.sleep(0.05)
         event = Quartz.CGEventCreateScrollWheelEvent(
-            None, Quartz.kCGScrollEventUnitLine, 1, int(notches))
+            source, Quartz.kCGScrollEventUnitLine, 1, int(notches))
         if event is None:
             raise DriverError("CGEventCreateScrollWheelEvent returned nil")
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
@@ -1111,8 +1129,9 @@ class MacOSDriver:
             flags |= Quartz.kCGEventFlagMaskShift
         for mod in modifiers:
             flags |= self._MODIFIERS.get(mod.lower(), 0)
+        source = self._event_source()
         for down_flag in (True, False):
-            event = Quartz.CGEventCreateKeyboardEvent(None, code, down_flag)
+            event = Quartz.CGEventCreateKeyboardEvent(source, code, down_flag)
             if event is None:
                 raise DriverError("CGEventCreateKeyboardEvent returned nil")
             if flags:
@@ -1122,11 +1141,12 @@ class MacOSDriver:
 
     def send_text(self, text: str) -> None:
         self._require_ax()
+        source = self._event_source()
         try:
             for char in text:
                 units = len(char.encode("utf-16-le")) // 2
                 for down_flag in (True, False):
-                    event = Quartz.CGEventCreateKeyboardEvent(None, 0, down_flag)
+                    event = Quartz.CGEventCreateKeyboardEvent(source, 0, down_flag)
                     if event is None:
                         raise DriverError("CGEventCreateKeyboardEvent returned nil")
                     Quartz.CGEventKeyboardSetUnicodeString(event, units, char)
