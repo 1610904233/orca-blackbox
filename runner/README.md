@@ -22,7 +22,7 @@ fetch_mp4.py     ◀──relay+base64──     拉取证文件（mp4/日志/gc
 clean_guest.ps1  ──PS Direct──▶        杀孤儿 app/python
 ```
 
-协议细节（RUN/DONE 标记、头部变更判定、稳定性窗口）见 `../PITFALLS_0901.md`
+协议细节（RUN/DONE 标记、头部变更判定、稳定性窗口）见 `../docs/PITFALLS.md`
 §15/§16/§17——这些脚本就是那些坑的实体化。
 
 ## 参数（环境变量，均有当前 live 缺省）

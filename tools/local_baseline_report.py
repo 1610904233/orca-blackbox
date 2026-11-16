@@ -25,7 +25,7 @@ for r in live:
     if n:
         live_by_id[n] = r
 
-doc = (ROOT / "FEISHU_BASELINE.md").read_text(encoding="utf-8")
+doc = (ROOT / "docs" / "feishu" / "BASELINE.md").read_text(encoding="utf-8")
 mapped = {}
 for line in doc.splitlines():
     if not line.startswith("|"):
@@ -90,7 +90,7 @@ rep = []
 rep.append("# 飞书「Orca回归基线用例集」↔ vision-gui 黑盒套件 对照报告")
 rep.append("")
 rep.append(f"- 飞书实时表: {len(rows)} 条（wiki `VtS3wy9WpiNKoRkFJJYcNvPSnZb` / base `RJKPbW7fTaMkNnsPx3LcFQISnmd` / table `tbl2WmD8AtG9yH1i`）")
-rep.append(f"- 仓库映射快照: FEISHU_BASELINE.md（107 条，09-16）")
+rep.append(f"- 仓库映射快照: docs/feishu/BASELINE.md（107 条，09-16）")
 rep.append(f"- 套件注册表: {len(cases.CASES)} 个用例（regression {len(reg)} / smoke {len(smoke)}）")
 rep.append(f"- 飞书侧 `自动化状态` 字段: **全部仍为「未覆盖」**（尚未回填自动化进展）")
 rep.append("")

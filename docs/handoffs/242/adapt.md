@@ -115,14 +115,14 @@ boot 等待建议 90s → 150s（`harness/launcher.find_main_window` 调用处 /
 7. DWM 崩溃风暴（约 12 分钟卡驱动 + 归档器狂拍 PrintWindow）会硬杀交互任务树 → 会话要短，长跑前重启客机；父进程捕获 `TimeoutExpired` 继续。
 8. 3mf：component `p:path` 带前导 `/`，zip 条目没有 → `lstrip("/")`；float32 序列化噪声 → 容差 1e-3。
 9. pyflakes 报警会截断 `&&` 链（曾导致推送 job 根本没生成）→ 推送前先确认 `ALL-CLEAN`。
-10. 涂色黑盒六条硬约束见 `PITFALLS_0901.md` §21.20；`§21.17/18/19` 分别对应 DWM 风暴、IDOK 死锁、gizmo 抑制。
+10. 涂色黑盒六条硬约束见 `../../PITFALLS.md` §21.20；`§21.17/18/19` 分别对应 DWM 风暴、IDOK 死锁、gizmo 抑制。
 
 ### 7. 现成资产
 
 - 探针：`diag/probe_242_surfaces.py`（菜单+工具条）、`probe_242_submenu.py`（HMENU，最有用）、`probe_242_printbtn.py`（msg vs real click，已跑通）、`probe_242_tipwin.py`/`tipnudge.py`/`tooltip.py`（均证明 2.4.2 无 tooltip）、`probe_241_slottable.py`（生成槽位表）。
 - 槽位表：`artifacts/slot_table_241.json`（已取回宿主）。
 - job：`C:\coil\vm_setup\jobs\` 下 `j800_full242c.ps1`（全量 2.4.2）、`j802_hvgo.ps1`、`j816_p242state.ps1`、`j819_slottable.ps1`、`j822_printbtn.ps1`、`j823_finalstate.ps1`、`j669_killsuite.ps1`、`j715_reboot.ps1`。
-- 未跟踪文件：`HANDOFF_241_BATCH2.md`、`artifacts/slot_table_241.json`、上述 diag 探针——适配完成后再决定是否提交（提交前先讲变动）。
+- 相关文件：`docs/handoffs/241/batch2.md`（已入库）、`artifacts/slot_table_241.json`、上述 diag 探针——适配完成后再决定是否提交（提交前先讲变动）。
 
 现在从「§4 第 1 项」开始，先补 `find_slot` 的固定几何回退并在 2.4.2d 上冒烟。
 

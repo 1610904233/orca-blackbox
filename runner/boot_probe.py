@@ -44,7 +44,7 @@ Phases (one fresh app boot each; config knob = seed conf override):
                      Observe: wizard lifecycle + any real blocker (the
                      preset-pack "Configuration update" prompt is NOT
                      conf-stubbable — PresetUpdater derives its feed URL
-                     from the country code; see PITFALLS_0901.md 19).
+                     from the country code; see docs/PITFALLS.md 19).
   b  version-gap   — seed + app.orca_upgrade_url -> localhost feed
                      claiming 9.9.9 (non-force). Expect the
                      "New version of Snapmaker Orca" dialog; measures its

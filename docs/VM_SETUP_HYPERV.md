@@ -2,7 +2,7 @@
 
 > **范围**：从零到"客机能跑黑盒用例"的完整链路（启用 Hyper-V → 下镜像 → 建 VM →
 > 装 Win11 → 部署环境 → 验收快照）。日常跑批见 `runner/README.md`，跑批坑位实录
-> 见 `PITFALLS_0901.md`，本文只管**装机这件事本身**。
+> 见 `PITFALLS.md`，本文只管**装机这件事本身**。
 >
 > **原始材料**：`C:\coil\vm_setup\`（**不受版本控制**，是 live origin）。**装机脚本已落库**
 > 到 [`runner/vm_setup/`](../runner/vm_setup/)（该目录 README 有步骤→脚本映射、未收录
@@ -352,5 +352,5 @@ Restore-VMSnapshot -Name suite-26of27-green
 |---|---|
 | `runner/README.md` | 宿主↔客机跑批基础设施、环境变量、日常用法 |
 | `README.md:58` | 宿主直跑 vs Hyper-V 跑批的路线说明（"无人值守全量回归走 `runner/hv_go.ps1`"） |
-| `PITFALLS_0901.md` §1 | 控制台分辨率跌落（本机最大坑） |
+| `PITFALLS.md` §1 | 控制台分辨率跌落（本机最大坑） |
 | `docs/UIA_EVAL_0903.md` | UIA 混合定位评估（依赖同一台客机） |

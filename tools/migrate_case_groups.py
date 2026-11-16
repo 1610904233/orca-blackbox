@@ -68,7 +68,7 @@ def build_assignment():
     # rows win over PARTIAL-only references (which are cross-references, e.g. the
     # mainflow rows that name a mixing case); OVERRIDES settle the rest.
     primary_hit, partial_hit = {}, {}
-    for line in (ROOT / "FEISHU_BASELINE.md").read_text(encoding="utf-8").splitlines():
+    for line in (ROOT / "docs" / "feishu" / "BASELINE.md").read_text(encoding="utf-8").splitlines():
         if not line.startswith("|"):
             continue
         c = [x.strip() for x in line.strip().strip("|").split("|")]

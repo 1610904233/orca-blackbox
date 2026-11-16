@@ -5,7 +5,7 @@
 # dialogs, swatch lists) — invisible to window text, UIA and GetWindowText.
 # Tesseract (eng) measured clearly better than the local Windows OCR on
 # this machine (the system only ships a zh-CN language pack, which mangles
-# English UI text). See BLACKBOX_CASES.md 'OCR' notes.
+# English UI text). See docs/BLACKBOX_CASES.md 'OCR' notes.
 #
 # Purity: this reads the SAME screenshots the rest of the harness captures
 # (PrintWindow) — it only upgrades the interpretation, not the channel.

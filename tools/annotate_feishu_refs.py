@@ -5,7 +5,7 @@ Inserts a structured header line (idempotent):
 
     # feishu: baseline#164 baseline#156 baseline#152
 
-Source of truth for the refs is FEISHU_BASELINE.md (record # -> 处置/映射 ->
+Source of truth for the refs is docs/feishu/BASELINE.md (record # -> 处置/映射 ->
 case names); records it maps to no case are simply absent. Cases with no
 baseline mapping get `# feishu: none` so the checker can tell "declared
 unmapped" from "forgot to annotate".
@@ -29,9 +29,9 @@ REF_RE = re.compile(r"^#\s*feishu:\s*(.+)$")
 
 
 def build_refs():
-    """case -> sorted [record numbers] from FEISHU_BASELINE.md."""
+    """case -> sorted [record numbers] from docs/feishu/BASELINE.md."""
     refs: dict[str, list[str]] = {}
-    for line in (ROOT / "FEISHU_BASELINE.md").read_text(encoding="utf-8").splitlines():
+    for line in (ROOT / "docs" / "feishu" / "BASELINE.md").read_text(encoding="utf-8").splitlines():
         if not line.startswith("|"):
             continue
         c = [x.strip() for x in line.strip().strip("|").split("|")]

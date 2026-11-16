@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Join the LIVE Feishu baseline table (artifacts/feishu_baseline.ndjson) with the
-repo's mapping snapshot (FEISHU_BASELINE.md) and the implemented case registry
+repo's mapping snapshot (docs/feishu/BASELINE.md) and the implemented case registry
 (cases.py), and report implemented / partial / not-implemented per record."""
 import json
 import re
@@ -30,7 +30,7 @@ for r in live:
     live_by_id[num] = r
 
 # --- repo mapping snapshot ---
-doc = (ROOT / "FEISHU_BASELINE.md").read_text(encoding="utf-8")
+doc = (ROOT / "docs" / "feishu" / "BASELINE.md").read_text(encoding="utf-8")
 mapped = {}
 for line in doc.splitlines():
     if not line.startswith("|"):

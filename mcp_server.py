@@ -583,7 +583,7 @@ _SCAFFOLD = '''#!/usr/bin/env python3
 #   [ ] verdict GREEN and the artifacts (screenshots / case log) look right
 #   [ ] black-box only: no app internals; waits are event-driven (wait_for), not sleeps
 #   [ ] templates it uses exist in resource/image/ (drop the draft_ prefix on promotion)
-#   [ ] BLACKBOX_CASES.md entry written
+#   [ ] docs/BLACKBOX_CASES.md entry written
 # Promote:  git mv drafts/{name}.py {name}.py
 
 import argparse

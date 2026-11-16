@@ -155,7 +155,7 @@ def main() -> int:
     ap.add_argument("--datadir", default=HERE / "artifacts" / "profile", type=Path)
     ap.add_argument("--model", default=HERE / "fixtures" / "mixed_filament_test.3mf", type=Path,
                     help="U1-embedded fixture: Prusa.stl (no embedded preset) falls back to a seed preset "
-                         "that leaves Slice disabled — see BLACKBOX_CASES.md '关键源码事实'")
+                         "that leaves Slice disabled — see docs/BLACKBOX_CASES.md '关键源码事实'")
     ap.add_argument("--reuse", action="store_true",
                     help="reuse the datadir (default: FRESH — a used datadir "
                          "carries saved state that blocks CLI auto-load)")
@@ -218,7 +218,7 @@ def main() -> int:
         # the pre-slice colored-model baseline (a colored MODEL alone used
         # to false-positive the old fixed threshold; the ratio gate already
         # excludes that — the floor only excludes sub-1% empty-bed jitter).
-        # 2.0x -> 1.5x (measured 11-10 on 2.4.2d, 242_FINDINGS F-5): the
+        # 2.0x -> 1.5x (measured 11-10 on 2.4.2d, docs/reports/242/FINDINGS.md F-5): the
         # baseline model fraction itself swings 1.47%..3.88% across boots
         # (view-state variance), putting the old 2.0x constant INSIDE the
         # observed band — clean-session ratio 2.32x vs in-batch 1.87x with

@@ -986,7 +986,7 @@ def click_official_color_popup(session, slot, timeout_s=8.0, tries=3):
 def standard_colour_chooser(session, timeout_s=4.0):
     """The Windows CHOOSECOLOR dialog ('Please choose the filament color').
 
-    2.4.2 behaviour change (242_FINDINGS F-9): a NON-Snapmaker preset's
+    2.4.2 behaviour change (docs/reports/242/FINDINGS.md F-9): a NON-Snapmaker preset's
     colour chip opens THIS standard chooser instead of the official colour
     library (2.4.1 opened the library for every preset; Snapmaker presets
     on 2.4.2 still open the library — m8b stays on the official path).

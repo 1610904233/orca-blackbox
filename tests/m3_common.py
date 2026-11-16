@@ -7,7 +7,7 @@
 #   - the export-gcode primitive    (harness/export_util)
 #   - deterministic control lookup  (export_util.topbar_buttons)
 # No app API, no runtime hooks: observation is screenshots / window
-# messages / filesystem only (see BLACKBOX_CASES.md).
+# messages / filesystem only (see docs/BLACKBOX_CASES.md).
 
 import argparse
 import os

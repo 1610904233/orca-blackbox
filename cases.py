@@ -12,9 +12,9 @@ Rules:
 - suite: "regression" = the nightly suite; "smoke" = m0/m1/m2 engine/chain
   checks; None = registered & runnable via MCP but not in any default batch
   (m3a-m3i early business-path cases, m1b engine experiment).
-- tier: coverage tier from BLACKBOX_CASES.md (A strong / B weak / C
-  not-blackbox-testable). "TBD" = not yet registered in BLACKBOX_CASES.md
-  (the m5 series — its pitfalls live in PITFALLS_0901.md instead).
+- tier: coverage tier from docs/BLACKBOX_CASES.md (A strong / B weak / C
+  not-blackbox-testable). "TBD" = not yet registered in docs/BLACKBOX_CASES.md
+  (the m5 series — its pitfalls live in docs/PITFALLS.md instead).
 - summary: NOT stored — extracted live from the script's line-2 header
   comment ("# <stem>.py — ..."), so the script stays the single home for
   it (sync enforced by tools/check_registry.py).
@@ -30,7 +30,7 @@ HERE = Path(__file__).resolve().parent
 
 def _r(milestone: str, tier: str, **extra) -> dict:
     """Shorthand for an enabled regression-suite entry (file filled below).
-    known_limitation=True = documented PARTIAL/降级 (BLACKBOX_CASES.md) — the
+    known_limitation=True = documented PARTIAL/降级 (docs/BLACKBOX_CASES.md) — the
     pytest shell maps it to xfail(strict=False)."""
     d = {"file": None, "milestone": milestone, "tier": tier,
          "suite": "regression", "enabled": True}
@@ -92,7 +92,7 @@ CASES: dict[str, dict] = {
     "m3p_mixing_persist": _r("m3", "A"),
     "m3q_mixing_view": _r("m3", "A"),
     "m3r_mixing_progress": _r("m3", "A"),
-    "m3s_mixing_hover": _r("m3", "B", known_limitation=True),   # #8 hover tooltips — 降级/PARTIAL in BLACKBOX_CASES.md L85
+    "m3s_mixing_hover": _r("m3", "B", known_limitation=True),   # #8 hover tooltips — 降级/PARTIAL in docs/BLACKBOX_CASES.md L85
     "m3t_mixing_add_ratio": _r("m3", "A"),
     "m3u_mixing_ratio_flow": _r("m3", "A"),
     "m3v_mixing_cycle_input": _r("m3", "A"),
@@ -104,14 +104,14 @@ CASES: dict[str, dict] = {
     "m4b_batch_manual": _r("m4", "A"),
     "m4c_mixing_panel": _r("m4", "A"),
     "m4d_mixing_filops": _r("m4", "A"),
-    "m4e_mixing_paint": _r("m4", "B", known_limitation=True),   # 表1#39 部分 — BLACKBOX_CASES.md L96
+    "m4e_mixing_paint": _r("m4", "B", known_limitation=True),   # 表1#39 部分 — docs/BLACKBOX_CASES.md L96
     "m4f_mixing_cap64": _r("m4", "A"),
     "m4g_mixing_sublayer": _r("m4", "A"),
     "m4h_mixing_templates": _r("m4", "A"),
     "m4i_mixing_slice": _r("m4", "A"),
     "m4j_mixing_samecolor": _r("m4", "A"),
     # --- regression suite: process params (m5a-m5h) --------------------------
-    # tier TBD: not registered in BLACKBOX_CASES.md (pitfalls in PITFALLS_0901.md)
+    # tier TBD: not registered in docs/BLACKBOX_CASES.md (pitfalls in docs/PITFALLS.md)
     "m5a_preset_cycle": _r("m5", "TBD"),
     "m5b_quality_params": _r("m5", "TBD"),
     "m5c_strength_infill": _r("m5", "TBD"),
@@ -123,7 +123,7 @@ CASES: dict[str, dict] = {
     # --- m6: transform via artifact (absorbed from white-box ab3b34adf5:459) --
     "m6a_transform_verify": _r("m6", "A"),
     # --- regression suite: main flow (m7, Feishu 测试用例 base tblLR8zYgwBuggDI
-    #     — GUI业务 #7-#24 原子 + 主流程-模板 O/M 链; mapping in FEISHU_MAINFLOW.md)
+    #     — GUI业务 #7-#24 原子 + 主流程-模板 O/M 链; mapping in docs/feishu/MAINFLOW.md)
     "m7a_boot_shutdown": _r("m7", "A"),
     "m7b_new_project": _r("m7", "A"),
     "m7c_import_stl": _r("m7", "A"),

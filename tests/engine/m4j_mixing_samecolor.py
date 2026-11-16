@@ -16,14 +16,14 @@
 #     advisory 'Excessive filaments in the mix may affect the result.
 #     Please use with caution.' is orange and does NOT disable OK
 #     (advisory, not blocking); the seeded fixture only has 4 compatible
-#     filaments, so per FEISHU_MAPPING this assert lives here on an
+#     filaments, so per docs/feishu/MAPPING.md this assert lives here on an
 #     all-PLA 5-filament fixture.
 #   - MixedFilamentBatchDialog — Manual mode start_batch_match (:2273) is
 #     palette-agnostic; completion renders the color-mapping list
 #     (swatches; chromatic fraction 0 -> ~0.12, m3k measurement) and
 #     Cancel then pops 'Discard Matching' (:1826).
 #
-# Scope / partial notes (FEISHU_MAPPING.md):
+# Scope / partial notes (docs/feishu/MAPPING.md):
 #   - 表2 #7/#9: the mapping LIST rendering is asserted; the ΔE<1
 #     map-to-first-same-colour DETAIL is out of black-box reach (needs
 #     per-swatch ΔE values — left MANUAL like m3l's tooltip sub-item).

@@ -26,7 +26,7 @@
 # Stale-table notes:
 #   - #33 ('>4 耗材弹冲突确认弹窗'): the current build has NO conflict
 #     popup — the Manual rows simply CLAMP to 4 (source line above); the
-#     dialog opens normally. Asserted as clamping (FEISHU_MAPPING stale
+#     dialog opens normally. Asserted as clamping (docs/feishu/MAPPING.md stale
 #     row '表2 #34/35').
 #   - #35 ('>4 耗材有混色'): shares the same entry gate as #34 with a
 #     scheme present. Scope: asserted with the standard 5-filament+scheme

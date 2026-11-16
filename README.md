@@ -10,7 +10,7 @@
 
 ## 跑批纪律与收尾（新会话必读）
 
-本条是唯一权威条文；`PITFALLS_0901.md` 是证据库，`runner/README.md` 是执行细节。违背历史基线：09-02 / 09-08 / 09-16 / 09-17 四个会话，用户先后 7 次训斥"去虚拟机上跑"——所以纪律从会话口头挪到了这里，并由 `harness/host_guard.py` 机械强制。
+本条是唯一权威条文；`docs/PITFALLS.md` 是证据库，`runner/README.md` 是执行细节。违背历史基线：09-02 / 09-08 / 09-16 / 09-17 四个会话，用户先后 7 次训斥"去虚拟机上跑"——所以纪律从会话口头挪到了这里，并由 `harness/host_guard.py` 机械强制。
 
 1. **执行位置**：批量回归 / 用例 / 探针默认在 Hyper-V 客机 `win11-test` 跑（唯一入口 `runner/hv_go.ps1`）。宿主直跑仅限 dev 调试 / 用户明令，且必须 `ORCA_BB_ALLOW_HOST=1` 显式放行（launcher 强制拦截，否则 exit 2）；宿主跑出的结果**不是回归证据**。
 2. **跑批前**：`hv_go.ps1` 会自动打印 PITFALLS §15 checklist，照做即可。
@@ -33,10 +33,9 @@ harness/            驱动核心（纯 ctypes，零第三方依赖即可跑 m0�
   env_check.py      环境预检（GameViewer 等远控层、DPI）— 移植自 wx_gui 的 C++ 门禁
   profile.py        沙盒 datadir 种子（数据源 = 仓内 vendored resources/，非用户 %APPDATA%）
   launcher.py       黑盒启动（显式剥除 ORCA_GUI_TEST_MODE！）
-m0_boot_check.py    里程碑0：启动→定位→截图→关闭 冒烟
-m1/m2/m3*/m4*/m5*   用例（m1 层驱动验证 → m2 切片链 → m3 业务路径 →
-                    m4 混色全链路 → m5 工艺参数主流程；35 例全绿套件 = m3j..m5h）
-diag_*.py           与用例同名的诊断脚本（不猜坐标/标签，先 diag 实证）
+tests/              用例脚本（按飞书二级分类分组；注册表/计数 = cases.py，
+                    当前 74 条启用基线）
+diag/               历史诊断/探针脚本（先 diag 实证，再写用例；按版本命名）
 fixtures/           vendored 3mf/stl 测试夹具（原 monorepo tests/data/test_3mf 子集）
 resources/          vendored 预设子集（profiles/{Snapmaker,BBL} + printers，~9MB；
                     datadir 种子数据源，与上游 resources/ 的该子集同源）
@@ -45,9 +44,12 @@ resource/image/     模板图（提交入库，测试资产）
 mcp_server.py       MCP stdio server：harness 暴露为 AI 工具（坑编码为服务端不变量）
 ui_runner.py        薄 UI 封装（CustomTkinter）：选模型→跑 m1/m2/批量→流式日志
                     + live view 截图面板 + App exe 可替换（透传 --exe）
-BLACKBOX_CASES.md   用例登记册（35 例判定标准/证据链）
-PITFALLS_0901.md    实测坑册（§1–§17，全部有日志/帧证据）
-FEISHU_MAPPING.md   飞书证据表映射
+docs/               文档索引见 docs/README.md
+  PITFALLS.md       实测坑册（原 PITFALLS_0901.md；全部有日志/帧证据）
+  BLACKBOX_CASES.md 用例登记册（判定标准/证据链）
+  feishu/           飞书基线/主流程/证据映射
+  reports/<版本>/   验收/失败/发现/运行报告（版本在目录名，不在文件名）
+  handoffs/<版本>/  跨会话交接
 artifacts/          运行产物（gitignored）
 ```
 
@@ -230,7 +232,7 @@ Standard 嵌入预设）端到端 GREEN。
 | 环境 | 截图 | 消息注入(SendMessage) | OS级注入(SendInput) |
 |---|---|---|---|
 | 干净交互会话 | ✅ | ✅ | ✅ |
-| GameViewer/ToDesk 等远控层运行中 | ✅ | ✅（LL hook 看不见 sent 消息） | ⚠️ 实测可用但受限（2026-08-29：SendInput 2/2 投递，不再被吞；但 WebView2 透明宿主吞掉 app 窗口区的真实点击——真实输入只用于 z-top 的模态菜单行，见 BLACKBOX_CASES.md） |
+| GameViewer/ToDesk 等远控层运行中 | ✅ | ✅（LL hook 看不见 sent 消息） | ⚠️ 实测可用但受限（2026-08-29：SendInput 2/2 投递，不再被吞；但 WebView2 透明宿主吞掉 app 窗口区的真实点击——真实输入只用于 z-top 的模态菜单行，见 docs/BLACKBOX_CASES.md） |
 | zh-CN 拼音 IME | ✅ | ✅（WM_CHAR 直携字面字符） | ⚠️ 需 US layout 绕过 |
 | 非交互桌面（CreateDesktop） | — | — | ❌ wx 启动挂起，已放弃 |
 
@@ -316,7 +318,7 @@ config.json.bak-visiongui）。
 
 **M3 流程（AI 起草 → 人类拍板）**：agent 用 case_scaffold 生成 drafts/ 草稿 +
 crop_template 裁模板（draft_ 前缀）→ 人类按草稿头部的 checklist 跑通并 review
-→ `git mv drafts/mXx_*.py mXx_*.py` 入正册 + 去 draft_ 前缀 + 写 BLACKBOX_CASES.md
+→ `git mv drafts/mXx_*.py mXx_*.py` 入正册 + 去 draft_ 前缀 + 写 docs/BLACKBOX_CASES.md
 → 提交。草稿未 review 前不得进正册、不得进 batch。
 
 **冒烟**：`mcp_smoke.py` 覆盖 15 工具全链路 + 4 条护栏（窗口外点击、交互期

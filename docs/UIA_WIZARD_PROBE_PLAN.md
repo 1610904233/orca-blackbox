@@ -15,7 +15,7 @@ UIA_EVAL §五.2 回答（raw walk 114 节点含 webview 子树），本探针�
 1. `runner/uia_probe.py` 增 `--wizard` 模式（OUT_SUFFIX `_wiz`）；
 2. 客机实跑产物 `uia_probe_{out,compact}_wiz.json` + `_report_wiz.txt`；
 3. `docs/UIA_EVAL_0903.md` 增 §七（向导分级结论）；
-4. `PITFALLS_0901.md` §3 修订（"web 无可枚举结构"前提已被 raw walker 推翻；
+4. `PITFALLS.md` §3 修订（"web 无可枚举结构"前提已被 raw walker 推翻；
    "OCR+坐标点 HTML 太脆"结论保留）。
 
 **非目标**：WCP 首页 WebView2（联网测试类，另立）、CDP 通道（纯度决策大，另立项）、

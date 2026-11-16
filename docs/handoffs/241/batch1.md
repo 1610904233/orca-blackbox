@@ -1,13 +1,13 @@
 # 交接：Orca 2.4.1 基线收敛（新会话从这里开始）
 
-> 会话纪律以 `README.md`「跑批纪律与收尾（新会话必读）」为唯一权威，`PITFALLS_0901.md` 是证据库
+> 会话纪律以 `README.md`「跑批纪律与收尾（新会话必读）」为唯一权威，`../../PITFALLS.md` 是证据库
 > （**§21 是 2.4.1 专章，动手前必读**）。本文件只是**当前进度快照**。
 
 ## 0. 一句话状态
 
 Orca **2.4.1** 基线复跑剩下的 **8 条真失败已全部转绿**（逐条客机复跑确认），
 全部根因都在驱动层/环境，**没有发现产品侧的功能缺陷**（两条"行为变化"见 §3）。
-全量 36 例基线复跑（本轮修复后）正在进行/已完成，结果见 `241_FAILURES.md` 末尾「收敛结论」。
+全量 36 例基线复跑（本轮修复后）正在进行/已完成，结果见 `../../reports/241/FAILURES.md` 末尾「收敛结论」。
 
 ## 1. 环境事实（都已验证）
 
@@ -31,8 +31,8 @@ Orca **2.4.1** 基线复跑剩下的 **8 条真失败已全部转绿**（逐条�
 | `tests/m8_common.py` | 2.4.1 双栏耗材选择框原语：小步滚动扫描（`_picker_scan_for`）、hover 切分支、同厂商跳过厂商行、**tooltip 全名消歧**（`_picker_tooltip_scan`）、取色 chip/16x25 的**坐标空间修正**（子窗口 rect 即屏幕坐标）+ 取色重试 |
 | `tests/m7_common.py` | `confirm_filament_grouping()`（2.4.1 切片时弹的 `Custom Filament Grouping` 确认框）+ 接进 `op_slice`；gizmo 网格的"两行合成"加**真行距/同面板**约束；`type_into_field` 加"点兄弟格去焦后复核再提交"（`_sibling_box`） |
 | `harness/export_util.py` | `wait_save_dialog` 改**按标题**匹配（原来任意 #32770 都算，会抓到残留提示框）；`_dismiss_stale_prompts()`；每个 early return 加诊断打印 |
-| `PITFALLS_0901.md` | 新增 **§21**（9 条实测坑：控制台吞点击 / 屏幕坐标 / hover 语义 / 小步滚动 / 同厂商 / tooltip 消歧 / 2.4.1 配置事实 / relay 只认 token\|path / job 需 BOM） |
-| `241_FAILURES.md` | 末尾新增「收敛结论」：8 条逐条根因 + 结论表 |
+| `../../PITFALLS.md` | 新增 **§21**（9 条实测坑：控制台吞点击 / 屏幕坐标 / hover 语义 / 小步滚动 / 同厂商 / tooltip 消歧 / 2.4.1 配置事实 / relay 只认 token\|path / job 需 BOM） |
+| `../../reports/241/FAILURES.md` | 末尾新增「收敛结论」：8 条逐条根因 + 结论表 |
 | `diag/probe_241_*.py`、`diag/analyze_gizmo_ocr.py` | 本轮全部取证探针（约 20 个，未提交） |
 
 ## 3. 两条 2.4.1 的**行为变化**（测试方需要知道）

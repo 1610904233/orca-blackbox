@@ -3,7 +3,7 @@
 
 四类检查：
   1. 每个注册用例都声明了 `# feishu: ...` 注解（none 也算声明）；
-  2. 注解引用的记录号在 FEISHU_BASELINE.md 里存在（且该行的处置确实指向本用例）；
+  2. 注解引用的记录号在 docs/feishu/BASELINE.md 里存在（且该行的处置确实指向本用例）；
   3. 用例所在的目录分组 ∈ 其引用记录的「二级分类」（跨组用例取任意一组即可）；
   4. 反向：文档里处置为 COVERED / NEW-> 的记录，至少有一个用例注解声明了它。
 
@@ -32,7 +32,7 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 
 # --- 文档侧：记录号 -> (处置, 声明本用例的记录集合) ---
 doc_rows: dict[str, dict] = {}
-for line in (ROOT / "FEISHU_BASELINE.md").read_text(encoding="utf-8").splitlines():
+for line in (ROOT / "docs" / "feishu" / "BASELINE.md").read_text(encoding="utf-8").splitlines():
     if not line.startswith("|"):
         continue
     c = [x.strip() for x in line.strip().strip("|").split("|")]
@@ -75,7 +75,7 @@ for key in cases.CASES:
                 group_mismatch.append(f"{key}: 在 {g}, 记录属 {sorted(gs)}")
 
 check("每个用例都声明了 feishu 注解", not missing_ann, f"缺注解: {missing_ann}")
-check("注解引用的记录号都存在于 FEISHU_BASELINE.md", not bad_ref, f"未知引用: {bad_ref}")
+check("注解引用的记录号都存在于 docs/feishu/BASELINE.md", not bad_ref, f"未知引用: {bad_ref}")
 if group_of_num:
     check("目录分组 = 引用记录的二级分类（已知例外除外）", not group_mismatch,
           f"不一致: {group_mismatch}")

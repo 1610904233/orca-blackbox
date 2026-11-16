@@ -115,7 +115,7 @@
 | 循环流程/模式切换 | 表1#18-#20/#44 | '23' 登记（摘要 F2 50%+F3 50%）；'232'→67/33 更新；取消保留；Match↔Cycle 保图案；切 Ratio 重登记为比例型 | m3w_mixing_cycle_flow.py | ✅ |
 | 匹配模式（弹窗内） | 表1#21-#29 | Match 卡默认（blend hex+15%+2:1:1）；GGGGGG/5 位→红幅+OK 禁；FF5733→6s 内重算（50/25/25→61/39）；Min Mix 滑块 15→3；取色器色格点击→hex 更新；OK 登记；重开 Match 保模式 | m3x_mixing_match.py | ✅ |
 | 渐变模式 | 表1#31-#35 | 恒 2 行+Mix Effect+交换钮；换耗材预览重绘；默认 F3->F2 登记；交换→F2->F3；重开保 Gradient；推荐+取消无新增 | m3y_mixing_gradient.py | ✅ |
-| 兼容性矩阵 | 表1#51-#60 | 11 耗材 fixture 10 对断言：同类放行（PLA/PETG）、PLA+PETG/ABS/TPU/BVOH 阻断+OK 禁；PETG+TPU/PA+PC/ABS+ASA/PVA+BVOH 现矩阵放行（表格 4 处 stale，FEISHU_MAPPING 已注） | m3z_mixing_compat.py | ✅ |
+| 兼容性矩阵 | 表1#51-#60 | 11 耗材 fixture 10 对断言：同类放行（PLA/PETG）、PLA+PETG/ABS/TPU/BVOH 阻断+OK 禁；PETG+TPU/PA+PC/ABS+ASA/PVA+BVOH 现矩阵放行（表格 4 处 stale，feishu/MAPPING.md 已注） | m3z_mixing_compat.py | ✅ |
 
 **OCR 技术事实（2026-08-29 实测）**：本机 Windows OCR 只有 zh-CN 语言包（英文 UI 文本噪声大，`try_create_from_language(en-US)` 返回 None）；**Tesseract 5.4（eng）对文案零误差**（警告弹窗全文、tooltip `'Color Difference: Good (AE=0.0)'` 逐字可读）——落地 `harness/ocr_util.py`（pytesseract + PrintWindow + 3x 放大）。**wx 系统 tooltip 只跟踪真实鼠标输入**（SetCursorPos / WM_MOUSEMOVE 注入不触发，须 SendInput `MOUSEEVENTF_MOVE`）；映射列表色块行是匹配后新增的 93x36 panel（y 797-885）。
 
@@ -133,7 +133,7 @@
 
 
 来源 = 飞书 wiki 测试用例表（GUI业务 #7–#24 原子 + 主流程-模板 #72–#111 编排），
-全量映射（含 MANUAL/OUT-OF-SCOPE 的联机/模型站/更新记录）见 **FEISHU_MAINFLOW.md**。
+全量映射（含 MANUAL/OUT-OF-SCOPE 的联机/模型站/更新记录）见 **feishu/MAINFLOW.md**。
 新增基建：`harness/winutil.real_right_click_screen`（SendInput 右键，开 Plater
 原生右键菜单）+ `tests/m7_common.py`（右键菜单行点击 = GetMenuItemRect 精确几何、
 嵌套子菜单 via、File 菜单 via 分发、gizmo 槽位 tooltip 扫描、ImGui 字段录入、
@@ -171,14 +171,14 @@ gcode/3mf 断言、模板骨架）。工具栏槽位 = 画布内 tooltip 悬停�
 | 模板: 创建+旋转+涂色+切片 | #89 | cube → rotate 45 → Color painting dab → slice | m7t89 | 🔵 |
 | 模板: 预设+全局耗材+切片 | #109 🟡 | 打印机切换 + 耗材弹窗枚举 → slice | m7t109 | 🔵🟡 |
 
-🟡 = PARTIAL（known_limitation，断言降级处记录在 FEISHU_MAINFLOW.md 状态注）。
+🟡 = PARTIAL（known_limitation，断言降级处记录在 feishu/MAINFLOW.md 状态注）。
 MANUAL/OUT-OF-SCOPE（联机 #25–#38、更新 #65–#67、热重启 #10、主流程-用例设备段、
-主流程-模板 #90–108/#110/#111、模型站 #201–#220）：见 FEISHU_MAINFLOW.md。
+主流程-模板 #90–108/#110/#111、模型站 #201–#220）：见 feishu/MAINFLOW.md。
 
 ### 基线用例（m8，2026-09-17 批次：飞书「基线用例」表 tblvh0eGrID9JQ02）
 
 > Base `EDUAbYWcbaL2HOsgFM1cXmBpn5f`（107 条，全部登记时为「未覆盖」）。
-> 全量逐条映射（COVERED/PARTIAL/MANUAL/SKIP）见 **FEISHU_BASELINE.md**；
+> 全量逐条映射（COVERED/PARTIAL/MANUAL/SKIP）见 **feishu/BASELINE.md**；
 > 本批只新增 6 例，覆盖其中 24 条 GUI 可自动化记录。
 > 被测 build 升级到 09-16（新增 Fit 相机钮 / FilamentColorDialog / 净化器
 > 模板 / 高流量喷嘴 UI）。基建变化见下方「09-17 基建事实」。
@@ -205,7 +205,7 @@ MANUAL/OUT-OF-SCOPE（联机 #25–#38、更新 #65–#67、热重启 #10、主�
 🔵 = 脚本实现完毕，随 m8 burst 在客机 suite 通道取证据中（当日在跑）。
 PARTIAL 备注：#59 预览主色=视觉冒烟；#91 TD 值文案、#106 组合遍历、#123
 预设管理器改软化温度、#125 多盘全局辅材冲突（用例步骤自含矛盾）、#137
-flow 标志参数遍历 —— 处置理由逐条见 FEISHU_BASELINE.md。
+flow 标志参数遍历 —— 处置理由逐条见 feishu/BASELINE.md。
 
 #### 09-17 基建事实（新增，编码进 harness 的坑）
 

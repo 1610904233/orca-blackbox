@@ -460,7 +460,7 @@ def main() -> int:
                        and pb.get("DELAY_OFF") == "0")
             else f"FAIL (vitr={vb}, params={pb})")
 
-        # 保温档（>70）由用户手工 gcode 验证（242_FINDINGS F-8：
+        # 保温档（>70）由用户手工 gcode 验证（docs/reports/242/FINDINGS.md F-8：
         # (80,100) -> MODE=3/45/600），自动化路径被三重交互墙挡住
         # （编辑器单次可用 / 预设编辑不持久化 / 高低温混用拦截切片），
         # 不在用例内重试——A/B 两门即官方分档规则的可自动化覆盖面。

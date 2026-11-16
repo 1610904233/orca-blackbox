@@ -46,7 +46,7 @@ def load_records() -> tuple[dict[str, str], dict[str, str]]:
 
 def load_dispositions() -> dict[str, str]:
     out: dict[str, str] = {}
-    for line in (ROOT / "FEISHU_BASELINE.md").read_text(encoding="utf-8").splitlines():
+    for line in (ROOT / "docs" / "feishu" / "BASELINE.md").read_text(encoding="utf-8").splitlines():
         if not line.startswith("|"):
             continue
         c = [x.strip() for x in line.strip().strip("|").split("|")]

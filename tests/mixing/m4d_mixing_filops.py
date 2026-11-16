@@ -31,7 +31,7 @@
 #
 # Scope / stale-table notes:
 #   - 表1 #47/#46 match the current build (no stale rows in
-#     FEISHU_MAPPING.md for these records).
+#     docs/feishu/MAPPING.md for these records).
 #   - #47b registers the scheme on the CURRENT last filament (id derived
 #     from the live count after #47a, i.e. F4, not a literal table id); the
 #     row-2 popup is driven by index and self-verified through the

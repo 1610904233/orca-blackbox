@@ -146,7 +146,7 @@ def main() -> int:
 
         # (row presets, expect_blocked, record refs) — expectations from
         # the CURRENT filament_compatibility.json; stale-table notes in
-        # FEISHU_MAPPING.md
+        # docs/feishu/MAPPING.md
         PLA, PETG, ABS, TPU = ("Generic PLA", "Generic PETG",
                                "Generic ABS", "Generic TPU")
         BVOH, PVA, PA, PC, ASA = ("Generic BVOH", "Generic PVA",

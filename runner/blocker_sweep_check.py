@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """blocker_sweep_check.py — deterministic check of the launch boot-blocker
-sweep mechanics (PITFALLS_0901.md 19, launcher.sweep_boot_blockers).
+sweep mechanics (docs/PITFALLS.md 19, launcher.sweep_boot_blockers).
 
 Why not a real Orca boot: the incident dialog (MsgUpdateConfig) is driven by
 the preset-updater feed (https://api.bambulab.com — not conf-stubbable), and

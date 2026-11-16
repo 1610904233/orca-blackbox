@@ -15,7 +15,7 @@ splash as the largest window and walks 27 Panes of nothing). Outputs:
   C:\\coil\\uia_probe_compact.json   everything except the deep main-tree dump
   C:\\coil\\uia_probe_report.txt     ASCII-only human summary (safe over GBK relay)
 
-Runs under the INTERACTIVE scheduled task 'uia_probe' (PITFALLS_0901.md 18.7:
+Runs under the INTERACTIVE scheduled task 'uia_probe' (docs/PITFALLS.md 18.7:
 PS Direct cannot see the desktop; UIA needs the interactive session). Needs
 pywinauto on the guest python — hv_uia_probe.ps1 installs it first.
 
@@ -37,7 +37,7 @@ CLI modes (docs/UIA_EVAL_0903.md 5.1/5.2/5.3 evidence):
            first-level buttons (scene-① evidence, UIA_EVAL 5.1). Exits
            after the scan; no tree walk, nothing is clicked.
   --wizard  keep the modal Setup Wizard UP (the launcher sweep's
-            BLOCKER_TITLES do not match it — PITFALLS_0901.md 19.1) and grade
+            BLOCKER_TITLES do not match it — docs/PITFALLS.md 19.1) and grade
             the UIA channel against its wxWebView HTML content: re-rooted
             RawViewWalker walk + interactive-element pattern table (L1; the
             web a11y tree builds lazily — poll-rewalks precede any negative
@@ -723,7 +723,7 @@ def dialog_sample_run(session: Any, desktop: Any, main_hwnd: int,
     dismiss_blockers=False) so the dialog stays up; the modal Setup
     Wizard is dismissed first (m3-proven WM_CLOSE) because it blocks the
     post-init chain that would produce the dialog (boot_probe census
-    v2, PITFALLS_0901.md 19.1). Then poll-WALK the main window subtree
+    v2, docs/PITFALLS.md 19.1). Then poll-WALK the main window subtree
     (owned dialogs attach under the main frame — the wizard precedent)
     until the 'Configuration update' MsgUpdateConfig toplevel with its
     buttons shows. Nothing is clicked.

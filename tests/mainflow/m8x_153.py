@@ -375,7 +375,7 @@ def main() -> int:
             picked = m8b.pick_official_card(session, dlg)
             ok_ok = m8.close_dialog_by_button(dlg, "OK")
         else:
-            # 2.4.2（242_FINDINGS F-9）：非 Snapmaker 预设的 chip 弹的是
+            # 2.4.2（docs/reports/242/FINDINGS.md F-9）：非 Snapmaker 预设的 chip 弹的是
             # Windows 标准取色器（'Please choose the filament color'）而非
             # 官方色卡库——直接在标准取色器里选基础色格 + OK，换色判定
             # （前后 swatch rgb + gcode filament_colour）口径不变。

@@ -58,7 +58,7 @@ push_verify / guest_run relay loop; see `runner/README.md`.
 
 全部需要真实设备（云联/局域网发现、绑定、PIN 码、打印控制、监控摄像头、
 打印头/热床/LED/风扇控制）：#25–#38。本仓为纯黑盒 GUI 套件，无设备桩，
-设备栈联测走白盒 `ORCA_GUI_TEST_MODE=network` 通道（BLACKBOX_CASES.md）。
+设备栈联测走白盒 `ORCA_GUI_TEST_MODE=network` 通道（../BLACKBOX_CASES.md）。
 
 ## 软件更新（ORCA 部分 #65–#67）— MANUAL
 

@@ -21,7 +21,7 @@
 #     with 2 rows; with an all-PLA table the default F1+F2 pair is
 #     same-type -> no compat banner, OK enabled.
 #
-# Stale-table note (FEISHU_MAPPING.md):
+# Stale-table note (docs/feishu/MAPPING.md):
 #   - 表1 #41 says the mix cap is 32; the current build caps at 64
 #     (libslic3r.h:68). The record's INTENT — at the cap the add button is
 #     greyed out, deleting one recovers it — is asserted against 64.

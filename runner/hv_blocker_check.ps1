@@ -1,7 +1,7 @@
 # hv_blocker_check.ps1 — sync the guest checkout, then register + start the
 # INTERACTIVE scheduled task 'blocker_check' that runs
 # runner\blocker_sweep_check.py in the guest desktop session (window
-# enumeration needs the interactive desktop — PITFALLS_0901.md 18.7).
+# enumeration needs the interactive desktop — docs/PITFALLS.md 18.7).
 #
 # Relay-safe BY CONSTRUCTION: no exit/return/throw (18.6); progress goes to
 # the pipeline as Write-Output — the daemon does NOT capture Write-Host.

@@ -72,7 +72,7 @@ class AppSession:
         self.close()
 
 
-# --- boot blocker dismissal (PITFALLS_0901.md 19) ---------------------------
+# --- boot blocker dismissal (docs/PITFALLS.md 19) ---------------------------
 # Online update prompts pop above the main frame during boot and eat every
 # subsequent click (measured 09-03: the preset-pack "Configuration update"
 # dialog poisoned a full 36-case batch to PASS=14 FAIL=22, hot rerun 1/21).
@@ -125,7 +125,7 @@ def sweep_boot_blockers(pid: int, main_hwnd: int, budget_s: float = 25.0,
     title containing 'wizard'. WM_CLOSE on it is app-safe on this build
     (census v2 09-03: close -> app_alive=True; it unblocks the post-init
     chain, so the t=15s update popups it was suppressing now appear and are
-    covered by this same sweep — PITFALLS_0901.md 19.1; structured channel
+    covered by this same sweep — docs/PITFALLS.md 19.1; structured channel
     evidence: docs/UIA_EVAL_0903.md §七). The 1s settle before closing lets
     the wizard HTML finish showing (closing a half-shown wizard closed
     nothing in the 09-03 dialog-sample runs).
@@ -169,11 +169,11 @@ def launch(exe: Path | str | None = None,
     `dismiss_blockers` runs sweep_boot_blockers() inside the boot window
     (default 25s after window discovery) — online update prompts that pop
     during boot are WM_CLOSEd before the case can interact
-    (PITFALLS_0901.md 19); the census tools pass dismiss_blockers=False to
+    (docs/PITFALLS.md 19); the census tools pass dismiss_blockers=False to
     observe raw boots.
     `dismiss_wizard` additionally WM_CLOSEs the first-run Setup Wizard in
     the same sweep window (opt-in; case drivers pass True — the wizard
-    modally blocks the post-init chain, PITFALLS_0901.md 19.1). Defaults
+    modally blocks the post-init chain, docs/PITFALLS.md 19.1). Defaults
     False so census/probe boots stay raw.
     `session.blockers` carries the dismissed titles for forensics.
     """

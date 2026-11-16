@@ -68,7 +68,7 @@ if ($OnlyFailed) {
 # rerun does not pay the throwaway pass.
 $warmup = if ($Warmup) { $true } elseif ($NoWarmup) { $false } else { -not $explicitCases }
 
-# Batch discipline preflight — this block IS the PITFALLS_0901.md §15
+# Batch discipline preflight — this block IS the docs/PITFALLS.md §15
 # checklist printout (README top section points here; keep in sync by hand).
 Write-Host "[preflight] PITFALLS 0901 §15 checklist:"
 Write-Host "   (1) relay heartbeat: relay_alive.txt fresh (it refreshes on command completion only)"

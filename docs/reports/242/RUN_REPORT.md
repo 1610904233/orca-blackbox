@@ -14,7 +14,7 @@ m8x_191 的红是批次内进程中止（stdout 管道堵塞误判挂起后被�
 
 ## 11 红分类
 
-### 产品侧（6 例——见 242_FINDINGS.md）
+### 产品侧（6 例——见 FINDINGS.md）
 
 | 用例 | 发现 |
 |---|---|
@@ -47,7 +47,7 @@ m8x_191 的红是批次内进程中止（stdout 管道堵塞误判挂起后被�
 - `464799f` dropdown 子菜单加速键路由（WM_COMMAND 双目标实证死亡）+ boot 150s
 - `663d56b` 归档节流旋钮（ORCA_BB_SHOT_INTERVAL，批量 10s，DWM 风暴缓解）
 - `a33213b` m2 工具路径比值门 2.0→1.5（F-5 取证定案）
-- `fe9b5f8/b55f5f7/88ccf51` 242_FINDINGS.md F-1..F-8
+- `fe9b5f8/b55f5f7/88ccf51` FINDINGS.md F-1..F-8
 
 ## 过程要点
 

@@ -104,7 +104,7 @@ gizmo 工具条与 tooltip、（自绘）菜单条。
 
 ## 六、纯度边界说明
 
-BLACKBOX_CASES 的观测通道约定为 截图/窗口消息/文件系统/对话框。UIA 查询
+BLACKBOX_CASES.md 的观测通道约定为 截图/窗口消息/文件系统/对话框。UIA 查询
 本质是窗口消息家族的只读 accessibility 查询（WM_GETOBJECT），不读进程内存、
 不挂运行时钩子——与现有 WM_* 通道同族；但"结构化控件树"确实超出既有四通道
 的字面范围，这正是 STRUCTURING_PLAN 要求"先评估再开口子"的原因。本评估

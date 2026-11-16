@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # probe_242_slotfallback.py — 2.4.2d 上冒烟 m7.find_slot 的固定几何回退
-# （HANDOFF_242_ADAPT §4 第 1 项）。
+# （docs/handoffs/242/adapt.md §4 第 1 项）。
 #
 # 依据：2.4.2 工具条 tooltip 全灭（probe_242_tipwin/tipnudge/tooltip 三种
 # 挂法实证），m7.find_slot 已加 STATIC_SLOTS_241 静态表回退。本探针逐槽做
