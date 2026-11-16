@@ -348,6 +348,12 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m7", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m7t73_macos_new_create_delete": {
+        "file": "tests/engine/macos_pilot/m7t73_new_create_delete.py",
+        "windows_case": "m7t73",
+        "milestone": "m7", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
 }
 for _name, _meta in MACOS_BASELINE.items():
     _meta.setdefault("platforms", ("macos",))
