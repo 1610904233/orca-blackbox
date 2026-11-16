@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
-# m4a_mixing_gates.py — macOS pilot: 1-filament entry gate (PARTIAL).
-# feishu: none  (macOS pilot probe; corresponds to the enabled Windows
-#         m4a_mixing_gates, not registered in cases.py yet)
+# m4a_mixing_gates.py — macOS port: Feishu #31-#35 mixing entry gates.
+# feishu: none  (macOS port; corresponds to the enabled Windows
+#         m4a_mixing_gates, registered in cases.MACOS_BASELINE)
 #
-# Covered (partial):
-#   - delete physical filaments down to 1 via the Filaments-row trash button
-#   - the "Color Mixing" row disappears at n_physical < 2
-#   - Color Mixing Match entry pops the one-filament prompt
-#   - the batch dialog does NOT open
-#   - prompt dismissable via "Got it"
+# Covered:
+#   - #31 delete to 1: Color Mixing row hidden; entry pops the one-filament
+#         prompt; batch dialog does NOT open; Got it dismisses
+#   - #32 add back to 3: entry opens; Manual rows = 3; Cancel closes
+#   - #33 add to 6: Manual rows clamp to 4; Cancel closes
+#   - #34/#35 Phase B: standard 5-filament + scheme entry opens; Cancel
 #
-# NOT covered (full m4a):
-#   - crafted fixture with mixed definitions stripped (this pilot uses the
-#     standard mixed fixture and handles the resulting delete Warning)
-#   - add back to 3 / Manual rows=3; add to 6 / rows clamp to 4; Cancel
-#   - Phase B 5-filament + scheme entry
+# Fixture note: Phase A uses the standard mixed fixture (scheme present) and
+# handles the "Mixed Filament 4" delete Warning; the Windows case uses a
+# crafted fixture with mixed definitions stripped to avoid that warning.
+# The gated assertions are identical.
 #
 # Artifacts: artifacts/mac/pilot/m4a/{*.png,report.log,result.json}.
 
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 import time
 import traceback
@@ -92,6 +92,84 @@ def _color_mixing_row_visible(driver, win) -> bool:
     return False
 
 
+def _add_one(driver, win) -> None:
+    driver.click(win.rect.x + 390, win.rect.y + 374)
+
+
+def _wait_material_count(driver, win, want: int, timeout_s: float = 8.0):
+    deadline = time.monotonic() + timeout_s
+    last = -1
+    while time.monotonic() < deadline:
+        last, _mats = _count_materials(driver.capture(win))
+        if last == want:
+            return last
+        time.sleep(0.5)
+    return last
+
+
+def _batch_windows(driver, app, main_win):
+    return [w for w in driver.windows_for_pid(app.pid)
+            if w.id != main_win.id and w.on_screen
+            and "color mixing match" in (w.title or "").lower()
+            and w.rect.h > 300]
+
+
+def _manual_rows(frame) -> int:
+    words = recognize_text(frame, Rect(380, 180, 460, 140))
+    return sum(1 for w in words
+               if any(k in w.text for k in ("PLA", "PETG", "Generic")))
+
+
+def _open_manual(driver, win):
+    """Entry -> batch dialog -> Match Mode Manual.  Returns (frame, words)."""
+    frame = driver.capture(win)
+    words = recognize_text(frame)
+    entry = next((w for w in words
+                  if "color mixing match" in w.text.lower()
+                  and w.rect.x < 500), None)
+    if entry is None:
+        print("[m4a] entry not found for Manual step")
+        return None
+    driver.click(win.rect.x + entry.rect.center[0],
+                 win.rect.y + entry.rect.center[1])
+    time.sleep(1.5)
+    frame2 = driver.capture(win)
+    words2 = recognize_text(frame2)
+    auto = find_text(words2, "auto")
+    if auto is None:
+        print("[m4a] Auto combo not found")
+        return None
+    driver.click(win.rect.x + auto.rect.center[0],
+                 win.rect.y + auto.rect.center[1])
+    time.sleep(0.8)
+    screen = driver.capture_screen().crop(win.rect)
+    manual = find_text(recognize_text(screen), "manual")
+    if manual is None:
+        print("[m4a] Manual popup item not found")
+        return None
+    driver.click(win.rect.x + manual.rect.center[0],
+                 win.rect.y + manual.rect.center[1])
+    time.sleep(1.2)
+    frame3 = driver.capture(win)
+    words3 = recognize_text(frame3)
+    return frame3, words3
+
+
+def _cancel_dialog(driver, app, win) -> bool:
+    frame = driver.capture(win)
+    words = recognize_text(frame)
+    cancel = next((w for w in words
+                   if w.text.strip() == "Cancel"
+                   and w.rect.x > 400 and w.rect.y > 700), None)
+    if cancel is None:
+        print("[m4a] Cancel button not found")
+        return False
+    driver.click(win.rect.x + cancel.rect.center[0],
+                 win.rect.y + cancel.rect.center[1])
+    time.sleep(1.2)
+    return not _batch_windows(driver, app, win)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--exe", default=None)
@@ -103,8 +181,11 @@ def main() -> int:
     args = ap.parse_args()
 
     OUT.mkdir(parents=True, exist_ok=True)
+    # Fresh profile: this pilot depends on the fixture's physical count (5).
+    if args.datadir.exists():
+        shutil.rmtree(args.datadir, ignore_errors=True)
     rep = Reporter(OUT)
-    rep.log("=== m4a macOS 1-filament gate pilot (PARTIAL) ===")
+    rep.log("=== m4a macOS mixing-gates (#31-#35) ===")
     rep.log(f"datadir={args.datadir} model={args.model}")
 
     driver = None
@@ -129,6 +210,20 @@ def main() -> int:
         rep.check("initial filaments >= 2", initial_n >= 2,
                   f"count={initial_n} mats={initial_mats}")
         rep.check("Color Mixing row visible", _color_mixing_row_visible(driver, win))
+
+        # --- Phase B (#34/#35): standard 5-filament + scheme entry ------
+        phase_b = _open_manual(driver, win)
+        if phase_b is None:
+            rep.check("#34/#35 entry opens normally", False,
+                      "Manual step not reached")
+            rep.check("#34/#35 Cancel closes", False, "not reached")
+        else:
+            _fb, _wb = phase_b
+            bwins = _batch_windows(driver, app, win)
+            rep.check("#34/#35 entry opens normally", bool(bwins),
+                      f"windows={[(w.id, w.rect.to_xywh()) for w in bwins]}")
+            rep.check("#34/#35 Cancel closes",
+                      _cancel_dialog(driver, app, win))
 
         # Delete physical filaments down to 1.  The standard mixed fixture
         # has a scheme, so deleting a referenced filament raises a Warning;
@@ -199,6 +294,49 @@ def main() -> int:
         else:
             rep.check("prompt dismissable", False, "Got it not found")
 
+        # --- #32: add back to 3 -> Manual rows = 3 -> Cancel -------------
+        n3, _ = _count_materials(driver.capture(win))
+        for _ in range(8):
+            if n3 >= 3:
+                break
+            _add_one(driver, win)
+            n3 = _wait_material_count(driver, win, min(n3 + 1, 3))
+        rep.check("#32 add back to 3", n3 == 3, f"count={n3}")
+        manual3 = _open_manual(driver, win)
+        if manual3 is None:
+            rep.check("#32 Manual rows == 3", False, "Manual mode not reached")
+            rep.check("#32 Cancel closes", False, "not reached")
+        else:
+            frame3, words3 = manual3
+            rows3 = _manual_rows(frame3)
+            is_manual = find_text(words3, "manual") is not None
+            rep.check("#32 Manual rows == 3",
+                      is_manual and rows3 == 3,
+                      f"manual={is_manual} rows={rows3}")
+            rep.check("#32 Cancel closes", _cancel_dialog(driver, app, win))
+
+        # --- #33: add to 6 -> Manual rows clamp to 4 -> Cancel -----------
+        n6, _ = _count_materials(driver.capture(win))
+        for _ in range(8):
+            if n6 >= 6:
+                break
+            _add_one(driver, win)
+            n6 = _wait_material_count(driver, win, min(n6 + 1, 6))
+        rep.check("#33 add to 6", n6 == 6, f"count={n6}")
+        manual6 = _open_manual(driver, win)
+        if manual6 is None:
+            rep.check("#33 Manual rows clamp to 4", False,
+                      "Manual mode not reached")
+            rep.check("#33 Cancel closes", False, "not reached")
+        else:
+            frame6, words6 = manual6
+            rows6 = _manual_rows(frame6)
+            is_manual6 = find_text(words6, "manual") is not None
+            rep.check("#33 Manual rows clamp to 4",
+                      is_manual6 and rows6 == 4,
+                      f"manual={is_manual6} rows={rows6}")
+            rep.check("#33 Cancel closes", _cancel_dialog(driver, app, win))
+
         rep.check("app alive", app.alive())
     except Exception as exc:  # noqa: BLE001
         rep.check("unexpected", False, f"{type(exc).__name__}: {exc}")
@@ -211,11 +349,15 @@ def main() -> int:
                 rep.check("close", False, f"{type(exc).__name__}: {exc}")
         elif app is not None:
             rep.log(f"[INFO] --keep: app pid={app.pid} left running")
-        exit_code = rep.save({"partial": True,
-                              "covered": ["#31 one-filament gate"],
-                              "not_covered": ["#32 add-3/manual rows",
-                                              "#33 add-6/clamp",
-                                              "#34/#35 Phase B"]})
+        exit_code = rep.save({"partial": False,
+                              "covered": ["#31 one-filament gate",
+                                          "#32 add-3/manual rows",
+                                          "#33 add-6/clamp",
+                                          "#34/#35 Phase B"],
+                              "fixture_note": "Phase A uses the standard mixed "
+                                              "fixture with scheme (delete Warning "
+                                              "handled); Windows uses a stripped "
+                                              "fixture to avoid that warning"})
     return exit_code
 
 

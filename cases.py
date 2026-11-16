@@ -324,6 +324,12 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m3", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m4a_macos_mixing_gates": {
+        "file": "tests/engine/macos_pilot/m4a_mixing_gates.py",
+        "windows_case": "m4a_mixing_gates",
+        "milestone": "m4", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
 }
 for _name, _meta in MACOS_BASELINE.items():
     _meta.setdefault("platforms", ("macos",))
