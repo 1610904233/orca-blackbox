@@ -55,6 +55,7 @@ MACOS_ONLY_NAMES = {
     "tests/engine/m1_macos_tab_switch.py",
     "tests/engine/m2_macos_slice_chain.py",
     "tools/run_macos_smoke.sh",
+    "tools/run_macos_baseline.sh",
 }
 
 WINDOWS_STATIC_NAMES = {

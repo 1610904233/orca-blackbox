@@ -25,6 +25,10 @@ Rules:
 - MACOS_SMOKE: macOS-only smoke suite (m0/m1/m2), registered separately
   from CASES so the Windows 126/74 registry and Feishu mapping stay
   untouched.  Run it with tools/run_macos_smoke.sh.
+- MACOS_BASELINE: macOS ports of enabled Windows baseline cases.  Kept
+  separate from CASES so the Windows suite never tries to run them; each
+  entry names its Windows source in ``windows_case``.  Run it with
+  tools/run_macos_baseline.sh.
 """
 
 from __future__ import annotations
@@ -304,9 +308,32 @@ for _name, _meta in MACOS_SMOKE.items():
     _meta.setdefault("group", "engine")
 
 
+# macOS ports of ENABLED Windows baseline cases (the 74).  These are the
+# first entries; m8a/m4 ports will follow.  They stay out of CASES so the
+# Windows pytest/runner never collects them.
+MACOS_BASELINE: dict[str, dict] = {
+    "m7a_macos_boot_shutdown": {
+        "file": "tests/engine/macos_pilot/m7a_boot_shutdown.py",
+        "windows_case": "m7a_boot_shutdown",
+        "milestone": "m7", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
+    "m3j_macos_mixing_entry": {
+        "file": "tests/engine/macos_pilot/m3j_mixing_entry.py",
+        "windows_case": "m3j_mixing_entry",
+        "milestone": "m3", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
+}
+for _name, _meta in MACOS_BASELINE.items():
+    _meta.setdefault("platforms", ("macos",))
+    _meta.setdefault("group", "engine")
+
+
 def _case_meta(name: str) -> dict:
-    """Metadata for a Windows CASES entry or a macOS MACOS_SMOKE entry."""
-    return CASES.get(name) or MACOS_SMOKE.get(name) or {}
+    """Metadata for a Windows CASES entry or a macOS registry entry."""
+    return (CASES.get(name) or MACOS_SMOKE.get(name)
+            or MACOS_BASELINE.get(name) or {})
 
 
 def normalize_platform(name: str | None) -> str:
@@ -423,8 +450,14 @@ def macos_smoke_cases(enabled_only: bool = True) -> list[str]:
             if not enabled_only or v.get("enabled", True)]
 
 
+def macos_baseline_cases(enabled_only: bool = True) -> list[str]:
+    """macOS ports of enabled Windows baseline cases (MACOS_BASELINE)."""
+    return [k for k, v in MACOS_BASELINE.items()
+            if not enabled_only or v.get("enabled", True)]
+
+
 def macos_case_path(name: str) -> Path | None:
-    v = MACOS_SMOKE.get(name)
+    v = MACOS_SMOKE.get(name) or MACOS_BASELINE.get(name)
     return HERE / v["file"] if v else None
 
 
