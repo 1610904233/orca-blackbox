@@ -330,6 +330,12 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m4", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m8a_macos_fit_view": {
+        "file": "tests/engine/macos_pilot/m8a_fit_view.py",
+        "windows_case": "m8a_fit_view",
+        "milestone": "m8", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
 }
 for _name, _meta in MACOS_BASELINE.items():
     _meta.setdefault("platforms", ("macos",))

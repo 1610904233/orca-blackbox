@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-# m8a_fit_view.py — macOS pilot: Feishu #16-#19 Fit view (partial).
-# feishu: none  (macOS pilot probe; corresponds to the enabled Windows
-#         m8a_fit_view, not registered in cases.py yet)
+# m8a_fit_view.py — macOS port: Feishu #16-#19 Fit view.
+# feishu: none  (macOS port; corresponds to the enabled Windows
+#         m8a_fit_view, registered in cases.MACOS_BASELINE)
 #
-# This pilot covers:
-#   #18 single model selected -> Fit -> zoom_to_selection (hard assertion)
+# Covered:
+#   #18 single model selected -> Fit -> zoom_to_selection (hard)
 #   #19 Select All -> Fit (evidence only, matching the Windows F-11 note)
-#
-# #16/#17 (plate switching + Fit) are NOT covered yet; they need the
-# multi-plate navigation path.  The pilot is therefore explicitly PARTIAL.
+#   #16 switch plate -> Fit -> zoom_to_bed (hard)
+#   #17 switch again -> Fit again (hard)
 #
 # macOS entry: View > "Fit in all view" AXMenuItem (the toolbar Fit button is
 # custom-drawn).  Blob geometry uses OpenCV on the captured BGRA frame.
@@ -19,6 +18,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 import time
 import traceback
@@ -44,6 +44,10 @@ OUT = ARTIFACTS / "pilot" / "m8a"
 DEFAULT_MODEL = HERE / "fixtures" / "snapmates_nonmixed.3mf"
 VIEWPORT = Rect(420, 60, 780, 740)
 MODEL_BLOB_MIN = 800.0
+# Bed-corner candidates in the multi-plate overview (window-relative pixels).
+# Avoid object pixels so the click switches the current plate instead of
+# selecting an object.
+PLATE_CANDIDATES = (("plate2", (750, 270)), ("plate4", (520, 410)))
 
 
 @dataclass(frozen=True)
@@ -123,6 +127,21 @@ def _nearest(blobs: list[Blob], cx: float, cy: float) -> Blob | None:
     return min(blobs, key=lambda b: (b.cx - cx) ** 2 + (b.cy - cy) ** 2)
 
 
+def _plate_switch_fit(driver, win, prev_frame, label, point):
+    """Click a plate bed, then Fit; returns (switch_diff, fit_diff, fit_ok)."""
+    driver.click(win.rect.x + point[0], win.rect.y + point[1])
+    time.sleep(2.0)
+    switched = driver.capture(win)
+    switch_diff = prev_frame.difference(switched)
+    fit_ok = _fit(driver, win)
+    time.sleep(1.8)
+    fitted = driver.capture(win)
+    fit_diff = switched.difference(fitted)
+    switched.save_png(OUT / f"{label}.png")
+    fitted.save_png(OUT / f"{label}_fit.png")
+    return switch_diff, fit_diff, fit_ok, fitted
+
+
 def _centered(blob: Blob) -> bool:
     x0 = VIEWPORT.x + VIEWPORT.w * 0.05
     x1 = VIEWPORT.right - VIEWPORT.w * 0.05
@@ -142,8 +161,12 @@ def main() -> int:
     args = ap.parse_args()
 
     OUT.mkdir(parents=True, exist_ok=True)
+    # Fresh profile: the multi-plate overview and plate candidates are
+    # calibrated on a deterministic boot.
+    if args.datadir.exists():
+        shutil.rmtree(args.datadir, ignore_errors=True)
     rep = Reporter(OUT)
-    rep.log("=== m8a macOS Fit-view pilot (PARTIAL: #18 hard, #19 evidence) ===")
+    rep.log("=== m8a macOS Fit-view (#16-#19) ===")
     rep.log(f"datadir={args.datadir} model={args.model}")
 
     driver = None
@@ -214,6 +237,52 @@ def main() -> int:
         rep.log(f"[INFO] #19 select_all={ok_all} fit={ok_fit2} "
                 f"viewport_diff={diff19:.4f} (evidence only)")
 
+        # --- #16: switch plate -> Fit -> zoom_to_bed -------------------
+        prev = all_frame
+        chosen = None
+        for label, point in PLATE_CANDIDATES:
+            switch_diff, fit_diff, fit_ok, fitted = _plate_switch_fit(
+                driver, win, prev, label, point)
+            rep.log(f"[INFO] #16 {label}: switch_diff={switch_diff:.4f} "
+                    f"fit_diff={fit_diff:.4f} fit_ok={fit_ok}")
+            if switch_diff > 0.01:
+                chosen = (label, point, fitted)
+                rep.check("#16 plate switch", True,
+                          f"{label} diff={switch_diff:.4f}")
+                rep.check("#16 fit after plate",
+                          fit_ok and fit_diff > 0.02,
+                          f"fit_ok={fit_ok} diff={fit_diff:.4f}")
+                break
+        if chosen is None:
+            rep.check("#16 plate switch", False, "no candidate switched")
+            rep.check("#16 fit after plate", False, "not reached")
+
+        # --- #17: switch again -> Fit again ----------------------------
+        if chosen is not None:
+            prev = chosen[2]
+            others = [c for c in PLATE_CANDIDATES if c[0] != chosen[0]]
+            switched2 = False
+            for label, point in others:
+                switch_diff, fit_diff, fit_ok, fitted = _plate_switch_fit(
+                    driver, win, prev, label, point)
+                rep.log(f"[INFO] #17 {label}: switch_diff={switch_diff:.4f} "
+                        f"fit_diff={fit_diff:.4f} fit_ok={fit_ok}")
+                if switch_diff > 0.01:
+                    switched2 = True
+                    rep.check("#17 second plate switch", True,
+                              f"{label} diff={switch_diff:.4f}")
+                    rep.check("#17 second fit",
+                              fit_ok and fit_diff > 0.02,
+                              f"fit_ok={fit_ok} diff={fit_diff:.4f}")
+                    break
+            if not switched2:
+                rep.check("#17 second plate switch", False,
+                          "no second candidate switched")
+                rep.check("#17 second fit", False, "not reached")
+        else:
+            rep.check("#17 second plate switch", False, "not reached")
+            rep.check("#17 second fit", False, "not reached")
+
         rep.check("app alive", app.alive())
     except Exception as exc:  # noqa: BLE001
         rep.check("unexpected", False, f"{type(exc).__name__}: {exc}")
@@ -226,10 +295,9 @@ def main() -> int:
                 rep.check("close", False, f"{type(exc).__name__}: {exc}")
         elif app is not None:
             rep.log(f"[INFO] --keep: app pid={app.pid} left running")
-        exit_code = rep.save({"partial": True,
-                              "covered": ["#18"],
-                              "evidence_only": ["#19"],
-                              "not_covered": ["#16", "#17"]})
+        exit_code = rep.save({"partial": False,
+                              "covered": ["#18", "#16", "#17"],
+                              "evidence_only": ["#19"]})
     return exit_code
 
 
