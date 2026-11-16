@@ -22,6 +22,9 @@ Rules:
   keeps every existing case Windows-only; a future macOS-migrated case
   opts in with platforms=("windows", "macos").  ``enabled`` stays the
   authoritative on/off switch — platform filtering never changes it.
+- MACOS_SMOKE: macOS-only smoke suite (m0/m1/m2), registered separately
+  from CASES so the Windows 126/74 registry and Feishu mapping stay
+  untouched.  Run it with tools/run_macos_smoke.sh.
 """
 
 from __future__ import annotations
@@ -276,6 +279,36 @@ for _k, _v in CASES.items():
     _v.setdefault("platforms", DEFAULT_PLATFORMS)
 
 
+# macOS-only smoke suite.  Deliberately separate from CASES: the Windows
+# registry (126 entries / 74 enabled), Feishu mapping and soft-off logic must
+# not change just because the macOS chains exist.
+MACOS_SMOKE: dict[str, dict] = {
+    "m0_macos_boot_check": {
+        "file": "tests/engine/m0_macos_boot_check.py",
+        "milestone": "m0", "tier": "A",
+        "suite": "macos_smoke", "platforms": ("macos",), "enabled": True,
+    },
+    "m1_macos_tab_switch": {
+        "file": "tests/engine/m1_macos_tab_switch.py",
+        "milestone": "m1", "tier": "A",
+        "suite": "macos_smoke", "platforms": ("macos",), "enabled": True,
+    },
+    "m2_macos_slice_chain": {
+        "file": "tests/engine/m2_macos_slice_chain.py",
+        "milestone": "m2", "tier": "A",
+        "suite": "macos_smoke", "platforms": ("macos",), "enabled": True,
+    },
+}
+for _name, _meta in MACOS_SMOKE.items():
+    _meta.setdefault("platforms", ("macos",))
+    _meta.setdefault("group", "engine")
+
+
+def _case_meta(name: str) -> dict:
+    """Metadata for a Windows CASES entry or a macOS MACOS_SMOKE entry."""
+    return CASES.get(name) or MACOS_SMOKE.get(name) or {}
+
+
 def normalize_platform(name: str | None) -> str:
     """Canonical platform name ('windows' / 'macos' / unchanged)."""
     if not name:
@@ -286,7 +319,7 @@ def normalize_platform(name: str | None) -> str:
 
 def case_platforms(name: str) -> tuple[str, ...]:
     """Platforms a registered case declares (default: Windows-only)."""
-    return tuple(CASES.get(name, {}).get("platforms", DEFAULT_PLATFORMS))
+    return tuple(_case_meta(name).get("platforms", DEFAULT_PLATFORMS))
 
 
 def supports_platform(name: str, platform: str | None) -> bool:
@@ -313,7 +346,7 @@ def enabled_cases_for(platform: str, suite: str | None = None) -> list[str]:
 
 def group_label(name: str) -> str:
     """用例所属分组的飞书二级分类中文名（无映射的为 engine 的说明文案）。"""
-    g = CASES.get(name, {}).get("group", "engine")
+    g = _case_meta(name).get("group", "engine")
     return GROUP_LABELS.get(g, g)
 
 
@@ -345,7 +378,7 @@ def feishu_refs(name: str) -> list[str] | None:
 def summary(name: str) -> str:
     """Live-extract the case's summary from its line-2 header comment
     ("# <stem>.py — ..."); empty string when the script has none."""
-    meta = CASES.get(name)
+    meta = _case_meta(name)
     if not meta:
         return ""
     try:
@@ -380,7 +413,18 @@ def baseline_cases() -> list[str]:
 
 
 def case_path(name: str) -> Path | None:
-    v = CASES.get(name)
+    v = _case_meta(name)
+    return HERE / v["file"] if v else None
+
+
+def macos_smoke_cases(enabled_only: bool = True) -> list[str]:
+    """macOS-only smoke case names (registered in MACOS_SMOKE)."""
+    return [k for k, v in MACOS_SMOKE.items()
+            if not enabled_only or v.get("enabled", True)]
+
+
+def macos_case_path(name: str) -> Path | None:
+    v = MACOS_SMOKE.get(name)
     return HERE / v["file"] if v else None
 
 
