@@ -1,0 +1,141 @@
+"""Shared helpers for the macOS Phase C chain probes.
+
+These probes are standalone (not registered in cases.py).  They use only the
+platform-neutral ``harness.platform`` API, so they also serve as examples for
+future macOS case migrations.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+import time
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parents[2]  # repo root
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
+
+from harness.platform.base import Frame, Rect  # noqa: E402
+
+ARTIFACTS = HERE / "artifacts" / "mac"
+
+
+class Reporter:
+    def __init__(self, out_dir: Path):
+        self.out_dir = Path(out_dir)
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        self.lines: list[str] = []
+        self.checks: list[dict] = []
+
+    def log(self, text: str = "") -> None:
+        print(text)
+        self.lines.append(text)
+
+    def check(self, name: str, ok: bool, detail: str = "") -> bool:
+        state = "PASS" if ok else "FAIL"
+        self.log(f"[{state}] {name}" + (f": {detail}" if detail else ""))
+        self.checks.append({"name": name, "ok": bool(ok),
+                            "detail": detail, "state": state})
+        return ok
+
+    def save(self, extra: dict | None = None) -> int:
+        ok = all(c["ok"] for c in self.checks)
+        code = 0 if ok else 2
+        self.log(f"=== exit {code} ===")
+        (self.out_dir / "report.log").write_text(
+            "\n".join(self.lines) + "\n", encoding="utf-8")
+        payload = {"checks": self.checks, "ok": ok, "exit_code": code}
+        if extra:
+            payload.update(extra)
+        (self.out_dir / "result.json").write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8")
+        return code
+
+
+def launch_and_focus(driver, datadir: Path, model: Path | None = None,
+                     timeout_s: float = 150.0, log_path: Path | None = None):
+    """Launch with an isolated datadir and bring the app forward for real clicks."""
+    app = driver.launch(datadir=datadir, model=model, timeout_s=timeout_s,
+                        dismiss_wizard=True, log_path=log_path)
+    win = app.extra.get("window") or driver.find_main_window(app.pid, timeout_s=30)
+    driver.set_foreground(win)
+    time.sleep(0.8)
+    driver.window_rect(win)  # refresh geometry after activation
+    return app, win
+
+
+def close_app(driver, app, win) -> bool:
+    """Close the window, wait, then terminate; returns True when gone."""
+    try:
+        driver.close_window(win)
+        deadline = time.monotonic() + 15.0
+        while time.monotonic() < deadline and app.alive():
+            time.sleep(0.3)
+    except Exception:
+        pass
+    if app.alive():
+        app.terminate()
+        time.sleep(0.5)
+    fh = app.extra.get("log_fh")
+    if fh:
+        try:
+            fh.close()
+        except Exception:
+            pass
+    return not app.alive()
+
+
+def frame_ok(frame: Frame, min_nonblack: float = 0.01,
+             min_luma: float = 2.0) -> tuple[bool, dict]:
+    stats = frame.stats()
+    ok = (stats["nonblack_fraction"] >= min_nonblack
+          and stats["mean_luma"] > min_luma
+          and (stats["max_luma"] - stats["min_luma"]) > 4.0)
+    return ok, stats
+
+
+def teal_fraction(frame: Frame, rect: Rect) -> float:
+    """Fraction of teal pixels (active wx notebook tab colour 0,150,136)."""
+    crop = frame.crop(rect)
+    data = crop.data
+    n = teal = 0
+    for i in range(0, len(data), 4):
+        b, g, r = data[i], data[i + 1], data[i + 2]
+        n += 1
+        if g > 110 and g > r + 40 and g > b + 5:
+            teal += 1
+    return teal / n if n else 0.0
+
+
+def dismiss_dialogs(driver, app, main_win, seen: set | None = None) -> set:
+    """Press Confirm/OK on filament-grouping / warning dialogs if they appear."""
+    seen = seen if seen is not None else set()
+    try:
+        windows = driver.windows_for_pid(app.pid)
+    except Exception:
+        return seen
+    for win in windows:
+        if win.id == main_win.id or not win.on_screen or win.rect.area < 1000:
+            continue
+        if win.id in seen:
+            continue
+        title = (win.title or "").lower()
+        if not any(k in title for k in ("filament", "group", "confirm",
+                                        "slice", "warning", "preset")):
+            continue
+        seen.add(win.id)
+        print(f"[mac_common] dialog: id={win.id} title={win.title!r}")
+        for label in ("Confirm", "OK", "Yes", "Got it", "Continue", "Close"):
+            try:
+                btn = driver.find_control(win, role="AXButton", title=label,
+                                          timeout_s=0)
+            except Exception:
+                btn = None
+            if btn is not None:
+                print(f"[mac_common] press {label!r}: "
+                      f"{driver.click_control(btn)}")
+                time.sleep(1.0)
+                break
+    return seen
