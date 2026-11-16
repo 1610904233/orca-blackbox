@@ -37,6 +37,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from typing import Sequence
 
 import AppKit
 import ApplicationServices as AS
@@ -872,6 +873,171 @@ class MacOSDriver:
             self.send_key("a", modifiers=("cmd",))
             self.send_text(text)
             return True
+        return False
+
+    # ------------------------------------------------------------------
+    # native file dialogs (NSSavePanel / NSOpenPanel)
+    # ------------------------------------------------------------------
+
+    #: Panel titles seen on this build.  The save panel is a separate
+    #: CGWindow (AXSubrole AXDialog, layer > 0), not an AXSheet child.
+    _SAVE_PANEL_TITLES = ("save", "save as", "save as…", "export")
+    _OPEN_PANEL_TITLES = ("open", "open...", "open…", "import")
+
+    def find_file_dialog(self, pid: int, *, titles: Sequence[str],
+                         exclude_id: int | None = None,
+                         timeout_s: float = 12.0) -> WindowRef | None:
+        """Wait for a native file panel window and return it with AX attached."""
+        wanted = {t.strip().lower() for t in titles}
+        deadline = time.monotonic() + max(0.0, timeout_s)
+        while True:
+            for win in self.windows_for_pid(pid):
+                if not win.on_screen:
+                    continue
+                if exclude_id is not None and win.id == exclude_id:
+                    continue
+                if (win.title or "").strip().lower() not in wanted:
+                    continue
+                if win.handle is None:
+                    self._attach_ax_window(win)
+                if win.handle is not None:
+                    return win
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(0.25)
+
+    def _dialog_widgets(self, panel: WindowRef):
+        """(filename field, Save button, Cancel button, Replace button)."""
+        field = save = cancel = replace = None
+        for elem in self._walk(panel.handle, max_depth=12):
+            role = _ax_str(elem, AS.kAXRoleAttribute)
+            if role == "AXTextField":
+                title = _ax_str(elem, AS.kAXTitleAttribute)
+                value = _ax_copy(elem, AS.kAXValueAttribute)
+                content = f"{title} {value if isinstance(value, str) else ''}".strip()
+                low = content.lower()
+                # Exclude the tag editor and the search field; the filename
+                # field is the remaining text field with content.
+                if content and "tag editor" not in low and "search" not in low:
+                    field = elem
+            elif role == "AXButton":
+                title = _ax_str(elem, AS.kAXTitleAttribute).strip().lower()
+                if title in ("save", "save as", "open", "import", "export"):
+                    save = elem
+                elif title == "cancel":
+                    cancel = elem
+                elif title in ("replace", "yes"):
+                    replace = elem
+        return field, save, cancel, replace
+
+    @staticmethod
+    def _panel_still_open(pid: int, panel_id: int) -> bool:
+        info = Quartz.CGWindowListCopyWindowInfo(
+            Quartz.kCGWindowListOptionIncludingWindow, panel_id) or []
+        for raw in info:
+            try:
+                if int(raw.get("kCGWindowNumber", -1)) == int(panel_id):
+                    return bool(raw.get("kCGWindowIsOnscreen", False))
+            except Exception:
+                continue
+        return False
+
+    def save_file_dialog(self, win: WindowRef, path: Path | str, *,
+                         default_dir: Path | str | None = None,
+                         titles: Sequence[str] | None = None,
+                         timeout_s: float = 25.0) -> bool:
+        """Fill the open native save panel and commit it.
+
+        The panel is expected to be open already (File > Save Project as...,
+        Export STL, ...).  macOS save panels show only the *file name*; the
+        directory is the panel's current folder, which follows the directory
+        of the model passed on the command line.  ``default_dir`` names that
+        folder so a save into a different directory can be detected and moved.
+
+        Returns True when the requested ``path`` exists afterwards.
+        """
+        self._require_ax()
+        target = Path(path).expanduser().resolve()
+        panel = self.find_file_dialog(
+            win.pid, titles=titles or self._SAVE_PANEL_TITLES,
+            exclude_id=win.id, timeout_s=12.0)
+        if panel is None:
+            print(f"[macos] save_file_dialog: no save panel for pid {win.pid}")
+            return False
+        field, save, cancel, _replace = self._dialog_widgets(panel)
+        if field is None or save is None:
+            print(f"[macos] save_file_dialog: widgets missing "
+                  f"(field={field is not None}, save={save is not None})")
+            return False
+
+        started = time.time()
+        name = target.name
+        if not _ax_set(field, AS.kAXValueAttribute, name):
+            _ax_set(field, AS.kAXFocusedAttribute, True)
+            self.send_key("a", modifiers=("cmd",))
+            self.send_text(name)
+        time.sleep(0.4)
+        readback = _ax_copy(field, AS.kAXValueAttribute)
+        print(f"[macos] save_file_dialog: name={name!r} readback={readback!r}")
+        pressed = _ax_perform(save, AS.kAXPressAction)
+        print(f"[macos] save_file_dialog: press Save -> {pressed}")
+
+        # An overwrite prompt may appear on top of the panel ("Replace").
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            if not self._panel_still_open(win.pid, panel.id):
+                break
+            for cand in self.windows_for_pid(win.pid):
+                if not cand.on_screen or cand.id == panel.id:
+                    continue
+                if cand.id == win.id:
+                    continue
+                if cand.handle is None:
+                    self._attach_ax_window(cand)
+                if cand.handle is None:
+                    continue
+                _f, _s, _c, replace = self._dialog_widgets(cand)
+                if replace is not None:
+                    print(f"[macos] save_file_dialog: overwrite prompt -> Replace")
+                    _ax_perform(replace, AS.kAXPressAction)
+                    time.sleep(1.0)
+                    break
+            time.sleep(0.3)
+
+        if target.exists():
+            print(f"[macos] save_file_dialog: wrote {target}")
+            return True
+
+        # The panel may have saved into its own folder (default_dir).
+        candidates: list[Path] = []
+        if default_dir is not None:
+            folder = Path(default_dir).expanduser().resolve()
+            direct = folder / name
+            if direct.exists():
+                candidates.append(direct)
+            if folder.is_dir():
+                stem = Path(name).stem
+                for cand in folder.iterdir():
+                    try:
+                        if (cand.is_file() and cand.stem == stem
+                                and cand.stat().st_mtime >= started - 2.0):
+                            candidates.append(cand)
+                    except OSError:
+                        continue
+        for cand in candidates:
+            if cand == target:
+                break
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(cand), str(target))
+                print(f"[macos] save_file_dialog: moved {cand} -> {target}")
+                break
+            except OSError as exc:
+                print(f"[macos] save_file_dialog: move failed: {exc}")
+        if target.exists():
+            return True
+        print(f"[macos] save_file_dialog: {target} not found after save "
+              f"(candidates={[str(c) for c in candidates]})")
         return False
 
     # ------------------------------------------------------------------
