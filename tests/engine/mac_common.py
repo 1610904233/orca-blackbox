@@ -123,11 +123,13 @@ def dismiss_dialogs(driver, app, main_win, seen: set | None = None) -> set:
             continue
         title = (win.title or "").lower()
         if not any(k in title for k in ("filament", "group", "confirm",
-                                        "slice", "warning", "preset")):
+                                        "slice", "warning", "preset",
+                                        "delete", "remove", "clear")):
             continue
         seen.add(win.id)
         print(f"[mac_common] dialog: id={win.id} title={win.title!r}")
-        for label in ("Confirm", "OK", "Yes", "Got it", "Continue", "Close"):
+        for label in ("Confirm", "Delete", "Remove", "OK", "Yes",
+                      "Got it", "Continue", "Close"):
             try:
                 btn = driver.find_control(win, role="AXButton", title=label,
                                           timeout_s=0)
