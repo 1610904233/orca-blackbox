@@ -31,7 +31,7 @@ if str(HERE) not in sys.path:
 
 from harness import winutil  # noqa: E402
 
-RESOURCE = HERE / "resource" / "image"
+RESOURCE = HERE / "resources" / "templates" / "image"
 
 # --- template images (OpenCV matchTemplate) ------------------------------
 # IDs are filename STEMS (stable, same rule as cases.py). All measured on

@@ -14,7 +14,7 @@ dist/
 drafts/
 
 # 未 review 的模板裁片（review 后去 draft_ 前缀入库）
-resource/image/draft_*
+resources/templates/image/draft_*
 
 # 本地种子 datadir
 vision_profile*/

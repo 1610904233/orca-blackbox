@@ -8,7 +8,7 @@
 #
 # Artifacts under artifacts/m0/: startup captures (BMP) + report. These
 # captures are ALSO the raw material for cutting template images
-# (resource/image/) — run with --grab to dump a steady-state shot for that.
+# (resources/templates/image/) — run with --grab to dump a steady-state shot for that.
 
 import argparse
 import sys

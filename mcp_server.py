@@ -60,7 +60,7 @@ SERVER_NAME = "vision-gui"
 SERVER_VERSION = "0.3.0"
 HERE_ART = HERE / "artifacts" / "mcp"
 DRAFTS = HERE / "drafts"
-RESOURCE_IMAGES = HERE / "resource" / "image"
+RESOURCE_IMAGES = HERE / "resources" / "templates" / "image"
 CASE_TIMEOUT_MAX_S = 3600
 
 SESSION = {"app": None, "last_target": None}   # app: AppSession | None
@@ -582,7 +582,7 @@ _SCAFFOLD = '''#!/usr/bin/env python3
 #   [ ] ran once against the dev build:  python drafts/{name}.py --fresh
 #   [ ] verdict GREEN and the artifacts (screenshots / case log) look right
 #   [ ] black-box only: no app internals; waits are event-driven (wait_for), not sleeps
-#   [ ] templates it uses exist in resource/image/ (drop the draft_ prefix on promotion)
+#   [ ] templates it uses exist in resources/templates/image/ (drop the draft_ prefix on promotion)
 #   [ ] docs/BLACKBOX_CASES.md entry written
 # Promote:  git mv drafts/{name}.py {name}.py
 
@@ -714,7 +714,7 @@ TOOLS = [
                                    "process_panel + gcode asserts)"}},
       "required": ["name", "goal"]}),
     ("crop_template", "M3: crop a region of an artifacts/ image into a draft vision "
-                      "template (resource/image/draft_<name>.png).",
+                      "template (resources/templates/image/draft_<name>.png).",
      {"type": "object", "properties": {
          "shot_path": {"type": "string"}, "x": {"type": "integer"}, "y": {"type": "integer"},
          "w": {"type": "integer"}, "h": {"type": "integer"}, "name": {"type": "string"}},

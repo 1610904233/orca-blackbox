@@ -56,7 +56,7 @@ import m8_common as m8  # noqa: E402
 
 LOG = "[m8x125]"
 ART = HERE / "artifacts"
-GUI = HERE / "resource" / "image"
+GUI = HERE / "resources" / "templates" / "image"
 PREF_LABEL = "allow high/low temperature filament mixing"
 MAIN_SLOT = "Silk"          # 主材：低温 PLA Silk
 AUX_SLOT = 1                 # 辅材：把槽 1 换成 Generic ABS（高温）

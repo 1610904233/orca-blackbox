@@ -26,7 +26,7 @@ cd /d "%~dp0.."
   --add-data "tests\engine\m2_slice_chain.py;." ^
   --add-data "tools\inspect_window.py;." ^
   --add-data "harness;harness" ^
-  --add-data "resource;resource" ^
+  --add-data "resources\templates;resources\templates" ^
   --exclude-module mss ^
   --exclude-module maa ^
   --exclude-module MaaFw ^

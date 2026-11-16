@@ -33,7 +33,7 @@ from harness.anchors import (  # noqa: E402  — constants re-exported below
     TOOLPATH_COLORED_FLOOR, VIEWPORT_X0, VIEWPORT_Y0, capture_bgr,
     click_and_verify, viewport_crop, wait_for)
 
-RESOURCE = HERE / "resource" / "image"
+RESOURCE = HERE / "resources" / "templates" / "image"
 
 # re-export aliases: m3_common / m5_common / m4e / add_shape / diag import
 # VP_X0/VP_Y0 from HERE (pre-anchors convention) — keep the names importable.

@@ -38,9 +38,9 @@ tests/              用例脚本（按飞书二级分类分组；注册表/计�
 diag/               历史诊断/探针脚本（先 diag 实证，再写用例；按版本命名）
 fixtures/           vendored 3mf/stl 测试夹具（原 monorepo tests/data/test_3mf 子集）
 resources/          vendored 预设子集（profiles/{Snapmaker,BBL} + printers，~9MB；
-                    datadir 种子数据源，与上游 resources/ 的该子集同源）
+                    datadir 种子数据源） + templates/（模板图 + MaaFw pipeline）
 runner/             宿主↔客机跑批基础设施快照（hv_go / relay / 探针，见 runner/README.md）
-resource/image/     模板图（提交入库，测试资产）
+resources/templates/image/  模板图（提交入库，测试资产）
 mcp_server.py       MCP stdio server：harness 暴露为 AI 工具（坑编码为服务端不变量）
 ui_runner.py        薄 UI 封装（CustomTkinter）：选模型→跑 m1/m2/批量→流式日志
                     + live view 截图面板 + App exe 可替换（透传 --exe）
@@ -266,7 +266,7 @@ tools/build_ui.bat        rem 可在任意目录运行（脚本会 cd 到仓根�
 customtkinter/Pillow/opencv/numpy；已排除 mss 与 MaaFw——沙盒代码不用 mss，
 MaaFw 仅 m1b 定案实验需要）。打包布局：
 
-- 驱动脚本 + `harness/` + `resource/`（模板）以数据形式随 exe 分发
+- 驱动脚本 + `harness/` + `resources/templates/`（模板）以数据形式随 exe 分发
   （PyInstaller 6.x 放 `_internal/`）；打包版内部用 `run` 子命令分发
   （`<exe> run m2_slice_chain.py --model x`）
 - **被测 app 不在包内**（snapmaker-orca.exe 只是 720K loader，主体是

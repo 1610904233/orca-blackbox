@@ -36,7 +36,7 @@ for _g in sorted((HERE / "tests").iterdir()):
 
 from harness import launcher, profile, winutil  # noqa: E402
 from m1_minimal_loop import MATCH_THRESHOLD, capture_bgr, is_tab_teal, wait_for  # noqa: E402
-RESOURCE = HERE / "resource"
+RESOURCE = HERE / "resources" / "templates"
 
 
 def preview_selected(session) -> bool:

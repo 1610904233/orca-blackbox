@@ -30,7 +30,7 @@ from m2_slice_chain import (MODEL_COLORED_THRESHOLD,  # noqa: E402
                             click_slice_start, has_colored_content,
                             wait_model_loaded, wait_slicing_done)
 
-RESOURCE = HERE / "resource" / "image"
+RESOURCE = HERE / "resources" / "templates" / "image"
 FIXTURES = HERE / "fixtures"   # vendored fixture dir (standalone repo)
 MIXED_3MF = FIXTURES / "mixed_filament_test.3mf"   # embeds Snapmaker U1 0.8
 MULTI_PLATE_3MF = FIXTURES / "snapmates_nonmixed.3mf"  # 7 plates
