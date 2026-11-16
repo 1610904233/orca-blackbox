@@ -7,7 +7,8 @@ Validates that cases.py stays the single source of truth:
 4. tools/run_regression.sh contains NO hardcoded case list (reads cases.py);
 5. runner/hv_go.ps1 contains NO hardcoded case list;
 6. no case script on disk is missing from the registry (m<digit>* only —
-   diag_* and _CASE_SKIP helpers are intentionally outside).
+   diag_*, _CASE_SKIP helpers and macOS-only probes are intentionally
+   outside).
 
 Exit 0 = PASS; non-zero with a diff = FAIL.
 """
@@ -23,7 +24,10 @@ sys.path.insert(0, str(ROOT))
 from cases import CASES, enabled_cases  # noqa: E402
 
 _SKIP = {"m3_common.py", "m5_common.py", "m7_common.py", "m8_common.py",
-         "m9_baseline.py"}   # m9_baseline is a driver (tools/baseline_batch.py), not a case
+         "m9_baseline.py",   # m9_baseline is a driver (tools/baseline_batch.py), not a case
+         # macOS-only probes: runnable on darwin, not Windows cases.
+         "m0_macos_boot_check.py", "m0_platform_contract.py",
+         "m1_macos_tab_switch.py", "m2_macos_slice_chain.py"}
 
 problems: list[str] = []
 
