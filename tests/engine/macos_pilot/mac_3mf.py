@@ -26,6 +26,7 @@ __all__ = [
     "ProjectGeometry",
     "read_project",
     "read_mesh_vertices",
+    "object_names",
     "read_plates",
     "read_plates_detailed",
     "plate_names",
@@ -128,6 +129,28 @@ def read_plates(path: Path | str) -> dict[str, list[str]]:
     """plate id -> object names on that plate (model_settings.config)."""
     return {pid: [name for _oid, name in items]
             for pid, items in read_plates_detailed(path).items()}
+
+
+def object_names(path: Path | str) -> list[str]:
+    """User-visible object names in document order (model_settings)."""
+    path = Path(path)
+    with zipfile.ZipFile(path) as z:
+        try:
+            text = z.read("Metadata/model_settings.config").decode(
+                "utf-8", "replace")
+        except KeyError:
+            return []
+    names = _names_from_text(text)
+    # keep document order of <object id=...> blocks
+    order = re.findall(r'<object\s+id="(\d+)"', text)
+    out = []
+    seen = set()
+    for oid in order:
+        if oid in seen:
+            continue
+        seen.add(oid)
+        out.append(names.get(oid, oid))
+    return out
 
 
 def plate_names(path: Path | str) -> list[str]:

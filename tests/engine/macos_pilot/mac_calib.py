@@ -28,6 +28,8 @@ __all__ = [
     "object_info_text",
     "slice_plate",
     "wait_gcode",
+    "export_gcode",
+    "save_project_anywhere",
     "vp",
 ]
 
@@ -168,6 +170,112 @@ def object_info_text(driver, win) -> str:
 
 def slice_plate(driver, win) -> None:
     driver.click(win.rect.x + SLICE_XY[0], win.rect.y + SLICE_XY[1])
+
+
+def save_project_anywhere(driver, win, target: Path, *, search_root: Path,
+                          timeout_s: float = 20.0) -> bool:
+    """File > Save Project as... with AX commit + fresh .3mf discovery."""
+    import shutil
+    item = next((c for c in driver.controls(win, max_depth=12)
+                 if c.role == "AXMenuItem"
+                 and c.title.strip().lower() == "save project as..."), None)
+    if item is None or not item.enabled:
+        print(f"[mac_calib] Save Project as... unavailable "
+              f"(enabled={getattr(item, 'enabled', None)})")
+        return False
+    started = time.time()
+    driver.click_control(item)
+    panel = driver.find_file_dialog(
+        win.pid, titles=driver._SAVE_PANEL_TITLES, exclude_id=win.id,
+        timeout_s=10.0)
+    if panel is None:
+        print("[mac_calib] Save Project as...: no panel")
+        return False
+    field = save = None
+    deadline = time.monotonic() + 8.0
+    while time.monotonic() < deadline:
+        field, save, _c, _r = driver._dialog_widgets(panel)
+        if field is not None and save is not None:
+            break
+        time.sleep(0.3)
+    if field is None or save is None:
+        print("[mac_calib] Save Project as...: widgets missing")
+        return False
+    AS.AXUIElementSetAttributeValue(field, AS.kAXValueAttribute, target.name)
+    time.sleep(0.4)
+    AS.AXUIElementPerformAction(save, AS.kAXPressAction)
+    driver._wait_panel_closed(win.pid, panel.id, 12.0)
+    if target.exists():
+        return True
+    fresh = []
+    if search_root.is_dir():
+        for cand in search_root.rglob("*.3mf"):
+            try:
+                if cand.stat().st_mtime >= started - 2.0 and cand != target:
+                    fresh.append(cand)
+            except OSError:
+                continue
+    fresh.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    print(f"[mac_calib] fresh project={[str(p) for p in fresh[:3]]}")
+    if fresh:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(fresh[0]), str(target))
+    return target.exists()
+
+
+def export_gcode(driver, win, target: Path, *, search_root: Path,
+                 timeout_s: float = 20.0) -> bool:
+    """File > Export G-code... -> save panel -> AX commit; find/move the file.
+
+    The panel's folder follows the app's last-used directory, so the fresh
+    .gcode is discovered under ``search_root`` when it lands elsewhere.
+    """
+    import shutil
+    item = next((c for c in driver.controls(win, max_depth=12)
+                 if c.role == "AXMenuItem"
+                 and c.title.strip().lower().startswith("export g-code")), None)
+    if item is None or not item.enabled:
+        print(f"[mac_calib] Export G-code unavailable "
+              f"(item={item is not None}, enabled={getattr(item, 'enabled', None)})")
+        return False
+    started = time.time()
+    driver.click_control(item)
+    panel = driver.find_file_dialog(
+        win.pid, titles=("save", "save as", "export"), exclude_id=win.id,
+        timeout_s=10.0)
+    if panel is None:
+        print("[mac_calib] Export G-code: no save panel")
+        return False
+    field = save = None
+    deadline = time.monotonic() + 8.0
+    while time.monotonic() < deadline:
+        field, save, _cancel, _rep = driver._dialog_widgets(panel)
+        if field is not None and save is not None:
+            break
+        time.sleep(0.3)
+    if field is None or save is None:
+        print("[mac_calib] Export G-code: save widgets missing")
+        return False
+    AS.AXUIElementSetAttributeValue(field, AS.kAXValueAttribute, target.name)
+    time.sleep(0.4)
+    AS.AXUIElementPerformAction(save, AS.kAXPressAction)
+    driver._wait_panel_closed(win.pid, panel.id, 12.0)
+    if target.exists():
+        return True
+    fresh = []
+    if search_root.is_dir():
+        for cand in search_root.rglob("*.gcode"):
+            try:
+                if cand.stat().st_mtime >= started - 2.0 and cand != target:
+                    fresh.append(cand)
+            except OSError:
+                continue
+    fresh.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    print(f"[mac_calib] fresh gcode={[str(p) for p in fresh[:3]]}")
+    if fresh:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(fresh[0]), str(target))
+    return target.exists()
 
 
 def wait_gcode(driver, win, timeout_s: float = 90.0):

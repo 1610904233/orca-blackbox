@@ -1369,26 +1369,17 @@ class MacOSDriver:
         AX page actions are not honoured by this panel; a real wheel event
         over the file list is what a user does and does scroll it.
         """
-        moved = False
+        # Wheel only: the AX page actions on the browser's scroll areas can
+        # scroll a different column and cancel the wheel's effect (measured:
+        # the same wheel works in a probe that does not perform them).
         try:
-            # The active (right-most) file column is the only one that scrolls
-            # vertically; a wheel at 0.68 of the panel width lands on an older
-            # column and does nothing (measured).
             x = panel.rect.x + panel.rect.w * 0.85
             y = panel.rect.y + panel.rect.h * 0.55
             self.wheel(x, y, -6 if down else 6)
-            moved = True
+            return True
         except Exception as exc:  # noqa: BLE001
             print(f"[macos] wheel scroll failed: {exc!r}")
-        browser = next((e for e in self._walk(panel.handle, max_depth=14)
-                        if _ax_str(e, AS.kAXRoleAttribute) == "AXBrowser"), None)
-        if browser is not None:
-            action = ("AXScrollDownByPage" if down else "AXScrollUpByPage")
-            for elem in self._walk(browser, max_depth=6):
-                if _ax_str(elem, AS.kAXRoleAttribute) != "AXScrollArea":
-                    continue
-                moved = _ax_perform(elem, action) or moved
-        return moved
+            return False
 
     @staticmethod
     def _pick_file_word(words, target: Path):

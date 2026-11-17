@@ -10,6 +10,8 @@ This module imports PyObjC, so only import it on macOS (the macOS probes do).
 
 from __future__ import annotations
 
+import os
+import threading
 from dataclasses import dataclass
 
 import Quartz
@@ -18,6 +20,11 @@ import Vision
 from .base import Frame, Rect
 
 __all__ = ["OcrWord", "OcrError", "recognize_text", "joined_text", "find_text"]
+
+#: Vision occasionally blocks inside its detector queue (observed: a whole
+#: case stuck in VNCRImageReaderDetector for 18+ minutes).  Run the request in
+#: a daemon thread and fail loudly instead of hanging the suite.
+DEFAULT_TIMEOUT_S = float(os.environ.get("ORCA_BB_OCR_TIMEOUT", "30"))
 
 
 class OcrError(RuntimeError):
@@ -53,10 +60,10 @@ def _frame_to_cgimage(frame: Frame):
     return image
 
 
-def recognize_text(frame: Frame, region: Rect | None = None,
-                   *, level: str = "accurate",
-                   languages: tuple[str, ...] = ("en-US",),
-                   uses_language_correction: bool = True) -> list[OcrWord]:
+def _recognize_text_sync(frame: Frame, region: Rect | None = None,
+                         *, level: str = "accurate",
+                         languages: tuple[str, ...] = ("en-US",),
+                         uses_language_correction: bool = True) -> list[OcrWord]:
     """OCR a Frame (or a crop) and return words in top-left pixel coordinates."""
     crop = frame if region is None else frame.crop(region)
     if crop.width <= 0 or crop.height <= 0:
@@ -99,6 +106,35 @@ def recognize_text(frame: Frame, region: Rect | None = None,
         words.append(OcrWord(text=text, rect=Rect(x, y, w, h),
                              confidence=confidence))
     return words
+
+
+def recognize_text(frame: Frame, region: Rect | None = None,
+                   *, level: str = "accurate",
+                   languages: tuple[str, ...] = ("en-US",),
+                   uses_language_correction: bool = True,
+                   timeout_s: float | None = None) -> list[OcrWord]:
+    """Time-bounded :func:`_recognize_text_sync` (see DEFAULT_TIMEOUT_S)."""
+    timeout = DEFAULT_TIMEOUT_S if timeout_s is None else float(timeout_s)
+    box: dict = {}
+
+    def run() -> None:
+        try:
+            box["result"] = _recognize_text_sync(
+                frame, region, level=level, languages=languages,
+                uses_language_correction=uses_language_correction)
+        except BaseException as exc:  # noqa: BLE001 - re-raised below
+            box["error"] = exc
+
+    worker = threading.Thread(target=run, name="vision-ocr", daemon=True)
+    worker.start()
+    worker.join(max(0.1, timeout))
+    if worker.is_alive():
+        raise OcrError(
+            f"Vision OCR timed out after {timeout:.1f}s "
+            f"(detector queue blocked; see docs/PITFALLS.md)")
+    if "error" in box:
+        raise box["error"]
+    return box.get("result", [])
 
 
 def joined_text(words: list[OcrWord], sep: str = " ") -> str:
