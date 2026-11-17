@@ -28,6 +28,7 @@ __all__ = [
     "read_mesh_vertices",
     "read_plates",
     "read_plates_detailed",
+    "plate_names",
     "object_world_aabbs",
     "object_aabbs_by_id",
     "local_aabb",
@@ -127,6 +128,18 @@ def read_plates(path: Path | str) -> dict[str, list[str]]:
     """plate id -> object names on that plate (model_settings.config)."""
     return {pid: [name for _oid, name in items]
             for pid, items in read_plates_detailed(path).items()}
+
+
+def plate_names(path: Path | str) -> list[str]:
+    """plater_name values in document order."""
+    path = Path(path)
+    with zipfile.ZipFile(path) as z:
+        try:
+            text = z.read("Metadata/model_settings.config").decode(
+                "utf-8", "replace")
+        except KeyError:
+            return []
+    return re.findall(r'key="plater_name"\s+value="([^"]*)"', text)
 
 
 def read_plates_detailed(path: Path | str) -> dict[str, list[tuple[str, str]]]:
