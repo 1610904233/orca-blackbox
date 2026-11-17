@@ -450,6 +450,24 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m8", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m8x_212_macos_retraction": {
+        "file": "tests/engine/macos_pilot/m8x_212_retraction.py",
+        "windows_case": "m8x_212",
+        "milestone": "m8", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
+    "m8x_213_macos_max_flow": {
+        "file": "tests/engine/macos_pilot/m8x_213_max_flow.py",
+        "windows_case": "m8x_213",
+        "milestone": "m8", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
+    "m8x_214_macos_input_shaping": {
+        "file": "tests/engine/macos_pilot/m8x_214_input_shaping.py",
+        "windows_case": "m8x_214",
+        "milestone": "m8", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
 }
 for _name, _meta in MACOS_BASELINE.items():
     _meta.setdefault("platforms", ("macos",))
