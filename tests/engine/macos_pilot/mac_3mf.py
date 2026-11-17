@@ -27,6 +27,9 @@ __all__ = [
     "read_project",
     "read_mesh_vertices",
     "read_plates",
+    "read_plates_detailed",
+    "object_world_aabbs",
+    "object_aabbs_by_id",
     "local_aabb",
     "apply_transform",
     "compose",
@@ -122,6 +125,12 @@ def _names_from_text(text: str) -> dict[str, str]:
 
 def read_plates(path: Path | str) -> dict[str, list[str]]:
     """plate id -> object names on that plate (model_settings.config)."""
+    return {pid: [name for _oid, name in items]
+            for pid, items in read_plates_detailed(path).items()}
+
+
+def read_plates_detailed(path: Path | str) -> dict[str, list[tuple[str, str]]]:
+    """plate id -> [(object id, object name)] in model_settings.config."""
     path = Path(path)
     with zipfile.ZipFile(path) as z:
         try:
@@ -130,14 +139,14 @@ def read_plates(path: Path | str) -> dict[str, list[str]]:
         except KeyError:
             return {}
     names = _names_from_text(text)
-    plates: dict[str, list[str]] = {}
+    plates: dict[str, list[tuple[str, str]]] = {}
     for match in re.finditer(r"<plate>(.*?)</plate>", text, re.S):
         body = match.group(1)
         pid = re.search(r'plater_id"\s+value="(\d+)"', body)
         if not pid:
             continue
         ids = re.findall(r'key="object_id"\s+value="(\d+)"', body)
-        plates[pid.group(1)] = [names.get(i, i) for i in ids]
+        plates[pid.group(1)] = [(i, names.get(i, i)) for i in ids]
     return plates
 
 
@@ -192,3 +201,38 @@ def world_aabb(vertices, transform: Transform):
         return None
     pts = [apply_transform(transform, v) for v in vertices]
     return local_aabb(pts)
+
+
+def object_aabbs_by_id(path: Path | str) -> dict[str, tuple]:
+    """object id -> (name, world AABB union over its components)."""
+    path = Path(path)
+    geo = read_project(path)
+    items = dict(geo.items)
+    cache: dict[str, list] = {}
+    out: dict[str, tuple] = {}
+    for obj in geo.objects:
+        item_t = items.get(obj.id, IDENTITY)
+        lo = [1e18, 1e18, 1e18]
+        hi = [-1e18, -1e18, -1e18]
+        for comp in obj.components:
+            if comp.path not in cache:
+                try:
+                    cache[comp.path] = read_mesh_vertices(path, comp.path)
+                except KeyError:
+                    cache[comp.path] = []
+            bounds = world_aabb(cache[comp.path],
+                                compose(item_t, comp.transform))
+            if not bounds:
+                continue
+            for i in range(3):
+                lo[i] = min(lo[i], bounds[0][i])
+                hi[i] = max(hi[i], bounds[1][i])
+        if hi[0] > lo[0] or hi[1] > lo[1] or hi[2] > lo[2]:
+            out[obj.id] = (obj.name or obj.id, (tuple(lo), tuple(hi)))
+    return out
+
+
+def object_world_aabbs(path: Path | str) -> dict[str, tuple]:
+    """object name -> world-space AABB (union over its components)."""
+    return {name: bounds
+            for name, bounds in object_aabbs_by_id(path).values()}
