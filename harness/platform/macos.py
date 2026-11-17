@@ -1364,17 +1364,30 @@ class MacOSDriver:
         return recognize_text(frame, panel.rect)
 
     def _scroll_browser(self, panel: WindowRef, *, down: bool = True) -> bool:
-        """Page the panel's file browser vertically (long folder lists)."""
+        """Page the panel's file browser vertically (long folder lists).
+
+        AX page actions are not honoured by this panel; a real wheel event
+        over the file list is what a user does and does scroll it.
+        """
+        moved = False
+        try:
+            # The active (right-most) file column is the only one that scrolls
+            # vertically; a wheel at 0.68 of the panel width lands on an older
+            # column and does nothing (measured).
+            x = panel.rect.x + panel.rect.w * 0.85
+            y = panel.rect.y + panel.rect.h * 0.55
+            self.wheel(x, y, -6 if down else 6)
+            moved = True
+        except Exception as exc:  # noqa: BLE001
+            print(f"[macos] wheel scroll failed: {exc!r}")
         browser = next((e for e in self._walk(panel.handle, max_depth=14)
                         if _ax_str(e, AS.kAXRoleAttribute) == "AXBrowser"), None)
-        if browser is None:
-            return False
-        action = ("AXScrollDownByPage" if down else "AXScrollUpByPage")
-        moved = False
-        for elem in self._walk(browser, max_depth=6):
-            if _ax_str(elem, AS.kAXRoleAttribute) != "AXScrollArea":
-                continue
-            moved = _ax_perform(elem, action) or moved
+        if browser is not None:
+            action = ("AXScrollDownByPage" if down else "AXScrollUpByPage")
+            for elem in self._walk(browser, max_depth=6):
+                if _ax_str(elem, AS.kAXRoleAttribute) != "AXScrollArea":
+                    continue
+                moved = _ax_perform(elem, action) or moved
         return moved
 
     @staticmethod

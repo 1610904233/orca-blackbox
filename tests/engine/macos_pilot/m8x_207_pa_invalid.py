@@ -138,6 +138,28 @@ def dismiss_warning(driver, warning) -> bool:
     return True
 
 
+def wait_warning(driver, app, dlg, known, timeout_s=5.0):
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        for w in driver.windows_for_pid(app.pid):
+            if (w.on_screen and w.id not in known and w.id != dlg.id
+                    and w.id != win_id_holder.get("id")
+                    and "info" in (w.title or "").lower()):
+                return w
+        time.sleep(0.3)
+    return None
+
+
+#: filled in main(): the main window id (used by wait_warning)
+win_id_holder: dict = {}
+
+
+def activate_dialog(driver, dlg) -> None:
+    """Consume the window-activation click on a neutral title-bar spot."""
+    driver.click(dlg.rect.x + dlg.rect.w / 2, dlg.rect.y + 8)
+    time.sleep(0.5)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--exe", default=None)
@@ -166,6 +188,7 @@ def main() -> int:
         rep.check("launch", True,
                   f"pid={app.pid} title={win.title!r} "
                   f"blockers={app.extra.get('blockers')}")
+        win_id_holder["id"] = win.id
         time.sleep(2.0)
         frac0 = m7b._vp_colored(driver.capture(win))
         rep.log(f"[INFO] empty bed viewport={frac0:.4f}")
@@ -202,22 +225,18 @@ def main() -> int:
                 OUT / f"{tag}_before_ok.png")
 
             known = {w.id for w in driver.windows_for_pid(app.pid) if w.on_screen}
-            clicked = click_ok(driver, dlg)
-            time.sleep(2.5)
-            warning = next(
-                (w for w in driver.windows_for_pid(app.pid)
-                 if w.on_screen and w.id not in known and w.id != dlg.id
-                 and w.id != win.id and "info" in (w.title or "").lower()),
-                None)
-            if warning is None:
-                rep.log(f"[INFO] {tag}: first OK swallowed, retry")
-                click_ok(driver, dlg)
-                time.sleep(2.5)
-                warning = next(
-                    (w for w in driver.windows_for_pid(app.pid)
-                     if w.on_screen and w.id not in known and w.id != dlg.id
-                     and w.id != win.id and "info" in (w.title or "").lower()),
-                    None)
+            clicked = False
+            warning = None
+            for attempt in range(3):
+                # The first click after the dialog appears can be consumed by
+                # window activation; click a neutral title-bar spot first.
+                activate_dialog(driver, dlg)
+                clicked = click_ok(driver, dlg) or clicked
+                warning = wait_warning(driver, app, dlg, known, timeout_s=4.0)
+                if warning is not None:
+                    break
+                rep.log(f"[INFO] {tag}: OK attempt {attempt + 1} produced no "
+                        f"warning window, retry")
             text = ""
             if warning is not None:
                 if warning.handle is None:
