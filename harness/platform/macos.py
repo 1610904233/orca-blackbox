@@ -383,6 +383,10 @@ class MacOSDriver:
                     "default_page": "1",
                     "privacy_policy_isagree": True,
                     "backup_switch": False,
+                    # Pin the geometry the macOS pilots are calibrated for;
+                    # without this key the app's own default is used and can
+                    # drift across builds.
+                    "window_mainframe": "360; 80; 1200; 800; 0",
                 },
                 "firstguide": {"finish": True},
             }
@@ -1037,11 +1041,18 @@ class MacOSDriver:
         deadline = time.monotonic() + timeout_s
         for component in components:
             word = None
+            last_scroll = time.monotonic()
+            pages = 0
             while time.monotonic() < deadline:
                 word = self._pick_rightmost(
                     self._panel_ocr_words(panel), component)
                 if word is not None:
                     break
+                if pages < 10 and time.monotonic() - last_scroll > 2.5:
+                    # Long folder lists: the row may be below the visible page.
+                    self._scroll_browser(panel, down=True)
+                    pages += 1
+                    last_scroll = time.monotonic()
                 time.sleep(0.7)
             if word is None:
                 from .macos_ocr import joined_text
@@ -1078,7 +1089,10 @@ class MacOSDriver:
                          titles: Sequence[str] | None = None,
                          timeout_s: float = 25.0,
                          navigate_dir: bool = False,
-                         name_is_stem: bool = False) -> bool:
+                         name_is_stem: bool = False,
+                         accept_anywhere: bool = False,
+                         search_roots: Sequence[Path | str] | None = None,
+                         ) -> bool:
         """Fill the open native save panel and commit it.
 
         The panel is expected to be open already (File > Save Project as...,
@@ -1153,7 +1167,7 @@ class MacOSDriver:
         readback = _ax_copy(field, AS.kAXValueAttribute)
         print(f"[macos] save_file_dialog: name={name!r} readback={readback!r}")
 
-        if navigate_dir:
+        if navigate_dir or accept_anywhere:
             # Export panel: it ignores AXPress and is not a key window (real
             # keyboard/mouse focus never lands on its field), so commit with a
             # real click and rely on the fresh-file discovery below for the
@@ -1241,6 +1255,40 @@ class MacOSDriver:
                 # mode the destination folder is dedicated and starts empty,
                 # so the single fresh file is the export.
                 candidates.append(fresh[0])
+
+        if accept_anywhere and not candidates:
+            # The export panel remembers a global last-used folder.  Instead
+            # of navigating its (deep) column view, accept the default folder
+            # and find the file this call just wrote: the newest file with the
+            # target's suffix under the allowed roots.
+            roots = [Path(r).expanduser().resolve() for r in (search_roots or [])]
+            if not roots:
+                roots = [target.parent.parent,
+                         Path.home() / "Documents",
+                         Path.home() / "Desktop",
+                         Path.home() / "Downloads"]
+            suffix = target.suffix.lower()
+            fresh_any: list[Path] = []
+            for root in roots:
+                if not root.is_dir():
+                    continue
+                try:
+                    for cand in root.rglob("*"):
+                        try:
+                            if (not cand.is_file() or cand == target
+                                    or (suffix and cand.suffix.lower() != suffix)
+                                    or cand.stat().st_mtime < started - 2.0):
+                                continue
+                        except OSError:
+                            continue
+                        fresh_any.append(cand)
+                except OSError:
+                    continue
+            fresh_any.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            print(f"[macos] save_file_dialog: accept_anywhere fresh "
+                  f"{[str(p) for p in fresh_any[:3]]}")
+            if fresh_any:
+                candidates.append(fresh_any[0])
         for cand in candidates:
             if cand == target:
                 break
@@ -1315,6 +1363,43 @@ class MacOSDriver:
         frame = self.capture_screen()
         return recognize_text(frame, panel.rect)
 
+    def _scroll_browser(self, panel: WindowRef, *, down: bool = True) -> bool:
+        """Page the panel's file browser vertically (long folder lists)."""
+        browser = next((e for e in self._walk(panel.handle, max_depth=14)
+                        if _ax_str(e, AS.kAXRoleAttribute) == "AXBrowser"), None)
+        if browser is None:
+            return False
+        action = ("AXScrollDownByPage" if down else "AXScrollUpByPage")
+        moved = False
+        for elem in self._walk(browser, max_depth=6):
+            if _ax_str(elem, AS.kAXRoleAttribute) != "AXScrollArea":
+                continue
+            moved = _ax_perform(elem, action) or moved
+        return moved
+
+    @staticmethod
+    def _pick_file_word(words, target: Path):
+        """OCR word for a file name, tolerant of extension I/l confusion."""
+        name = target.name.casefold()
+        stem = target.stem.casefold()
+        if not stem:
+            return None
+        exact = [w for w in words if w.text.strip().casefold() == name]
+        if exact:
+            return max(exact, key=lambda w: w.rect.x)
+        hits = [w for w in words if stem in w.text.casefold()]
+        if hits:
+            return max(hits, key=lambda w: w.rect.x)
+        norm_stem = "".join(ch for ch in stem if ch.isalnum())
+        if not norm_stem:
+            return None
+        norm_hits = []
+        for w in words:
+            norm = "".join(ch for ch in w.text.casefold() if ch.isalnum())
+            if norm_stem in norm:
+                norm_hits.append(w)
+        return max(norm_hits, key=lambda w: w.rect.x) if norm_hits else None
+
     def open_file_dialog(self, win: WindowRef, path: Path | str, *,
                          titles: Sequence[str] | None = None,
                          timeout_s: float = 90.0) -> bool:
@@ -1380,15 +1465,23 @@ class MacOSDriver:
         deadline = time.monotonic() + timeout_s
         for component in components:
             word = None
+            last_scroll = time.monotonic()
+            pages = 0
             while time.monotonic() < deadline:
                 word = self._pick_rightmost(
                     self._panel_ocr_words(panel), component)
                 if word is not None:
                     break
+                if pages < 10 and time.monotonic() - last_scroll > 2.5:
+                    self._scroll_browser(panel, down=True)
+                    pages += 1
+                    last_scroll = time.monotonic()
                 time.sleep(0.7)
             if word is None:
+                from .macos_ocr import joined_text
                 print(f"[macos] open_file_dialog: folder {component!r} "
-                      f"not visible in the panel")
+                      f"not visible; OCR="
+                      f"{joined_text(self._panel_ocr_words(panel))[-200:]!r}")
                 return False
             cx, cy = word.rect.center
             print(f"[macos] open_file_dialog: open {component!r} at "
@@ -1397,15 +1490,36 @@ class MacOSDriver:
             time.sleep(1.4)
 
         word = None
+        retry_at = time.monotonic() + 10.0
+        retried = False
+        last_words = []
+        last_scroll = time.monotonic()
+        pages = 0
         while time.monotonic() < deadline:
-            words = self._panel_ocr_words(panel)
-            word = (self._pick_rightmost(words, target.name)
-                    or self._pick_rightmost(words, target.stem))
+            last_words = self._panel_ocr_words(panel)
+            word = self._pick_file_word(last_words, target)
             if word is not None:
                 break
+            if pages < 6 and time.monotonic() - last_scroll > 2.5:
+                self._scroll_browser(panel, down=True)
+                pages += 1
+                last_scroll = time.monotonic()
+            if not retried and time.monotonic() >= retry_at and components:
+                # The last click may have only selected the folder; click it
+                # again before giving up.
+                again = self._pick_rightmost(last_words, components[-1])
+                if again is not None:
+                    print(f"[macos] open_file_dialog: retry folder "
+                          f"{components[-1]!r}")
+                    self.click(*again.rect.center)
+                    retried = True
+                    time.sleep(1.2)
+                    continue
             time.sleep(0.7)
         if word is None:
-            print(f"[macos] open_file_dialog: {target.name!r} not visible")
+            from .macos_ocr import joined_text
+            print(f"[macos] open_file_dialog: {target.name!r} not visible; "
+                  f"OCR={joined_text(last_words)[-220:]!r}")
             return False
         cx, cy = word.rect.center
         print(f"[macos] open_file_dialog: select {target.name!r} at "
@@ -1475,7 +1589,20 @@ class MacOSDriver:
         return self._shareable
 
     def _grab_with_filter(self, content_filter, width: int, height: int,
-                          timeout_s: float = 6.0):
+                          timeout_s: float = 6.0, attempts: int = 2):
+        last_error = None
+        for attempt in range(max(1, attempts)):
+            try:
+                return self._grab_once(content_filter, width, height, timeout_s)
+            except CaptureError as exc:
+                last_error = exc
+                if attempt + 1 < attempts:
+                    print(f"[macos] capture retry ({exc})")
+                    time.sleep(0.8)
+        raise last_error
+
+    def _grab_once(self, content_filter, width: int, height: int,
+                   timeout_s: float = 6.0):
         self._require_screen()
         cfg = SCK.SCStreamConfiguration.alloc().init()
         cfg.setWidth_(int(width))

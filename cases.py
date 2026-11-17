@@ -390,6 +390,18 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m8", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m8x_207_macos_pa_invalid": {
+        "file": "tests/engine/macos_pilot/m8x_207_pa_invalid.py",
+        "windows_case": "m8x_207",
+        "milestone": "m8", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
+    "m8x_201_macos_save_project": {
+        "file": "tests/engine/macos_pilot/m8x_201_save_project.py",
+        "windows_case": "m8x_201",
+        "milestone": "m8", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
 }
 for _name, _meta in MACOS_BASELINE.items():
     _meta.setdefault("platforms", ("macos",))

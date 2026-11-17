@@ -151,13 +151,17 @@ def main() -> int:
         pressed = driver.click_control(export) if export is not None else False
         rep.log(f"[INFO] press {export.title if export else None!r} -> {pressed}")
         # The STL export panel remembers a global last-used folder and appends
-        # its own .stl extension, so navigate to this case's work dir and set
-        # only the stem.  (AXPress on Save is ignored there; the driver falls
-        # back to a real click.)
+        # its own .stl extension.  Do not navigate its deep column view: save
+        # wherever it defaults, then claim the newest fresh .stl under our
+        # artifact tree and move it to the case target.
         exported = driver.save_file_dialog(
             win, out_stl, default_dir=export_dir,
             titles=("save", "save as", "export", "export stl"),
-            navigate_dir=True, name_is_stem=True)
+            accept_anywhere=True, name_is_stem=True,
+            search_roots=(HERE / "artifacts" / "mac",
+                          Path.home() / "Documents",
+                          Path.home() / "Desktop",
+                          Path.home() / "Downloads"))
         rep.check("导出生成 STL 文件", exported and out_stl.exists(),
                   f"size={out_stl.stat().st_size if out_stl.exists() else 0}")
         if not out_stl.exists():
@@ -179,29 +183,30 @@ def main() -> int:
         reimported = driver.open_file_dialog(win, out_stl)
         rep.check("导出 STL 可被重新导入", reimported)
 
-        # The object list should name the imported file.  Poll briefly: the
-        # list/thumbnail may render a moment after the file dialog closes.
+        # The object list should name the imported file.  Only accept OCR
+        # evidence once the open panel is gone: while it is up, its file row
+        # contains the same name and would be a false positive.
         rep.check("导入后应用存活", app.alive())
         deadline = time.monotonic() + 60.0
         stem_ok = False
         last_text = ""
         while time.monotonic() < deadline:
-            words = recognize_text(driver.capture_screen().crop(win.rect))
-            last_text = joined_text(words)
-            if "m8x_204_export" in last_text.lower():
-                stem_ok = True
-                break
-            if driver._refresh(win).title.startswith("*"):
-                # Dirty title is necessary but not sufficient; keep polling
-                # for the object name until the deadline.
-                pass
+            panel_open = driver.find_file_dialog(
+                win.pid, titles=driver._OPEN_PANEL_TITLES,
+                exclude_id=win.id, timeout_s=0.0) is not None
+            if not panel_open:
+                words = recognize_text(driver.capture_screen().crop(win.rect))
+                last_text = joined_text(words)
+                if "m8x_204_export" in last_text.lower():
+                    stem_ok = True
+                    break
             time.sleep(2.0)
         after = driver.capture(win)
         after.save_png(OUT / "after_import.png")
         title = driver._refresh(win).title
         rep.log(f"[INFO] after re-import: title={title!r} "
                 f"object_name_seen={stem_ok} ocr={last_text[:160]!r}")
-        rep.check("对象列表显示导入模型名", stem_ok,
+        rep.check("对象列表显示导入模型名", reimported and stem_ok,
                   f"title={title!r}")
 
         rep.check("app alive", app.alive())
