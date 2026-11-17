@@ -59,17 +59,14 @@ def main() -> int:
                                     log_path=OUT / "app_launch.log")
         rep.check("launch", True, f"pid={app.pid} title={win.title!r}")
         time.sleep(3.0)
-        for y in (180, 200, 220, 240, 260, 280, 300, 320, 340, 360,
-                  380, 400, 420, 440, 460):
-            for x in (1050, 1060, 1070, 1080, 1090, 1100, 1110, 1120, 1130):
+        for y in range(240, 361, 10):
+            for x in range(1060, 1101, 10):
                 driver.move(win.rect.x + x, win.rect.y + y)
-                time.sleep(1.0)
+                time.sleep(2.0)
                 text = ocr_upscaled(
                     driver.capture_screen(),
                     Rect(win.rect.x + x + 5, win.rect.y + y - 45, 300, 100))
-                if any(k in text.lower() for k in
-                       ("plate", "remove", "lock", "orient", "arrange",
-                        "custom", "add")):
+                if len(text) >= 4 and any(ch.isalpha() for ch in text):
                     rep.log(f"[TIP] x={x} y={y}: {text!r}")
         rep.check("app alive", app.alive())
     except Exception as exc:  # noqa: BLE001
