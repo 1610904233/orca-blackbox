@@ -1734,6 +1734,17 @@ class MacOSDriver:
     # input (real OS events; no message-level channel on macOS)
     # ------------------------------------------------------------------
 
+    def move(self, x: float, y: float) -> None:
+        """Move the pointer (hover) without clicking."""
+        self._require_ax()
+        source = self._event_source()
+        scale = self._scale_for_point(x, y)
+        point = Quartz.CGPointMake(x / scale, y / scale)
+        event = Quartz.CGEventCreateMouseEvent(
+            source, Quartz.kCGEventMouseMoved, point, Quartz.kCGMouseButtonLeft)
+        if event is not None:
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
+
     def click(self, x: float, y: float, *, button: str = "left",
               clicks: int = 1) -> None:
         self._require_ax()
