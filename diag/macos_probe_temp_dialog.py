@@ -136,16 +136,25 @@ def main() -> int:
             f"{w.text!r}@{w.rect.to_xywh()}" for w in words))
         rep.log(f"[INFO] initial fields={field_values(dlg)}")
 
-        for name in TYPES:
-            w = next((x for x in words
-                      if x.text.strip().upper() == name.upper()), None)
-            if w is None:
-                rep.log(f"[INFO] type {name!r}: label not found")
-                continue
-            driver.click(dlg.rect.x + w.rect.center[0],
-                         dlg.rect.y + w.rect.center[1])
+        # Self-drawn radio grid: left/right columns at four rows.
+        ORDER = (
+            ("PLA", (60, 78)),
+            ("ABS/ASA", (145, 78)),
+            ("PETG", (58, 106)),
+            ("PCTG", (135, 106)),
+            ("TPU", (46, 134)),
+            ("PA-CF", (136, 135)),
+            ("PET-CF", (55, 162)),
+            ("Custom", (149, 162)),
+        )
+        for name, (cx, cy) in ORDER:
+            driver.click(dlg.rect.x + cx, dlg.rect.y + cy)
             time.sleep(0.8)
             rep.log(f"[INFO] type {name!r}: fields={field_values(dlg)}")
+        fields = [e for e, _d in walk(dlg.handle) if _role(e) == "AXTextField"]
+        rep.log("[INFO] field enabled=" + str([
+            (_copy(f, AS.kAXValueAttribute), _copy(f, AS.kAXEnabledAttribute))
+            for f in fields]))
         rep.check("app alive", app.alive())
     except Exception as exc:  # noqa: BLE001
         rep.check("unexpected", False, f"{type(exc).__name__}: {exc}")
