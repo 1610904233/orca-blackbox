@@ -26,6 +26,7 @@ __all__ = [
     "ProjectGeometry",
     "read_project",
     "read_mesh_vertices",
+    "read_plates",
     "local_aabb",
     "apply_transform",
     "compose",
@@ -106,6 +107,10 @@ def _object_names(z: zipfile.ZipFile) -> dict[str, str]:
             "utf-8", "replace")
     except KeyError:
         return {}
+    return _names_from_text(text)
+
+
+def _names_from_text(text: str) -> dict[str, str]:
     names: dict[str, str] = {}
     for match in re.finditer(
             r'<object\s+id="(\d+)"[^>]*>(.*?)</object>', text, re.S):
@@ -113,6 +118,27 @@ def _object_names(z: zipfile.ZipFile) -> dict[str, str]:
         if nm:
             names[match.group(1)] = nm.group(1)
     return names
+
+
+def read_plates(path: Path | str) -> dict[str, list[str]]:
+    """plate id -> object names on that plate (model_settings.config)."""
+    path = Path(path)
+    with zipfile.ZipFile(path) as z:
+        try:
+            text = z.read("Metadata/model_settings.config").decode(
+                "utf-8", "replace")
+        except KeyError:
+            return {}
+    names = _names_from_text(text)
+    plates: dict[str, list[str]] = {}
+    for match in re.finditer(r"<plate>(.*?)</plate>", text, re.S):
+        body = match.group(1)
+        pid = re.search(r'plater_id"\s+value="(\d+)"', body)
+        if not pid:
+            continue
+        ids = re.findall(r'key="object_id"\s+value="(\d+)"', body)
+        plates[pid.group(1)] = [names.get(i, i) for i in ids]
+    return plates
 
 
 def read_mesh_vertices(path: Path | str, member: str) -> list[tuple[float, float, float]]:

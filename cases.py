@@ -414,6 +414,18 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m8", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m8x_185_macos_toolbar_add": {
+        "file": "tests/engine/macos_pilot/m8x_185_toolbar_add.py",
+        "windows_case": "m8x_185",
+        "milestone": "m8", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
+    "m8x_186_macos_add_plate": {
+        "file": "tests/engine/macos_pilot/m8x_186_add_plate.py",
+        "windows_case": "m8x_186",
+        "milestone": "m8", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
 }
 for _name, _meta in MACOS_BASELINE.items():
     _meta.setdefault("platforms", ("macos",))
