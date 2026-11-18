@@ -1167,3 +1167,10 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   （Generic PETG + 3× PLA Silk，= min(4, n_physical)），不是 Windows 用例
   预期的 2 行；卡片右上角候选点 (664/682/700, 210/228) 悬停只读到行文本，
   未定位到 add/remove 图标。m3m 暂缓，后续需重新标定按钮几何。
+- **m3m 已打通**：Manual 卡片默认 4 行（caps），右上角 **− / + 图标**在
+  主窗口相对 `(784,186)` / `(802,186)`；实测 4→3→2→2（floor=2），
+  再 2→3→4→4（cap=4）。Start Matching 后横幅为
+  `The mix ratios for 7 ... outside the recommended ranges`（macOS 文案无
+  Windows 的 "0%-70%"，按实际文案断言）。
+- 启动偶发 `no stable main window within 150s`（同机冷启动/残留），直接
+  重试一次即可（runner 的失败重试 1 次也会覆盖）。

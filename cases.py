@@ -594,6 +594,12 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m3", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m3m_macos_mixing_filaments": {
+        "file": "tests/engine/macos_pilot/m3m_mixing_filaments.py",
+        "windows_case": "m3m_mixing_filaments",
+        "milestone": "m3", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
 }
 for _name, _meta in MACOS_BASELINE.items():
     _meta.setdefault("platforms", ("macos",))
