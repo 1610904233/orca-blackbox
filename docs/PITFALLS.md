@@ -1181,3 +1181,7 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
 - **m3r**：匹配太快，3s 的 0.2s OCR 轮询未捕捉到 Stop/进度态；按 Windows
   用例的同一口径接受 "fast match, transient missed — completion below"，
   硬判据是 Color Mapping 渲染且 Stop 消失。
+- **m4b 已打通**：批量对话框 Auto 推荐卡与 Manual 组合框各 4 行；
+  Start Matching → Confirm 后侧栏物理耗材 **5 → 4**（未选中的槽 5 被移除，
+  与源码 kept_physical 语义一致）。侧栏行数用 OCR 标签计数
+  （x<330、400<y<500）。
