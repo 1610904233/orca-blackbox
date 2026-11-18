@@ -74,6 +74,7 @@ _BLOCKER_TITLES = (
     "snapmaker orca update",
     "customized preset",
     "modified g-code",
+    "snapmaker orca information",
 )
 _BLOCKER_BUTTONS = ("close", "cancel", "skip", "finish", "got it", "ok")
 
@@ -587,6 +588,24 @@ class MacOSDriver:
             if any(word in text for word in _BLOCKER_BUTTONS):
                 if _ax_perform(elem, AS.kAXPressAction):
                     return True
+        # Custom-drawn info dialogs (e.g. "Snapmaker Orca information" about a
+        # newer configuration) expose no titled button; click the OCR'd label.
+        point, size = _ax_point_size(axw)
+        if point and size:
+            try:
+                from .macos_ocr import recognize_text
+                scale = self._scale_for_point(*point)
+                rect = Rect(point[0] * scale, point[1] * scale,
+                            size[0] * scale, size[1] * scale)
+                words = recognize_text(self.capture_screen(), rect)
+                for label in ("ok", "close", "got it", "continue"):
+                    word = next((w for w in words
+                                 if w.text.strip().lower() == label), None)
+                    if word is not None:
+                        self.click(*word.rect.center)
+                        return True
+            except Exception as exc:  # noqa: BLE001
+                print(f"[macos] OCR dismiss failed: {exc!r}")
         return False
 
     # ------------------------------------------------------------------
