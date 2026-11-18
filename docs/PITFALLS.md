@@ -1185,3 +1185,7 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   Start Matching → Confirm 后侧栏物理耗材 **5 → 4**（未选中的槽 5 被移除，
   与源码 kept_physical 语义一致）。侧栏行数用 OCR 标签计数
   （x<330、400<y<500）。
+- **Add Mix 对话框入口未定位（m3t/u/v/x/y 暂缓）**：Color Mixing 面板的
+  AX 按钮只有 (372,490/524/558) 与 (380,452)；逐个点击后 (372,558) 打开的是
+  `Object/part setting` 参数表，没有 Add Mix 窗口。`Color Mixing` 头部
+  的“+”可能是 hover 显示的自绘按钮，需另做像素/悬停标定。
