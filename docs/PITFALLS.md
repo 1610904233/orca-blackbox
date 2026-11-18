@@ -1047,3 +1047,24 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   重新渲染为可点的 teal 药丸（实测 0.68）。因此 **不能只靠 teal 判定门禁**：
   m8c 的硬判据 = 混用横幅 OCR + 点击 Slice 后按钮区域像素 diff≈0（被拦）；
   解除混用后同一区域 diff=0.71（切片启动）。
+
+### 22.15 双模型重合、原生取色器与文件名陷阱（m8x_153）
+
+- **导入文件名别带小写 x**：open panel 的 OCR 会把 `m8x_153_...` 读成
+  `m8×_153_...`（×），`_pick_file_word` 的 alnum 归一化后与 stem 不匹配 →
+  明明行就在屏幕上却报 "not visible"。案例把导入文件改名为
+  `prusa153.stl` / `cube153.stl` 后一次通过。另外导入面板的列视图偶尔会
+  点错文件夹，用例已加 3 次重试 + 关闭残留面板。
+- **导入会自动避让**：CLI 载入的 Prusa 在 (100,100)，再导入的 cube20 落在
+  (135.5,136)，两者不重合、无碰撞提示。Windows 用 Move X=Y=0 构造重合；
+  macOS gizmo 不可靠 → 直接改 3mf：把 cube 的 build-item transform 的
+  tx/ty 写成 Prusa 的 (100,100) 后重载，载入即出现 "too close to others"，
+  3mf 世界中心距 0.00mm；按 A 后两对象分开到 21.85mm。
+- **原生 Colors 面板换色**：点耗材色块打开 title='Colors' 的 layer-8 面板。
+  顶部 5 个 44x33 AXButton 中第 2 个是滑杆模式；模式下拉的当前值可能是
+  `Grayscale Slider`，点开后选 `RGB Sliders`（AXMenuItem 有 rect；菜单
+  枚举会混入主菜单项，必须过滤 rect 非空）。RGB 模式下有 Red/Green/Blue
+  三个 AXSlider + 数值框 + 十六进制框。**AXSetValue 能改值但不触发面板
+  action**；用真实点击滑杆轨道两端即可（Red/Green 左端、Blue 右端），实测
+  取到 `#0303FC`，侧栏色块变为 (3,3,252)，gcode 的
+  `; filament_colour` 与十六进制框逐位一致。
