@@ -8,6 +8,7 @@ future macOS case migrations.
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -120,6 +121,50 @@ def wait_for_model(driver, app, win, *, timeout_s: float = 60.0,
                 return True, frame2, max(frac, frac2), seen
         time.sleep(poll_s)
     return False, last_frame, last_frac, seen
+
+
+def recover_saved_file(target: Path, started: float, roots,
+                       *, timeout_s: float = 6.0) -> Path | None:
+    """Move a just-saved file that landed in the wrong folder into ``target``.
+
+    macOS shares the NSSavePanel "recent places" across datadirs, so a Save
+    Project as... panel can open in the *previous* case's ``work`` folder even
+    though the driver gets the right file name.  Search the allowed roots for
+    a fresh file with the target stem and move it to the requested path.
+    """
+    target = Path(target)
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if target.exists():
+            return target
+        candidates: list[Path] = []
+        for root in roots:
+            root = Path(root)
+            if not root.is_dir():
+                continue
+            try:
+                for cand in root.rglob(target.stem + "*"):
+                    try:
+                        if (cand.is_file() and cand != target
+                                and cand.stat().st_mtime >= started - 2.0):
+                            candidates.append(cand)
+                    except OSError:
+                        continue
+            except OSError:
+                continue
+        if candidates:
+            candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            src = candidates[0]
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(src), str(target))
+                print(f"[mac_common] recovered save {src} -> {target}")
+                return target
+            except OSError as exc:
+                print(f"[mac_common] save recovery move failed: {exc}")
+                return None
+        time.sleep(0.5)
+    return None
 
 
 def teal_fraction(frame: Frame, rect: Rect) -> float:

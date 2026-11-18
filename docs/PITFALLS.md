@@ -952,8 +952,8 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
 
 ### 22.10 仍未打通（后续会话直接从证据继续）
 
-- 盘侧导轨 Remove/Lock：tooltip 锚点 ≠ 点击热区，盲点扫描未命中；
-  底部盘条 OCR 也读不到 “Plate N”。Customize(1070,300) 可用，#198 已绿。
+- 盘侧导轨 Remove/Lock：已打通（见 22.12）；底部盘条 OCR 仍读不到
+  “Plate N”。Customize(1070,300) 可用，#198 已绿。
 - m8z Assembly View：默认 1200 宽窗口把它裁到窗口外；1512 宽后已打通
   （见 22.11）。
 - m8x_221/222：PA Line 生成后切片报
@@ -974,3 +974,25 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   `Error: Relative extruder addressing…` 红色通知，它画在主窗口内，
   Windows 的 `#32770` 与 macOS 的窗口枚举都不会算成对话框。macOS 侧
   “无错误弹窗”判据 = 主窗口无 `AXSheets` 且无其它 layer-0 屏幕窗口。
+
+### 22.12 盘侧导轨按钮与 Save 面板跨用例记忆（m8x_194/197）
+
+- **导轨标定**：1200x800、双盘布局下，当前盘右上角的斜排图标列是
+  (920,251) Remove current plate / (933,261) Auto orient / (952,271)
+  Arrange / (972,281) Lock / (992,291) Customize / (1012,302) Move to
+  front。tooltip 渲染在**光标右侧**（裁剪右侧 260x80 可读），点击前必须
+  用 tooltip 验证；找不到时 ±40/±30 网格兜底，绝不盲点。Add plate 的
+  tooltip 则在下方（`tooltip_below`）。
+- **Lock 语义**：锁定后同一图标 tooltip 变 `Unlock current plate`，导轨
+  Arrange 被拒并在右下角 toast 出现
+  `This plate is locked. Cannot auto-arrange on this plate.`；解锁后
+  Arrange 让两个重叠立方体分开（保存 3mf 对比 build-item 平移）。与
+  Windows 断言同口径（锁定拒绝整理 / 解锁恢复整理）。
+- **Save Project as 面板记住全局最近目录**（NSSavePanel recent places，
+  跨 datadir 共享）：m8x_197 的保存实际落到 m8x_194/work，驱动按目标
+  路径找不到文件（日志 `not found after save`，第二次出现 Replace 提示）。
+  `mac_common.recover_saved_file` 在 `artifacts/mac/pilot` 下按文件名前缀
+  + 新 mtime 找到文件并移回目标路径。m8x_204 的 STL 导出也有同样现象
+  （`accept_anywhere` 已处理）。
+- **toast OCR 带脏字符**（`… printina. Jump to [Cubel!`）：用关键字子串
+  判定，别要求全文精确。
