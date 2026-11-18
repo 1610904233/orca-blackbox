@@ -205,9 +205,16 @@ def slice_and_export(driver, win, rep, gcode: Path, search_roots,
         return False
     driver.click_control(rows[0])
     time.sleep(1.5)
+    # The export panel remembers a GLOBAL last-used folder; a user session can
+    # leave it on ~/Desktop.  Include the standard folders so accept_anywhere
+    # still finds (and moves) the freshly written file.
+    roots = list(search_roots)
+    for extra in (Path.home() / "Desktop", Path.home() / "Documents"):
+        if extra.is_dir() and extra not in roots:
+            roots.append(extra)
     saved = driver.save_file_dialog(
         win, gcode, default_dir=gcode.parent, accept_anywhere=True,
-        search_roots=list(search_roots))
+        search_roots=roots)
     return saved and gcode.exists() and gcode.stat().st_size > 0
 
 

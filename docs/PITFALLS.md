@@ -958,15 +958,18 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   （见 22.11）。
 - m8x_221/222：PA Line 生成后切片报
   `Error: A G-code path goes beyond plate boundaries`，Export 保持禁用。
-- m8e/#129 弱冷分支：macOS 2.4.2 app 模板的 `{else}` 分支实际写
-  `MODE=1 DESIRE_TEMP=45 ALARM_TEMP=51 DELAY_OFF=0`（强冷是
-  `chamber_cooling_mode==2` → `MODE=1 DESIRE_TEMP=42 ALARM_TEMP=48`，
-  保温是 `==0` → `MODE=3 DESIRE_TEMP=45 DELAY_OFF=600`），与 Windows
-  基线期望的 `MODE=3 DESIRE_TEMP=0 DELAY_OFF=600` 不一致。证据：
-  `artifacts/mac/pilot/m8e/work/m8e_weak.gcode`。这是构建模板差异
-  （app bundle 的 `profiles/Snapmaker/machine/*.json` 已替换仓库
-  `resources/` 的旧模板），按已知差异记录、不强行变绿。同理 m8x_123
-  断言的强冷 `ALARM_TEMP=45` 在此模板下会是 48。
+- **m8e/#129 弱冷分支（已定案，按当前值移植）**：2.4.2 安装包模板的
+  `{else}` 弱冷分支是 `MODE=1 DESIRE_TEMP=45 ALARM_TEMP=51
+  FAN_SPEED=0.6 DELAY_OFF=0`（强冷 `==2` → `MODE=1 DESIRE_TEMP=42
+  ALARM_TEMP=48`；保温 `==0` → `MODE=3 DESIRE_TEMP=45 DELAY_OFF=600`）。
+  用户用本机 Orca 2.4.2 跑 #114 生成的 gcode 与我们的输出**逐字节一致**；
+  Windows 侧 2.4.2（MD5 D472049F…）核对结论同样是这三行——因此不是
+  Windows/macOS 差异，而是仓库旧注释/旧基线文档与 vendored
+  `resources/` 旧模板（20260128 单分支版）滞后。m8e 已按当前值注册
+  （证据 `artifacts/mac/pilot/m8e/{work/m8e_weak.gcode,
+  user_case114_weak.gcode}`）。同理 m8x_123 的强冷 `ALARM_TEMP` 在
+  2.4.2 上应为 48（仓库里的 45 是旧值）；m8f 的双档数组比较也需按
+  2.4.2 实际输出重新定口径。
 
 ### 22.11 装配视图与单字符对象行（m8z）
 
