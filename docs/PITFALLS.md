@@ -1163,3 +1163,7 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   才弹出（1.2s 时读不到）；悬停窗口相对 (400,725) 后 OCR
   `Color Difference: Good (AE=0.0)`，等级带 Good<=4 / Fair<=8 / Poor>8
   与值一致。
+- **m3m 预研**：Manual 的 Filament Setup 卡片在 macOS 默认就是 **4 行**
+  （Generic PETG + 3× PLA Silk，= min(4, n_physical)），不是 Windows 用例
+  预期的 2 行；卡片右上角候选点 (664/682/700, 210/228) 悬停只读到行文本，
+  未定位到 add/remove 图标。m3m 暂缓，后续需重新标定按钮几何。
