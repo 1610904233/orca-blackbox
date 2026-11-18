@@ -1178,3 +1178,6 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   + 图标 `(802,186)` → `Add filament`；Match Mode 组合框 `(482,119)` →
   `Manually select filaments from the current list for color mixing.`；
   匹配后映射行 `(400,725)` → `Color Difference: Good (AE=0.0)`。
+- **m3r**：匹配太快，3s 的 0.2s OCR 轮询未捕捉到 Stop/进度态；按 Windows
+  用例的同一口径接受 "fast match, transient missed — completion below"，
+  硬判据是 Color Mapping 渲染且 Stop 消失。
