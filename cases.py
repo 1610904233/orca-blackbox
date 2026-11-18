@@ -540,6 +540,12 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m8", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m8c_macos_temp_mix_gate": {
+        "file": "tests/engine/macos_pilot/m8c_temp_mix_gate.py",
+        "windows_case": "m8c_temp_mix_gate",
+        "milestone": "m8", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
 }
 for _name, _meta in MACOS_BASELINE.items():
     _meta.setdefault("platforms", ("macos",))

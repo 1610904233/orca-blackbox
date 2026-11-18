@@ -139,8 +139,15 @@ def read_slot2(driver, win) -> str:
     return " ".join(w.text for w in rows).strip()
 
 
-def select_slot2_preset(driver, win, rep, type_name: str) -> str:
-    """Open the slot-2 combo -> vendor Generic -> ABS/PC; return the row text."""
+def select_slot2_preset(driver, win, rep, type_name: str,
+                        vendor_name: str = "Generic",
+                        contains: bool = False) -> str:
+    """Open the slot-2 combo -> vendor -> type; return the row text.
+
+    ``vendor_name`` defaults to Generic (ABS/PC); use "Snapmaker" for the
+    original PLA Silk row.  ``contains`` matches the type as a substring
+    (the submenu OCR prefixes the current entry with a bullet).
+    """
     words = ocr_window(driver, win)
     combo = next((w for w in words
                   if 200 < w.rect.x < 400
@@ -154,23 +161,28 @@ def select_slot2_preset(driver, win, rep, type_name: str) -> str:
     time.sleep(1.2)
     words = ocr_window(driver, win)
     vendor = next((w for w in words
-                   if w.text.strip().lower() == "generic"
-                   and 200 < w.rect.x < 490 and w.rect.y > 470), None)
+                   if w.text.strip().lower() == vendor_name.lower()
+                   and 200 < w.rect.x < 490 and w.rect.y > 440), None)
     if vendor is None:
         rep.log(f"[INFO] vendor popup words="
-                f"{[(w.text, w.rect.to_xywh()) for w in words if w.rect.y > 450][:20]}")
-        return "no 'Generic' vendor entry"
+                f"{[(w.text, w.rect.to_xywh()) for w in words if w.rect.y > 430][:30]}")
+        return f"no {vendor_name!r} vendor entry"
     rep.log(f"[INFO] click vendor {vendor.text!r} @ {vendor.rect.to_xywh()}")
     driver.click(win.rect.x + vendor.rect.center[0],
                  win.rect.y + vendor.rect.center[1])
     time.sleep(1.0)
     words = ocr_window(driver, win)
-    target = next((w for w in words
-                   if w.text.strip().lower() == type_name.lower()
-                   and w.rect.x > 480 and w.rect.y > 470), None)
+    if contains:
+        target = next((w for w in words
+                       if type_name.lower() in w.text.lower()
+                       and w.rect.x > 450 and w.rect.y > 430), None)
+    else:
+        target = next((w for w in words
+                       if w.text.strip().lower() == type_name.lower()
+                       and w.rect.x > 450 and w.rect.y > 430), None)
     if target is None:
         rep.log(f"[INFO] type submenu words="
-                f"{[(w.text, w.rect.to_xywh()) for w in words if w.rect.x > 450 and w.rect.y > 450][:20]}")
+                f"{[(w.text, w.rect.to_xywh()) for w in words if w.rect.x > 450 and w.rect.y > 430][:20]}")
         return f"no {type_name} entry"
     rep.log(f"[INFO] click type {target.text!r} @ {target.rect.to_xywh()}")
     driver.click(win.rect.x + target.rect.center[0],

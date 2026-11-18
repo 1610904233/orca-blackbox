@@ -66,6 +66,7 @@ def main() -> int:
                      win.rect.y + word.rect.center[1])
         time.sleep(1.5)
         driver.capture(win).save_png(OUT / "popup.png")
+        driver.capture_screen().save_png(OUT / "popup_screen.png")
         rep.log("[INFO] windows:")
         for w in driver.windows_for_pid(app.pid):
             if not w.on_screen or w.rect.area < 200:
