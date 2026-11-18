@@ -958,6 +958,15 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   （见 22.11）。
 - m8x_221/222：PA Line 生成后切片报
   `Error: A G-code path goes beyond plate boundaries`，Export 保持禁用。
+- m8e/#129 弱冷分支：macOS 2.4.2 app 模板的 `{else}` 分支实际写
+  `MODE=1 DESIRE_TEMP=45 ALARM_TEMP=51 DELAY_OFF=0`（强冷是
+  `chamber_cooling_mode==2` → `MODE=1 DESIRE_TEMP=42 ALARM_TEMP=48`，
+  保温是 `==0` → `MODE=3 DESIRE_TEMP=45 DELAY_OFF=600`），与 Windows
+  基线期望的 `MODE=3 DESIRE_TEMP=0 DELAY_OFF=600` 不一致。证据：
+  `artifacts/mac/pilot/m8e/work/m8e_weak.gcode`。这是构建模板差异
+  （app bundle 的 `profiles/Snapmaker/machine/*.json` 已替换仓库
+  `resources/` 的旧模板），按已知差异记录、不强行变绿。同理 m8x_123
+  断言的强冷 `ALARM_TEMP=45` 在此模板下会是 48。
 
 ### 22.11 装配视图与单字符对象行（m8z）
 
@@ -1015,3 +1024,17 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
 - `mac_gcode.py` 是 `tests/m8_common.py` 里 `used_filaments` /
   `purifier_params` 的 macOS 副本（后者模块级 import win32，macOS 不能
   直接复用）；正则需与 Windows 版保持同步。
+
+### 22.14 耗材预设下拉与 Change Filament（macOS 可用）
+
+- **侧栏预设下拉是自绘两级菜单**（无 AXMenuItem），用 OCR + 真实点击：
+  1200x800 下槽 1 组合框在 `(58,414)`、槽 2 在 `(242,414)`；点开后出现
+  厂商菜单（窗口相对 ≈(236,442)，含 `Generic` / `FDplast` / `Snapmaker`），
+  点 `Generic` 后子菜单在 ≈x=516 列出 `ABS`/`ASA`/`PC`/`PLA` 等；点击后
+  槽位行文本立即变为 `~ Generic ABS`（实测 `(244,414)`）。
+- **对象换耗材槽**：画布右键模型 → 上下文菜单是真实 AXMenuItem 列表，
+  `Change Filament` 的 AXPress 会展开子菜单（同为 AXMenuItem，如
+  `Snapmaker PLA Silk`），点击即可把对象指到该槽。MIXED 夹具的模型点
+  在 1200x800 下约 `(814,396)`（Delete All + Add Cube 后仍在盘心附近）。
+- 这两条通道足够覆盖 m8c/m8d 的“换耗材预设/换槽”步骤，无需 Windows 的
+  消息级菜单技巧。

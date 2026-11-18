@@ -167,6 +167,45 @@ def recover_saved_file(target: Path, started: float, roots,
     return None
 
 
+def export_gcode_enabled(driver, win) -> bool:
+    """File > Export G-code... is enabled only after a completed slice."""
+    item = driver.find_control(win, role="AXMenuItem",
+                               title="Export G-code", timeout_s=2)
+    return item is not None and item.enabled
+
+
+def slice_and_export(driver, win, rep, gcode: Path, search_roots,
+                     *, timeout_s: float = 240.0) -> bool:
+    """Click Slice plate, wait for Export G-code, export through the panel.
+
+    The export panel remembers a global last-used folder and its Save button
+    does not commit through AXPress, so use accept_anywhere + fresh-file
+    discovery (m8x_158 recipe).
+    """
+    sx = win.rect.w / 1200.0
+    sy = win.rect.h / 800.0
+    driver.click(win.rect.x + 1000 * sx, win.rect.y + 45 * sy)
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if export_gcode_enabled(driver, win):
+            break
+        time.sleep(3.0)
+    else:
+        rep.log("[INFO] slice did not finish before the export gate")
+        return False
+    rows = [c for c in driver.controls(win, max_depth=12)
+            if c.role == "AXMenuItem"
+            and c.title.strip().lower().startswith("export g-code")]
+    if not rows or not rows[0].enabled:
+        return False
+    driver.click_control(rows[0])
+    time.sleep(1.5)
+    saved = driver.save_file_dialog(
+        win, gcode, default_dir=gcode.parent, accept_anywhere=True,
+        search_roots=list(search_roots))
+    return saved and gcode.exists() and gcode.stat().st_size > 0
+
+
 def teal_fraction(frame: Frame, rect: Rect) -> float:
     """Fraction of teal pixels (active wx notebook tab colour 0,150,136)."""
     crop = frame.crop(rect)

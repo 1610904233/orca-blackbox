@@ -53,6 +53,7 @@ from harness.platform.factory import get_driver  # noqa: E402
 from harness.platform.macos_ocr import recognize_text  # noqa: E402
 from mac_common import (  # noqa: E402
     ARTIFACTS, Reporter, close_app, launch_and_focus, recover_saved_file,
+    slice_and_export,
 )
 import mac_3mf  # noqa: E402
 import mac_gcode  # noqa: E402
@@ -140,36 +141,11 @@ def item_positions(path: Path) -> dict[str, tuple]:
             for oid, t in geo.items}
 
 
-def export_enabled(driver, win):
-    item = driver.find_control(win, role="AXMenuItem",
-                               title="Export G-code", timeout_s=2)
-    return item is not None and item.enabled
-
-
-def slice_and_export(driver, win, rep, gcode: Path, work: Path) -> bool:
-    sx = win.rect.w / 1200.0
-    sy = win.rect.h / 800.0
-    driver.click(win.rect.x + 1000 * sx, win.rect.y + 45 * sy)
-    deadline = time.monotonic() + 240.0
-    while time.monotonic() < deadline:
-        if export_enabled(driver, win):
-            break
-        time.sleep(3.0)
-    else:
-        rep.log("[INFO] slice did not finish within 240s")
-        return False
-    rows = [c for c in driver.controls(win, max_depth=12)
-            if c.role == "AXMenuItem"
-            and c.title.strip().lower().startswith("export g-code")]
-    if not rows or not rows[0].enabled:
-        return False
-    driver.click_control(rows[0])
-    time.sleep(1.5)
-    saved = driver.save_file_dialog(
-        win, gcode, default_dir=gcode.parent, accept_anywhere=True,
-        search_roots=[work, OUT, HERE / "fixtures",
-                      Path.home() / "Documents"])
-    return saved and gcode.exists() and gcode.stat().st_size > 0
+def export_project_gcode(driver, win, rep, gcode: Path, work: Path) -> bool:
+    return slice_and_export(
+        driver, win, rep, gcode,
+        [work, OUT, ARTIFACTS / "pilot", HERE / "fixtures",
+         Path.home() / "Documents"])
 
 
 def main() -> int:
@@ -283,7 +259,7 @@ def main() -> int:
                   f"outside={outside}")
 
         # Slice + export; device upload/print is out of black-box scope.
-        if not slice_and_export(driver, win, rep, gcode, work):
+        if not export_project_gcode(driver, win, rep, gcode, work):
             rep.check("切片完成并导出 G-code", False, "slice/export failed")
             return rep.save({"stage": "slice"})
         rep.check("切片完成并导出 G-code", True,
