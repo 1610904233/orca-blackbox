@@ -552,6 +552,12 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m8", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m8b_macos_official_color": {
+        "file": "tests/engine/macos_pilot/m8b_official_color.py",
+        "windows_case": "m8b_official_color",
+        "milestone": "m8", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
 }
 for _name, _meta in MACOS_BASELINE.items():
     _meta.setdefault("platforms", ("macos",))

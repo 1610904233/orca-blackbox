@@ -1068,3 +1068,28 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   action**；用真实点击滑杆轨道两端即可（Red/Green 左端、Blue 右端），实测
   取到 `#0303FC`，侧栏色块变为 (3,3,252)，gcode 的
   `; filament_colour` 与十六进制框逐位一致。
+
+### 22.16 官方色卡弹窗与自绘预设菜单滚动（m8b）
+
+- **官方色卡弹窗**：点 Snapmaker 预设槽（如槽 2 PLA Silk）的色块，打开
+  无标题 layer-8 窗口，约 (788,484,380,376)。内容靠 OCR：卡片名 + `sku N`
+  在顶部，`Official Filaments` 是列表标记，卡片是 5x3 自绘网格（对话框
+  相对中心 x=29/77/125/173/221，行 y=166/194/222），底部 `Cancel`/`OK`
+  在对话框相对 (120,348)/(259,348)。背景画布点击**不会**关闭弹窗（模态）。
+- **#46/#47 口径**：选卡后 SKU 变化 → OK 关闭且侧栏色块像素变化；重开
+  SKU 保持。再选另一张卡 → Cancel 关闭，色块不变，重开仍保持 OK 所选。
+  非官方预设（Generic PETG）点色块回退到原生 `Colors` 面板（#44 反向对照）。
+- **自绘预设子菜单滚轮会被吞**：打开 Snapmaker 厂商子菜单后，wheel 事件
+  只滚动一格，随后全部丢失（type-ahead 也无效）。可靠做法是 **CGEvent
+  拖拽子菜单右侧滚动条**：鼠标 press 于 (right-5, y+30)，拖到
+  (right-5, bottom-20)，release；一次即可让 `PLA Rainbow` 出现在
+  (520,618)。这是解决 m8f/m8g 预设选择的关键通道。
+- **槽位行文本会截断**：选中后行只显示 `~ Snapmaker PLA Ra...`，不能用
+  `rainbow in row` 判定；最终以 gcode 的 `filament_settings_id` 列表含
+  `Snapmaker PLA Rainbow` 为准。
+- **Delete All 后右键点会漂**：m8d 在 (814,396) 能命中 cube，m8b 同一状态
+  却要 (790,430)。右键找 Change Filament 时用 7 个点的小网格
+  (814,396/430/460、850/790,430、814,380、780,400) 逐点试。
+- **Rainbow 切片会用满 5 个槽**（渐变/混色），不要断言 `used==[2]`；
+  断言 `2 in used` + `filament_settings_id` 含 Rainbow。实测 #56 渲染
+  主色 hue=15°、声明色 `#EB6232`（15°）、140px 裁剪内饱和占比 0.272。

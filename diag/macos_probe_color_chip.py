@@ -25,7 +25,7 @@ from mac_common import (  # noqa: E402
 
 OUT = HERE / "artifacts" / "mac" / "probe" / "color_chip"
 MODEL = HERE / "fixtures" / "mixed_filament_test.3mf"
-CHIP_XY = (25, 415)
+CHIP_XY = (220, 418)
 
 
 def pixel(frame, x, y):
@@ -54,6 +54,7 @@ def main() -> int:
         driver.click(win.rect.x + CHIP_XY[0], win.rect.y + CHIP_XY[1])
         time.sleep(2.0)
         driver.capture(win).save_png(OUT / "after_click.png")
+        driver.capture_screen().save_png(OUT / "dialog_screen.png")
         words = recognize_text(driver.capture_screen().crop(win.rect))
         rep.log(f"[INFO] OCR={[(w.text, w.rect.to_xywh()) for w in words][:60]}")
         for w in driver.windows_for_pid(app.pid):
