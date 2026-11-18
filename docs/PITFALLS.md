@@ -1174,3 +1174,7 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   Windows 的 "0%-70%"，按实际文案断言）。
 - 启动偶发 `no stable main window within 150s`（同机冷启动/残留），直接
   重试一次即可（runner 的失败重试 1 次也会覆盖）。
+- **m3s 已打通**：对话框控件 tooltip（2.5s 悬停）实测：
+  + 图标 `(802,186)` → `Add filament`；Match Mode 组合框 `(482,119)` →
+  `Manually select filaments from the current list for color mixing.`；
+  匹配后映射行 `(400,725)` → `Color Difference: Good (AE=0.0)`。
