@@ -1159,3 +1159,7 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   实测 **0 → 0.557**），Color Mapping 行与 → 出现，并弹
   `The mix ratios for 7 ... outside the recommended ranges` 横幅。
   Confirm 关闭窗口。该窗口是 m3l/m3m/m3r/m3s/m4b 等批量对话框用例的共用面。
+- 映射行 tooltip（m3l）：wx system tooltip 在 macOS 上需要**约 2.5s**
+  才弹出（1.2s 时读不到）；悬停窗口相对 (400,725) 后 OCR
+  `Color Difference: Good (AE=0.0)`，等级带 Good<=4 / Fair<=8 / Poor>8
+  与值一致。
