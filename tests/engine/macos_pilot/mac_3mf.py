@@ -165,6 +165,25 @@ def plate_names(path: Path | str) -> list[str]:
     return re.findall(r'key="plater_name"\s+value="([^"]*)"', text)
 
 
+def plate_locked(path: Path | str) -> dict[str, bool]:
+    """plate id -> locked flag (``key="locked"`` in model_settings.config)."""
+    path = Path(path)
+    with zipfile.ZipFile(path) as z:
+        try:
+            text = z.read("Metadata/model_settings.config").decode(
+                "utf-8", "replace")
+        except KeyError:
+            return {}
+    out: dict[str, bool] = {}
+    for match in re.finditer(r"<plate>(.*?)</plate>", text, re.S):
+        body = match.group(1)
+        pid = re.search(r'plater_id"\s+value="(\d+)"', body)
+        locked = re.search(r'key="locked"\s+value="(true|false)"', body)
+        if pid and locked:
+            out[pid.group(1)] = locked.group(1) == "true"
+    return out
+
+
 def read_plates_detailed(path: Path | str) -> dict[str, list[tuple[str, str]]]:
     """plate id -> [(object id, object name)] in model_settings.config."""
     path = Path(path)

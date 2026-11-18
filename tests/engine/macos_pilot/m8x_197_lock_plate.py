@@ -216,10 +216,13 @@ def main() -> int:
             return rep.save({"stage": "save-s0"})
         plates0 = mac_3mf.read_plates(s0)
         pos0 = cube_positions(s0)
+        locked0 = mac_3mf.plate_locked(s0)
         rep.log(f"[INFO] S0 plates={ {k: v for k, v in plates0.items()} }")
-        rep.log(f"[INFO] S0 cube positions={pos0}")
+        rep.log(f"[INFO] S0 cube positions={pos0} locked={locked0}")
         rep.check("基线几何可解析（两立方体坐标）", len(pos0) >= 2,
                   f"cubes={pos0}")
+        rep.check("基线盘未锁定（3mf locked=false）",
+                  locked0.get("2") is False, f"locked={locked0}")
 
         # 1) Lock entry, tooltip-verified.
         lock = find_icon(driver, win, is_lock, LOCK_SEED)
@@ -250,9 +253,12 @@ def main() -> int:
             rep.check("另存 S1（锁定后）", False, "save panel failed")
             return rep.save({"stage": "save-s1"})
         pos1 = cube_positions(s1)
-        rep.log(f"[INFO] S1 cube positions={pos1}")
+        locked1 = mac_3mf.plate_locked(s1)
+        rep.log(f"[INFO] S1 cube positions={pos1} locked={locked1}")
         rep.check("锁定后立方体未移动（几何）", bool(pos1) and pos1 == pos0,
                   f"{pos0} -> {pos1}")
+        rep.check("锁定态落盘（3mf locked=true）",
+                  locked1.get("2") is True, f"locked={locked1}")
 
         # 3) Unlock: tooltip flips back.
         unlock = find_icon(driver, win, is_unlock, LOCK_SEED)
@@ -276,6 +282,7 @@ def main() -> int:
         pos2 = cube_positions(s2)
         rep.log(f"[INFO] S2 cube positions={pos2}")
         moved = bool(pos1) and bool(pos2) and pos1 != pos2
+        s2_used = s2
         if not moved:
             rep.log("[INFO] rail arrange no-op after unlock; trying canvas+A")
             arrange_fallback_a(driver, win)
@@ -283,10 +290,15 @@ def main() -> int:
                 rep.check("另存 S2b（全局整理）", False, "save panel failed")
                 return rep.save({"stage": "save-s2b"})
             pos2 = cube_positions(s2b)
+            s2_used = s2b
             rep.log(f"[INFO] S2b cube positions={pos2}")
             moved = bool(pos1) and bool(pos2) and pos1 != pos2
         rep.check("解锁后整理恢复（几何变化）", moved,
                   f"{pos1} -> {pos2}")
+        locked2 = mac_3mf.plate_locked(s2_used)
+        rep.log(f"[INFO] unlock state 3mf locked={locked2}")
+        rep.check("解锁态落盘（3mf locked=false）",
+                  locked2.get("2") is False, f"locked={locked2}")
         rep.check("app alive", app.alive())
     except Exception as exc:  # noqa: BLE001
         rep.check("unexpected", False, f"{type(exc).__name__}: {exc}")
