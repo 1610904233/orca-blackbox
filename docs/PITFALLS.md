@@ -864,3 +864,96 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   - 未勾选（PA Tower）：teal=0、dark=0。
 - 判据：`checked = teal>=50 or dark>=5`；`enabled` 另读 IsWindowEnabled。
   probe_242_pa222b 三态实测 + 用户中文界面截图确认。
+
+## 22. 1117 补充：macOS 移植（AX/面板/Vision/3mf 构造）
+
+> 证据：`harness/platform/macos.py`、`tests/engine/macos_pilot/*`、
+> `diag/macos_probe_*.py`；最近全量 `artifacts/mac/baseline_run23.log`
+> （MACOS_BASELINE 32/32 GREEN，HEAD 5804f87）。
+
+### 22.1 AX 遍历被代理地址复用截断（最隐蔽）
+
+- **现象**：`_walk` 遍历 NSOpenPanel 只拿到 14/144 个元素，侧边栏 home 行
+  偶尔“不存在”；同一棵树先 `list()` 再 `for` 结果不同。
+- **根因**：AXUIElement 代理在两次 yield 之间被释放，`objc.pyobjc_id`
+  地址被复用，`seen` 误判重复而跳过真实子节点。
+- **修法**：遍历期间持有所有元素引用（`keep` 列表），`_walk` /
+  `_walk_static` 均已修。排查 AX“缺控件”先怀疑这条。
+
+### 22.2 对话框里有“影子”控件：取第一个匹配
+
+- **现象**：完整遍历后 `AXPress(Save)` 返回 `-25205`（action unsupported）
+  或返回 0 但面板不关；同一视觉按钮存在多个 AX 代理。
+- **修法**：`_dialog_widgets` **保留第一个**匹配，不要取最后一个；
+  第一个才是真实可操作控件。AX 错误码要用原始返回值判断，不要只看 bool。
+
+### 22.3 Save As 面板不是 key window
+
+- **现象**：`AXFocused=False`；真实鼠标/键盘事件到不了面板（点 Cancel
+  也不关），但 `AXSetValue` 改字段可见、`AXPress Save` 可提交。
+- **修法**：Save Project as 走 `AXSetValue + AXPress`；**不要**真实点击
+  或键盘。保存目录跟随当前项目/模型目录；`window_mainframe` 已在 seed
+  里固定为 `360; 80; 1200; 800; 0`。
+- **导出面板相反**：忽略 AXPress，必须真实点 Save；默认目录是全局
+  上次目录、还会自动补 `.stl`。m8x_204 采用“接受默认位置 + 按 mtime 取
+  最新 .stl 再归位”，不再深目录导航。
+
+### 22.4 NSOpenPanel：停 Recents、文件行无 AX
+
+- 面板打开停在 Recents，`AXBrowser` 每列只有空 `AXScrollArea`；文件行只能
+  靠 OCR + 真实点击。
+- **导航**：AXOpen/点击侧边栏 home → OCR 面板 → 逐级单击目录（取最右列
+  的匹配词）。**滚动只用滚轮**（x≈面板 0.85、y≈0.55）；AX
+  `AXScrollDownByPage` 会把列滚回去、抵消滚轮。
+- **底部行陷阱**：行靠近面板底部（y>bottom-100）时词中心落在 Cancel 的
+  hover padding 上，点击会关闭面板 → 改点该行**右侧**（panel.right-40）。
+- 文件名 OCR 常把结尾 `l` 读成 `I`；按 stem/字母数字归一化匹配。
+
+### 22.5 启动/加载弹窗
+
+- `Customized Preset`（启动与打开项目都会出现）不关则菜单全 disabled、
+  标题为空；已加入 `_BLOCKER_TITLES`。
+- 旧配置项目会弹 `Snapmaker Orca information`（“newer version … values
+  have been replaced”）；OK 是自绘按钮，AX 无标题 → 已加 OCR `OK`
+  兜底并加入 blocker 列表。
+
+### 22.6 Vision OCR 会挂死（VNCRImageReaderDetector）
+
+- **现象**：m4a 整例卡 18+ 分钟；`sample` 栈停在
+  `com.apple.VN.detectorSyncTasksQueue.VNCRImageReaderDetector`。
+- **修法**：`macos_ocr.recognize_text` 用 daemon 线程 + 30s 超时
+  （`ORCA_BB_OCR_TIMEOUT` 可调），超时抛 `OcrError`；runner 再加单例
+  600s watchdog、超时清 app、失败重试 1 次。
+
+### 22.7 切片/G-code oracle
+
+- Slice 按钮在 `(1000,45)`；完成后窗口 OCR 出现
+  `stop printing object …` / `WIPE_START`，`File > Export G-code…` 变为
+  可用。导出走普通 Save 面板（AXPress 可提交），默认名来自项目。
+- 校准对话框字段都是 AXTextField：温度 230/190/5（step disabled）、
+  回抽 0/2/0.1、最大流量 5/20/0.5、输入整形 15/110/15/110/0.150；OK 用
+  OCR 点击。小模型 vp 增量要按模型调（回抽塔 +0.0049，用 0.003 门）。
+- 温度塔 gcode 的 M104/M109 S 值可验证 9 档 230→190 顺序。
+
+### 22.8 自绘 gizmo / 字段
+
+- Move/Rotate/Scale 面板**没有 AX 字段**；点数值后 Cmd+A/键入常导致面板
+  关闭，190/191/192 暂缓。
+- 可用的真实输入配方（Plate Settings 已验证）：点标题栏激活 → 点字段
+  两次 → Cmd+A → Backspace → 剪贴板 Cmd+V → AXPress 第一个 AXButton(OK)。
+
+### 22.9 用 3mf 构造前置（绕开 gizmo）
+
+- 直接改写 `3D/3dmodel.model` 里 `<item transform>` 的旋转部分即可构造
+  倾斜模型；应用加载时会自动落床（tz 变化），所以**基线必须在加载后
+  另存 P0** 再比较。
+- auto orient oracle：某旋转行 ≈ (0,0,±1)、tz=半高、x/y 不变、行范数≈1；
+  Prusa 旁观 item 按 3 位小数比较（浮点序列化末位会变）。
+
+### 22.10 仍未打通（后续会话直接从证据继续）
+
+- 盘侧导轨 Remove/Lock：tooltip 锚点 ≠ 点击热区，盲点扫描未命中；
+  底部盘条 OCR 也读不到 “Plate N”。Customize(1070,300) 可用，#198 已绿。
+- m8z Assembly View：菜单/工具栏/导轨均无 assembly 入口（当前 build）。
+- m8x_221/222：PA Line 生成后切片报
+  `Error: A G-code path goes beyond plate boundaries`，Export 保持禁用。
