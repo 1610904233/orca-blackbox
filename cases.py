@@ -582,6 +582,12 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m8", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m3k_macos_mixing_match": {
+        "file": "tests/engine/macos_pilot/m3k_mixing_match.py",
+        "windows_case": "m3k_mixing_match",
+        "milestone": "m3", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
 }
 for _name, _meta in MACOS_BASELINE.items():
     _meta.setdefault("platforms", ("macos",))

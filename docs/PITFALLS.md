@@ -1145,3 +1145,17 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   + 保温 `MODE=3 DESIRE_TEMP=45 DELAY_OFF=600`（无 ALARM）。仓库 Windows
   用例文本里的 `ALARM_TEMP=45` 是 2.4.2 之前的旧值（Windows 2.4.2 核对
   为 48）；macOS 端口按 48 断言。
+
+### 22.19 混色批量对话框（m3k 已打通）
+
+- 侧栏 `Color Mixing Match` 打开的是**独立窗口**（title 相同，layer 8，
+  约 500x728）。OCR 时注意：`recognize_text(capture_screen().crop(win.rect),
+  Rect(dlg_rel...))` 返回的是**主窗口相对坐标**，不是对话框相对坐标；点击
+  必须加 `win.rect.x/y`（本项目因此多花了一轮探针）。
+- 关键坐标（主窗口相对）：Match Mode 组合框 `(482,119)`；下拉的
+  Auto/Manual 在 y≈153/179；`Start Matching (650,117)`；`Cancel (458,761)`；
+  `Confirm (690,761)`。
+- Manual + Start Matching 后：Matched 预览由灰色占位变为彩色（饱和占比
+  实测 **0 → 0.557**），Color Mapping 行与 → 出现，并弹
+  `The mix ratios for 7 ... outside the recommended ranges` 横幅。
+  Confirm 关闭窗口。该窗口是 m3l/m3m/m3r/m3s/m4b 等批量对话框用例的共用面。
