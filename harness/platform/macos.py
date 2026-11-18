@@ -1377,6 +1377,19 @@ class MacOSDriver:
             return None
         return max(hits, key=lambda w: w.rect.x)
 
+    @staticmethod
+    def _row_click_point(panel: WindowRef, word):
+        """A click point on the row that avoids the bottom button strip.
+
+        Rows near the panel bottom overlap the Cancel/Open hover padding; a
+        click there dismisses the panel (measured).  Click the row's right
+        side instead, which is still inside the active file column.
+        """
+        x, y = word.rect.center
+        if y > panel.rect.bottom - 100:
+            x = panel.rect.right - 40
+        return x, y
+
     def _panel_ocr_words(self, panel: WindowRef):
         from .macos_ocr import recognize_text  # local import: PyObjC OCR
         frame = self.capture_screen()
@@ -1494,8 +1507,19 @@ class MacOSDriver:
                 word = self._pick_rightmost(
                     self._panel_ocr_words(panel), component)
                 if word is not None:
+                    # A row sitting on the bottom edge is under the
+                    # Open/Cancel button strip; clicking it dismisses the
+                    # panel.  Scroll until it is safely above the buttons.
+                    if (word.rect.center[1] > panel.rect.bottom - 60
+                            and pages < 16):
+                        self._scroll_browser(panel, down=True)
+                        pages += 1
+                        last_scroll = time.monotonic()
+                        word = None
+                        time.sleep(0.8)
+                        continue
                     break
-                if pages < 10 and time.monotonic() - last_scroll > 2.5:
+                if pages < 16 and time.monotonic() - last_scroll > 2.5:
                     self._scroll_browser(panel, down=True)
                     pages += 1
                     last_scroll = time.monotonic()
@@ -1506,7 +1530,7 @@ class MacOSDriver:
                       f"not visible; OCR="
                       f"{joined_text(self._panel_ocr_words(panel))[-200:]!r}")
                 return False
-            cx, cy = word.rect.center
+            cx, cy = self._row_click_point(panel, word)
             print(f"[macos] open_file_dialog: open {component!r} at "
                   f"({cx:.0f},{cy:.0f})")
             self.click(cx, cy)
@@ -1544,7 +1568,7 @@ class MacOSDriver:
             print(f"[macos] open_file_dialog: {target.name!r} not visible; "
                   f"OCR={joined_text(last_words)[-220:]!r}")
             return False
-        cx, cy = word.rect.center
+        cx, cy = self._row_click_point(panel, word)
         print(f"[macos] open_file_dialog: select {target.name!r} at "
               f"({cx:.0f},{cy:.0f})")
         self.click(cx, cy)
