@@ -1118,3 +1118,7 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   `mode=2、numeric=39`。实际生效档的值是同一个 550，但对比工具不按
   “当前档”取值。这是构建/模板差异，已记录；m8f 保留为 m8g 的共享
   helper 模块，不注册进 MACOS_BASELINE。
+- **普通预设切换（m3e）**：MIXED（0.8 喷嘴）的 process combo 在
+  (42,646)，平铺菜单的系统行 0.24/0.32/0.40 在 y=704/730/756；点 0.24
+  后重新切片，gcode `; layer_height` 0.4→0.24、`print_settings_id`
+  同步为 0.24mm。切片后 app 在 Preview，切换前先点回 Prepare。
