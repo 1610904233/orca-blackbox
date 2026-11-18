@@ -558,6 +558,12 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m8", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m8g_macos_flow_single": {
+        "file": "tests/engine/macos_pilot/m8g_flow_single.py",
+        "windows_case": "m8g_flow_single",
+        "milestone": "m8", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
 }
 for _name, _meta in MACOS_BASELINE.items():
     _meta.setdefault("platforms", ("macos",))

@@ -1093,3 +1093,28 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
 - **Rainbow 切片会用满 5 个槽**（渐变/混色），不要断言 `used==[2]`；
   断言 `2 in used` + `filament_settings_id` 含 Rainbow。实测 #56 渲染
   主色 hue=15°、声明色 `#EB6232`（15°）、140px 裁剪内饱和占比 0.272。
+
+### 22.17 高流量预设与 Nozzle Flow（m8f/m8g）
+
+- **工艺用户预设顺序**（空工程 + cube，1200x800）：进程下拉的 User presets
+  三行在 y=616/640/668，依次是 **HF-TEST / STD-TEST / FLOW-TEST**。
+- **耗材用户预设**：槽 1 下拉 → **悬停** `Custom`（点击不会展开）→ 右侧
+  变体行 y=474/500/526，依次是 **FLOW-TEST / HF-TEST / STD-TEST**。行文本
+  被截断成 `Snapmaker PLA SnapSpe...`，无法按名字识别；判定必须靠
+  **保存工程后读 `print_settings_id` / `filament_settings_id`**（UI 的
+  combo 文本同样截断，gcode 里的同名配置块也可读）。
+- **Nozzle Flow 下拉**：`Standard` 在 (310,324)、`High Flow` 在 (312,349)
+  （窗口相对，点击前 combo 在 (308,288)）。
+- 切到 **High Flow** 后切片会弹 `Custom Filament Grouping` 模态窗口
+  （772x362）：OCR 可见 `Standard Nozzle` / `High Flow Nozzle` 与
+  `Confirm`。默认 PLA 芯片在 Standard 列；**用 CGEvent 拖拽把 PLA 拉到
+  High Flow 列**（窗口相对 246→642，y 不变）再点 Confirm（窗口相对
+  (890,535)），否则高流量喷嘴不生效。
+- **#136（m8g）可绿**：FLOW-TEST 两档值相同，两个独立会话各自切片，
+  compare_gcode 报告 **mode=1、numeric=0** → PASS。
+- **#135（m8f）在 macOS 上不可按原口径变绿**：STD-TEST+Standard 与
+  HF-TEST+High Flow 的 gcode 配置数组保留了**两档值的固定顺序**
+  （如 inner_wall_speed A=550,600、B=300,550），官方脚本按位置比较 →
+  `mode=2、numeric=39`。实际生效档的值是同一个 550，但对比工具不按
+  “当前档”取值。这是构建/模板差异，已记录；m8f 保留为 m8g 的共享
+  helper 模块，不注册进 MACOS_BASELINE。

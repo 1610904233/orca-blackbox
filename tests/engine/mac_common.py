@@ -175,7 +175,7 @@ def export_gcode_enabled(driver, win) -> bool:
 
 
 def slice_and_export(driver, win, rep, gcode: Path, search_roots,
-                     *, timeout_s: float = 240.0) -> bool:
+                     *, timeout_s: float = 240.0, on_poll=None) -> bool:
     """Click Slice plate, wait for Export G-code, export through the panel.
 
     The export panel remembers a global last-used folder and its Save button
@@ -187,6 +187,11 @@ def slice_and_export(driver, win, rep, gcode: Path, search_roots,
     driver.click(win.rect.x + 1000 * sx, win.rect.y + 45 * sy)
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
+        if on_poll is not None:
+            try:
+                on_poll()
+            except Exception:
+                pass
         if export_gcode_enabled(driver, win):
             break
         time.sleep(3.0)
