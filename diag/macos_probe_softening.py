@@ -21,7 +21,7 @@ for path in (str(HERE), str(HERE / "tests" / "engine"),
 import ApplicationServices as AS  # noqa: E402
 
 from harness.platform.factory import get_driver  # noqa: E402
-from harness.platform.macos import _ax_set  # noqa: E402
+from harness.platform.macos import _ax_perform, _ax_set  # noqa: E402
 from mac_common import (  # noqa: E402
     ARTIFACTS, Reporter, close_app, launch_and_focus, slice_and_export,
     wait_for_model,
@@ -87,25 +87,46 @@ def main() -> int:
         fld = vitr_field(driver, dlg)
         rep.log(f"[INFO] vitr field={fld.rect.to_xywh() if fld else None} "
                 f"value={fld.value if fld else None}")
-        if fld is not None and fld.handle is not None:
+        if fld is not None:
+            rep.log(f"[INFO] field actions={fld.actions}")
             ok_set = _ax_set(fld.handle, AS.kAXValueAttribute, "45")
             rep.log(f"[INFO] AXSetValue 45 -> {ok_set}")
             time.sleep(0.5)
-            # Commit the edit: focus the field with a real click, select all,
-            # type the value, then Tab out (AXSetValue alone may not fire the
-            # wx text-change event).
-            driver.click(*fld.rect.center)
-            time.sleep(0.3)
-            driver.send_key("a", modifiers=("cmd",))
-            driver.send_text("45")
-            time.sleep(0.5)
-            driver.send_key("tab")
+            if fld.handle is not None and "AXConfirm" in (fld.actions or ()):
+                rep.log("[INFO] AXConfirm")
+                _ax_perform(fld.handle, "AXConfirm")
+            else:
+                driver.click(*fld.rect.center)
+                time.sleep(0.3)
+                driver.send_key("return")
+            time.sleep(1.0)
+            # Switch tabs to force the editor to commit/refresh.
+            driver.click(win.rect.x + 333, win.rect.y + 127)   # Cooling
+            time.sleep(1.0)
+            driver.click(win.rect.x + 241, win.rect.y + 127)   # Filament
             time.sleep(1.0)
             fld2 = vitr_field(driver, dlg)
-            rep.log(f"[INFO] readback after typing={fld2.value if fld2 else None}")
-        # Close via the window close button.
-        driver.close_window(dlg)
+            rep.log(f"[INFO] readback after tab switch={fld2.value if fld2 else None}")
+            # Try the clipboard recipe as a second channel if still 70.
+            if fld2 is not None and str(fld2.value) != "45":
+                import AppKit
+                driver.click(*fld.rect.center)
+                driver.click(*fld.rect.center)
+                time.sleep(0.3)
+                pb = AppKit.NSPasteboard.generalPasteboard()
+                pb.clearContents()
+                pb.setString_forType_("45", AppKit.NSPasteboardTypeString)
+                driver.send_key("a", modifiers=("cmd",))
+                driver.send_key("v", modifiers=("cmd",))
+                time.sleep(0.8)
+                fld3 = vitr_field(driver, dlg)
+                rep.log(f"[INFO] readback after paste={fld3.value if fld3 else None}")
+        # Close with a real click on the red traffic-light button.
+        driver.click(dlg.rect.x + 10, dlg.rect.y + 8)
         time.sleep(1.5)
+        still = [w for w in driver.windows_for_pid(app.pid)
+                 if w.on_screen and "material settings" in (w.title or "").lower()]
+        rep.log(f"[INFO] material dialog still open={bool(still)}")
         roots = [work, OUT, ARTIFACTS / "pilot", HERE / "fixtures"]
         rep.check("slice+export", slice_and_export(driver, win, rep, gcode,
                                                    roots))

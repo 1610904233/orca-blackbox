@@ -1134,9 +1134,14 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
 - **字段是 AXTextField**：PETG (834,269)、Diameter 1.75 (818,297)、
   Softening temperature 70 **(833,325)**、Idle 0 (833,353)、
   Recommended nozzle 220/270 (933/1177,389) 等（均为屏幕坐标）。
-- **坑**：`AXSetValue` 把 Softening 改成 45 后读回是 45，但直接关闭窗口
-  **不会把修改应用到工程**（切片后 `temperature_vitrification` 仍是
-  70,45,45,45,45）。必须走编辑器顶部的书签/“Save Filament as”路径
-  （或真实键入 + 提交）才能让改动进入当前预设；该路径尚未标定，所以
-  m8x_123 仍不注册。窗口内真实点击字段 + Cmd+A + 键入 + Tab 后再关，
-  本轮还出现了 Slice 被阻塞（疑似弹窗/焦点问题），后续需单独排查。
+- **提交值的关键是 `AXConfirm`**：该 AXTextField 的 actions 是
+  `('AXShowMenu', 'AXConfirm')`。只做 `AXSetValue` 再关窗会丢弃修改
+  （切片后 vitr 仍是 70）；`AXSetValue` 之后对同一元素执行
+  `AXConfirm`（`harness.platform.macos._ax_perform(field.handle,
+  "AXConfirm")`）才会触发 wx 的 change 事件，再点红点关闭即把覆盖值带进
+  工程。真实键入/Cmd+V 在本机不可靠（合成键盘事件可能被吞），不要依赖。
+- **m8x_123 已打通**：栏 1 软化温度 45 → `vitr=45,45,45,45,45` + 强冷
+  `MODE=1 DESIRE_TEMP=42 ALARM_TEMP=48`；改 80 → `vitr=80,45,45,45,45`
+  + 保温 `MODE=3 DESIRE_TEMP=45 DELAY_OFF=600`（无 ALARM）。仓库 Windows
+  用例文本里的 `ALARM_TEMP=45` 是 2.4.2 之前的旧值（Windows 2.4.2 核对
+  为 48）；macOS 端口按 48 断言。
