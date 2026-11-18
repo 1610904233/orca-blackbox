@@ -996,3 +996,22 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   （`accept_anywhere` 已处理）。
 - **toast OCR 带脏字符**（`… printina. Jump to [Cubel!`）：用关键字子串
   判定，别要求全文精确。
+
+### 22.13 多模型导入 + 切片导出（m8x_158）
+
+- **空盘判定必须看视口**：整窗 `colored_fraction` 会被侧栏彩色耗材块拉到
+  1.78%（>1.5% 门限）；空盘判据用 m7h 的视口区域
+  `(430,100)-(1080,700)` + spread>24，实测 0.11%。
+- **导入的落点**：空工程连续导入 Prusa.stl / cube20.stl / prism12.stl，
+  三者 xy 平移完全相同（135.5,136.0），应用弹 "… is too close to others"
+  警告 —— 天然构成“待整理”布局，不需要 Windows 那种拖拽构造。
+  按 A 整理后三者各移动 ≥9mm、两两 AABB 间距恰好 2.0mm、均在 U1 打印区。
+- **切片 + 导出 G-code**：Slice 按钮 (1200 宽时 1000,45)；轮询
+  File > `Export G-code...` 从 disabled 变 enabled 即切片完成（≈20-40s）；
+  导出面板会开在**模型所在目录**，且 **AXPress Save 不落盘** —— 必须
+  `save_file_dialog(accept_anywhere=True, search_roots=[work, pilot, ...])`
+  走真实点击 + 新文件发现。Prusa+3 对象导出 ≈1.06MB，`; filament used [g]`
+  可读（[1]）。
+- `mac_gcode.py` 是 `tests/m8_common.py` 里 `used_filaments` /
+  `purifier_params` 的 macOS 副本（后者模块级 import win32，macOS 不能
+  直接复用）；正则需与 Windows 版保持同步。
