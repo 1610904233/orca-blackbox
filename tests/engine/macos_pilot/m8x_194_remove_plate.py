@@ -47,7 +47,8 @@ from harness.platform.base import Rect  # noqa: E402
 from harness.platform.factory import get_driver  # noqa: E402
 from harness.platform.macos_ocr import recognize_text  # noqa: E402
 from mac_common import (  # noqa: E402
-    ARTIFACTS, Reporter, close_app, launch_and_focus, wait_for_model,
+    ARTIFACTS, Reporter, close_app, launch_and_focus, recover_saved_file,
+    wait_for_model,
 )
 import mac_3mf  # noqa: E402
 import m8x_186_add_plate as c186  # noqa: E402
@@ -154,6 +155,17 @@ def import_cube(driver, win, cube: Path, rep) -> bool:
     return driver.open_file_dialog(win, cube)
 
 
+def save_project(driver, win, rep, path: Path) -> bool:
+    """Save Project as..., moving the file back if the panel opened in the
+    previous case's ``work`` folder (shared NSSavePanel recent places)."""
+    started = time.time()
+    if c186.save_project(driver, win, rep, path):
+        return True
+    recovered = recover_saved_file(path, started, [ARTIFACTS / "pilot"])
+    rep.log(f"[INFO] save recovery {path.name}: {recovered}")
+    return recovered is not None
+
+
 def item_transforms(path: Path) -> dict[str, tuple]:
     """object name -> rounded 12-number build-item transform."""
     geo = mac_3mf.read_project(path)
@@ -225,7 +237,7 @@ def main() -> int:
         rep.check("导入 cube20（打开面板走通）", imported)
         time.sleep(2.5)
 
-        if not c186.save_project(driver, win, rep, p0):
+        if not save_project(driver, win, rep, p0):
             rep.check("另存 P0（基线）", False, "save panel failed")
             return rep.save({"stage": "save-p0"})
         plates0 = mac_3mf.read_plates(p0)
@@ -262,7 +274,7 @@ def main() -> int:
         driver.capture(win).save_png(OUT / "after_remove.png")
         time.sleep(1.5)
 
-        if not c186.save_project(driver, win, rep, p1):
+        if not save_project(driver, win, rep, p1):
             rep.check("另存 P1（删后）", False, "save panel failed")
             return rep.save({"stage": "save-p1"})
         plates1 = mac_3mf.read_plates(p1)
