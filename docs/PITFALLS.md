@@ -1125,3 +1125,18 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   (42,646)，平铺菜单的系统行 0.24/0.32/0.40 在 y=704/730/756；点 0.24
   后重新切片，gcode `; layer_height` 0.4→0.24、`print_settings_id`
   同步为 0.24mm。切片后 app 在 Preview，切换前先点回 Prepare。
+
+### 22.18 耗材 Material settings 编辑器（m8x_123 预研）
+
+- **入口**：耗材行右侧小按钮（槽 1 行 y=418 时点 `(196,418)`）弹出 Edit /
+  Delete / Merge with；点 `Edit`（窗口相对 `(198,446)`）打开
+  `Material settings` 窗口（约 `(585,122,750,600)`，layer 0）。
+- **字段是 AXTextField**：PETG (834,269)、Diameter 1.75 (818,297)、
+  Softening temperature 70 **(833,325)**、Idle 0 (833,353)、
+  Recommended nozzle 220/270 (933/1177,389) 等（均为屏幕坐标）。
+- **坑**：`AXSetValue` 把 Softening 改成 45 后读回是 45，但直接关闭窗口
+  **不会把修改应用到工程**（切片后 `temperature_vitrification` 仍是
+  70,45,45,45,45）。必须走编辑器顶部的书签/“Save Filament as”路径
+  （或真实键入 + 提交）才能让改动进入当前预设；该路径尚未标定，所以
+  m8x_123 仍不注册。窗口内真实点击字段 + Cmd+A + 键入 + Tab 后再关，
+  本轮还出现了 Slice 被阻塞（疑似弹窗/焦点问题），后续需单独排查。
