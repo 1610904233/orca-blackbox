@@ -386,8 +386,10 @@ class MacOSDriver:
                     "backup_switch": False,
                     # Pin the geometry the macOS pilots are calibrated for;
                     # without this key the app's own default is used and can
-                    # drift across builds.
-                    "window_mainframe": "360; 80; 1200; 800; 0",
+                    # drift across builds.  ORCA_BB_WINDOW_FRAME overrides it
+                    # for cases that need a wider toolbar (e.g. Assembly View).
+                    "window_mainframe": os.environ.get(
+                        "ORCA_BB_WINDOW_FRAME", "360; 80; 1200; 800; 0"),
                 },
                 "firstguide": {"finish": True},
             }

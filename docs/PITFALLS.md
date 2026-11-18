@@ -954,6 +954,23 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
 
 - 盘侧导轨 Remove/Lock：tooltip 锚点 ≠ 点击热区，盲点扫描未命中；
   底部盘条 OCR 也读不到 “Plate N”。Customize(1070,300) 可用，#198 已绿。
-- m8z Assembly View：菜单/工具栏/导轨均无 assembly 入口（当前 build）。
+- m8z Assembly View：默认 1200 宽窗口把它裁到窗口外；1512 宽后已打通
+  （见 22.11）。
 - m8x_221/222：PA Line 生成后切片报
   `Error: A G-code path goes beyond plate boundaries`，Export 保持禁用。
+
+### 22.11 装配视图与单字符对象行（m8z）
+
+- **工具栏右端会被裁掉**：1200pt 宽时 Assembly View 图标在窗口外，菜单/
+  导轨里也没有入口，容易误判成“当前 build 没有该功能”。用
+  `ORCA_BB_WINDOW_FRAME="180; 40; 1512; 982; 0"`（seeded
+  `window_mainframe`）重开即可，图标在窗口相对 (1470,70)；点击后视口
+  diff≈0.35，并出现 Section View / Explosion Ratio / Selection Mode。
+- **单字符对象行 OCR 不可见**：夹具盘 1 的对象名就是 `"1"`，Vision 不把
+  树行识别成词（截图里肉眼可见）。可靠做法：OCR 到 `Plate 1` 行后，按树
+  行高 23px 点第一个子行 `(25, plate1.y+23)`；右侧信息面板出现
+  `Object name: 1` 与 `Size: …` 即为真实选中证据。
+- **应用内 Error toast 不是弹窗**：加载该夹具会浮出
+  `Error: Relative extruder addressing…` 红色通知，它画在主窗口内，
+  Windows 的 `#32770` 与 macOS 的窗口枚举都不会算成对话框。macOS 侧
+  “无错误弹窗”判据 = 主窗口无 `AXSheets` 且无其它 layer-0 屏幕窗口。
