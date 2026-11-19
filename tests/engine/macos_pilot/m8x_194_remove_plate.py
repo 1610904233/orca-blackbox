@@ -64,22 +64,34 @@ COLORED_GATE = 0.012         # Prusa.stl measured 0.0195
 
 
 def tooltip_below(driver, win, x, y) -> str:
-    driver.move(win.rect.x + x, win.rect.y + y)
-    time.sleep(1.0)
-    words = recognize_text(
-        driver.capture_screen(),
-        Rect(win.rect.x + x - 80, win.rect.y + y + 12, 340, 64))
-    return " ".join(w.text for w in words).strip()
+    for _ in range(4):
+        driver.move(win.rect.x + 5, win.rect.y + 5)
+        time.sleep(0.25)
+        driver.move(win.rect.x + x, win.rect.y + y)
+        time.sleep(1.3)
+        words = recognize_text(
+            driver.capture_screen(),
+            Rect(win.rect.x + x - 80, win.rect.y + y + 12, 340, 64))
+        text = " ".join(w.text for w in words).strip()
+        if text:
+            return text
+    return ""
 
 
 def rail_tooltip(driver, win, x, y) -> str:
     """Plate-rail tooltips render to the right of the cursor."""
-    driver.move(win.rect.x + x, win.rect.y + y)
-    time.sleep(1.0)
     region = Rect(min(win.rect.x + x + 8, win.rect.right - 260),
                   win.rect.y + y - 20, 260, 80)
-    words = recognize_text(driver.capture_screen(), region)
-    return " ".join(w.text for w in words).strip()
+    for _ in range(4):
+        driver.move(win.rect.x + 5, win.rect.y + 5)
+        time.sleep(0.25)
+        driver.move(win.rect.x + x, win.rect.y + y)
+        time.sleep(1.3)
+        words = recognize_text(driver.capture_screen(), region)
+        text = " ".join(w.text for w in words).strip()
+        if text:
+            return text
+    return ""
 
 
 def find_rail_icon(driver, win, want: str, seed=RAIL_SEED):

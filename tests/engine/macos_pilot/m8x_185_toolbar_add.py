@@ -58,12 +58,16 @@ SIDE_TOL = 0.01
 
 
 def tooltip(driver, win, x, y) -> str:
-    driver.move(win.rect.x + x, win.rect.y + y)
-    time.sleep(1.2)
-    words = recognize_text(
-        driver.capture_screen(),
-        Rect(win.rect.x + x - 120, win.rect.y + y + 10, 400, 80))
-    return " ".join(w.text for w in words).strip()
+    for _ in range(4):
+        driver.move(win.rect.x + x, win.rect.y + y)
+        time.sleep(1.5)
+        words = recognize_text(
+            driver.capture_screen(),
+            Rect(win.rect.x + x - 120, win.rect.y + y + 10, 400, 80))
+        text = " ".join(w.text for w in words).strip()
+        if text:
+            return text
+    return ""
 
 
 def wait_arrival(driver, win, timeout_s: float = 90.0):

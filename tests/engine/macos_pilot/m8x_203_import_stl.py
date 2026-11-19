@@ -42,7 +42,7 @@ from harness.platform.macos_ocr import (  # noqa: E402
     joined_text, recognize_text,
 )
 from mac_common import (  # noqa: E402
-    ARTIFACTS, Reporter, close_app, launch_and_focus,
+    ARTIFACTS, Reporter, close_app, launch_and_focus, recover_saved_file,
 )
 import mac_3mf  # noqa: E402
 import m7b_new_project as m7b  # noqa: E402
@@ -176,7 +176,13 @@ def main() -> int:
         rep.check("对象列表新增（cube20）", list_ok, f"ocr={ocr_tail[:160]!r}")
 
         rep.check("打开另存为面板", c202.open_save_as(driver, win, rep))
+        started = time.time()
         saved = driver.save_file_dialog(win, proj, default_dir=work)
+        if not proj.exists():
+            rec = recover_saved_file(
+                proj, started,
+                [work, ARTIFACTS / "pilot", HERE / "fixtures"])
+            saved = rec is not None
         rep.check("另存项目（供几何解析）", saved and proj.exists(),
                   f"size={proj.stat().st_size if proj.exists() else 0}")
         if not proj.exists():

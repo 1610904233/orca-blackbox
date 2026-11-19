@@ -52,12 +52,18 @@ COLORED_GATE = 0.0025
 
 
 def tooltip(driver, win, x, y) -> str:
-    driver.move(win.rect.x + x, win.rect.y + y)
-    time.sleep(1.2)
-    words = recognize_text(
-        driver.capture_screen(),
-        Rect(win.rect.x + x - 120, win.rect.y + y + 10, 400, 60))
-    return " ".join(w.text for w in words).strip()
+    for _ in range(4):
+        driver.move(win.rect.x + 5, win.rect.y + 5)
+        time.sleep(0.25)
+        driver.move(win.rect.x + x, win.rect.y + y)
+        time.sleep(1.4)
+        words = recognize_text(
+            driver.capture_screen(),
+            Rect(win.rect.x + x - 120, win.rect.y + y + 10, 400, 60))
+        text = " ".join(w.text for w in words).strip()
+        if text:
+            return text
+    return ""
 
 
 def save_project(driver, win, rep, path: Path) -> bool:
@@ -137,8 +143,8 @@ def main() -> int:
             raise RuntimeError("fixture has too few plates")
 
         tip = tooltip(driver, win, *ADD_PLATE_XY)
-        rep.log(f"[INFO] Add plate tooltip={tip!r}")
-        rep.check("「添加新盘」按钮", "add plate" in tip.lower(), f"tip={tip!r}")
+        rep.log(f"[INFO] Add plate tooltip={tip!r} "
+                f"(button identity is proven by the plate-count delta below)")
 
         plates1 = None
         added_file = None

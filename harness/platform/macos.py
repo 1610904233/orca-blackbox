@@ -1321,6 +1321,45 @@ class MacOSDriver:
                   f"{[str(p) for p in fresh_any[:3]]}")
             if fresh_any:
                 candidates.append(fresh_any[0])
+        if not candidates:
+            # Save Project as... can be redirected by the shared recent-places
+            # list to a previous case's work dir.  Recover the freshly written
+            # file from the repository artifacts tree.
+            roots = [Path.cwd() / "artifacts", Path.cwd()]
+            fresh_global: list[Path] = []
+            for root in roots:
+                if not root.is_dir():
+                    continue
+                try:
+                    for cand in root.rglob(target.name):
+                        try:
+                            if (not cand.is_file() or cand == target
+                                    or cand.stat().st_mtime < started - 2.0):
+                                continue
+                        except OSError:
+                            continue
+                        fresh_global.append(cand)
+                except OSError:
+                    continue
+            if not fresh_global:
+                for root in roots:
+                    if not root.is_dir():
+                        continue
+                    try:
+                        for cand in root.rglob(f"{stem}*"):
+                            try:
+                                if (cand.is_file() and cand != target
+                                        and cand.stat().st_mtime >= started - 2.0):
+                                    fresh_global.append(cand)
+                            except OSError:
+                                continue
+                    except OSError:
+                        continue
+            fresh_global.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+            if fresh_global:
+                print(f"[macos] save_file_dialog: global fresh "
+                      f"{[str(p) for p in fresh_global[:3]]}")
+                candidates.extend(fresh_global)
         for cand in candidates:
             if cand == target:
                 break
