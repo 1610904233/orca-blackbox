@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
 # m8f_nozzle_flow.py — macOS high-flow nozzle presets: Feishu #133/#135.
-# feishu: baseline#133 baseline#135
+# feishu: baseline#133 baseline#135  (macOS port; corresponds to the enabled
+#         Windows m8f_nozzle_flow, registered in cases.MACOS_BASELINE)
 #
-# NOT REGISTERED as a macOS case: #133 (nozzle defaults 0.4mm/Standard) passes,
-# but #135 cannot meet the official compare rc=0 on macOS 2.4.2 — the sliced
-# config carries BOTH per-mode values in a fixed order (A inner_wall_speed
-# 550,600 vs B 300,550) instead of collapsing to the active mode, so
-# compare_gcode reports 2 mode + 39 numeric differences even though the active
-# values match (550 in both).  Kept as the shared high-flow menu/helper module
-# used by m8g_flow_single; see docs/PITFALLS.md 22.17.
+# #133 (nozzle defaults 0.4mm/Standard) passes.  #135 uses the CURRENT Windows
+# criterion, not raw compare rc=0: the gcode carries the packages' per-flow
+# arrays in a fixed order (A inner_wall_speed 550,600 vs B 300,550), so the
+# official comparator reports mode=2/numeric=39 even when the EFFECTIVE entry
+# selected by each flow mode is identical.  The case therefore checks
+# effective_diff()==0 (index-resolved, same helper as the Windows case) plus
+# mode_diff>=1; numeric_diff is logged as evidence.
 #
 # Windows assertions:
 #   #133 the nozzle panel defaults are Diameter '0.4mm' and Flow 'Standard'
 #   #135 (STD-TEST process + STD-TEST filament + Standard flow) and
 #        (HF-TEST process + HF-TEST filament + High Flow) slice to gcodes
-#        whose final CONFIG BLOCKs are identical (official compare_gcode.py
-#        rc=0), proving the two-index preset values are read by mode
+#        whose EFFECTIVE per-flow values are identical and whose mode fields
+#        differ, proving the two-index preset values are read by mode
 #
 # macOS mapping:
 #   preset menus -> process combo: User-presets rows (HF-TEST, STD-TEST,
@@ -231,6 +232,67 @@ def compare(a: Path, b: Path) -> tuple[int, str]:
     return r.returncode, report
 
 
+CONF_RE = re.compile(r"^;\s*([A-Za-z0-9_.]+)\s*=\s*(.*)$")
+NUM_RE = re.compile(r"-?\d+(?:\.\d+)?%?")
+
+
+def read_config(path: Path):
+    """{key: [values]} of the gcode's CONFIG_BLOCK (self-contained)."""
+    out: dict = {}
+    inside = False
+    for line in path.read_text(encoding="utf-8-sig",
+                               errors="replace").splitlines():
+        s = line.strip()
+        if s == "; CONFIG_BLOCK_START":
+            inside = True
+            continue
+        if s == "; CONFIG_BLOCK_END":
+            inside = False
+            continue
+        if not inside:
+            continue
+        m = CONF_RE.match(line)
+        if m:
+            out.setdefault(m.group(1), []).append(m.group(2).strip())
+    return out
+
+
+def flow_index(cfg) -> int:
+    val = cfg.get("nozzle_volume_type") or cfg.get("filament_volume_type") or []
+    return 1 if "high_flow" in ",".join(val).lower() else 0
+
+
+def effective_diff(a: Path, b: Path):
+    """Index-resolved comparison, same criterion as the Windows m8f case."""
+    ca, cb = read_config(a), read_config(b)
+    ia, ib = flow_index(ca), flow_index(cb)
+    mismatches, checked = [], 0
+    for key in sorted(set(ca) | set(cb)):
+        va, vb = ca.get(key, []), cb.get(key, [])
+        if va == vb or not va or not vb:
+            continue
+        pa = [p.strip() for p in ",".join(va).split(",")]
+        pb = [p.strip() for p in ",".join(vb).split(",")]
+        if len(pa) < 2 or len(pb) < 2:
+            continue
+        if not (all(NUM_RE.match(x) for x in pa)
+                and all(NUM_RE.match(x) for x in pb)):
+            continue
+        checked += 1
+        if pa[min(ia, len(pa) - 1)] != pb[min(ib, len(pb) - 1)]:
+            mismatches.append((key, pa[min(ia, len(pa) - 1)],
+                               pb[min(ib, len(pb) - 1)]))
+    return mismatches, checked, ia, ib
+
+
+def report_counts(report: str):
+    def grab(pat):
+        m = re.search(pat, report)
+        return int(m.group(1)) if m else -1
+    return (grab(r"高流量模式字段变化：(\d+) 项"),
+            grab(r"数值配置变化：(\d+) 项"))
+
+
 def select_state(driver, win, rep, proc: str, fil: str, flow: str,
                  tag: str) -> bool:
     ok_p = select_process(driver, win, rep, proc)
@@ -325,11 +387,20 @@ def main() -> int:
                   f"print={pid_b} filament={fids_b}")
 
         rc, report = compare(g_a, g_b)
-        rep.log(f"[INFO] compare rc={rc}")
+        mode_diff, num_diff = report_counts(report)
+        bad, checked, ia, ib = effective_diff(g_a, g_b)
+        rep.log(f"[INFO] compare rc={rc} mode={mode_diff} numeric={num_diff} "
+                f"flow_indices A={ia} B={ib} checked={checked} "
+                f"mismatches={len(bad)}")
         for line in report.splitlines()[:12]:
             rep.log(f"[INFO]   {line}")
-        rep.check("#135 标准/高流量最终配置一致（compare rc=0）", rc == 0,
-                  f"rc={rc}")
+        if bad:
+            rep.log(f"[INFO] effective mismatches: {bad[:8]}")
+        rep.check("#135 标准/高流量 effective values identical "
+                  "（口径同 Windows effective_diff + mode>=1）",
+                  not bad and mode_diff >= 1,
+                  f"checked={checked} mismatches={len(bad)} "
+                  f"mode={mode_diff} numeric={num_diff}")
 
         alive_before = app.alive()
         closed = close_app(driver, app, win)

@@ -624,6 +624,12 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m8", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m8f_macos_nozzle_flow": {
+        "file": "tests/engine/macos_pilot/m8f_nozzle_flow.py",
+        "windows_case": "m8f_nozzle_flow",
+        "milestone": "m8", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
     "m3e_macos_preset_switch": {
         "file": "tests/engine/macos_pilot/m3e_preset_switch.py",
         "windows_case": "m3e_preset_switch",

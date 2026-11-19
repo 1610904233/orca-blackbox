@@ -1062,6 +1062,17 @@ class MacOSDriver:
         deadline = time.monotonic() + timeout_s
         for component in components:
             word = None
+            # The browser may restore a scrolled position inside a long
+            # folder.  Walk up to the top first; a folder above the current
+            # viewport (observed: 'pilot' in artifacts/mac) otherwise renders
+            # the whole import chain red.
+            for _up in range(8):
+                word = self._pick_rightmost(
+                    self._panel_ocr_words(panel), component)
+                if word is not None:
+                    break
+                self._scroll_browser(panel, down=False)
+                time.sleep(0.6)
             last_scroll = time.monotonic()
             pages = 0
             while time.monotonic() < deadline:
@@ -1438,6 +1449,101 @@ class MacOSDriver:
                 norm_hits.append(w)
         return max(norm_hits, key=lambda w: w.rect.x) if norm_hits else None
 
+    def _open_word(self, panel: WindowRef, word, tag: str) -> bool:
+        """Select an OCR word in the open panel and press Open."""
+        self.click(*word.rect.center)
+        time.sleep(0.8)
+        _field, open_btn, _cancel, _replace = self._dialog_widgets(panel)
+        print(f"[macos] open_file_dialog: {tag} open_btn="
+              f"{open_btn is not None}")
+        if open_btn is None:
+            return False
+        enable_deadline = time.monotonic() + 5.0
+        while time.monotonic() < enable_deadline:
+            if _ax_bool(open_btn, AS.kAXEnabledAttribute, False):
+                break
+            time.sleep(0.3)
+        enabled = _ax_bool(open_btn, AS.kAXEnabledAttribute, False)
+        print(f"[macos] open_file_dialog: {tag} open_btn enabled={enabled}")
+        if not enabled:
+            self.click(*word.rect.center, clicks=2)
+            time.sleep(2.0)
+            if not self._panel_still_open(panel.pid, panel.id):
+                self.dismiss_boot_blockers(panel.pid, panel,
+                                           grace_s=6.0, budget_s=4.0)
+                return True
+            return False
+        pressed = _ax_perform(open_btn, AS.kAXPressAction)
+        print(f"[macos] open_file_dialog: {tag}-open {word.text!r} "
+              f"pressed={pressed}")
+        close_deadline = time.monotonic() + 30.0
+        while time.monotonic() < close_deadline:
+            if not self._panel_still_open(panel.pid, panel.id):
+                self.dismiss_boot_blockers(panel.pid, panel,
+                                           grace_s=6.0, budget_s=4.0)
+                return True
+            time.sleep(0.3)
+        return False
+
+    def _search_open_file(self, panel: WindowRef, target: Path) -> bool:
+        """Open ``target`` by filename through the panel's Search field.
+
+        The component walk can get stuck inside a long folder whose restored
+        scroll position hides a folder (``artifacts/mac/pilot``).  Search is
+        scoped to "This Mac" and unique case filenames make it reliable.
+        """
+        search = None
+        for _try in range(10):
+            search = next((c for c in self.controls(panel)
+                           if c.role == "AXTextField"
+                           and c.identifier == "Search"
+                           and c.handle is not None), None)
+            if search is not None:
+                break
+            panel.handle = None
+            self._attach_ax_window(panel)
+            time.sleep(0.3)
+        print(f"[macos] open_file_dialog: search field={search is not None}")
+        if search is None:
+            return False
+        if search.rect is not None:
+            self.click(*search.rect.center)
+            time.sleep(0.3)
+        _ax_set(search.handle, AS.kAXFocusedAttribute, True)
+        _ax_set(search.handle, AS.kAXValueAttribute, target.name)
+        _ax_perform(search.handle, AS.kAXConfirmAction)
+        self.send_key("return")
+        time.sleep(1.0)
+        words = [w for w in self._panel_ocr_words(panel)
+                 if w.rect.y < panel.rect.y + 260]
+        this_mac = next((w for w in words
+                         if w.text.strip().lower() == "this mac"), None)
+        if this_mac is not None:
+            print("[macos] open_file_dialog: set search scope This Mac")
+            self.click(*this_mac.rect.center)
+            time.sleep(1.0)
+            self.send_key("return")
+            time.sleep(1.0)
+        deadline = time.monotonic() + 60.0
+        word = None
+        while time.monotonic() < deadline:
+            words = [w for w in self._panel_ocr_words(panel)
+                     if w.rect.y > panel.rect.y + 100]
+            word = self._pick_file_word(words, target)
+            if word is not None:
+                break
+            time.sleep(1.0)
+        if word is None:
+            top = [(w.text, w.rect.to_xywh())
+                   for w in self._panel_ocr_words(panel)
+                   if w.rect.y < panel.rect.y + 260][:24]
+            print(f"[macos] open_file_dialog: search found no {target.name!r}; "
+                  f"top={top}")
+            return False
+        print(f"[macos] open_file_dialog: search hit {word.text!r} "
+              f"at {word.rect.to_xywh()}")
+        return self._open_word(panel, word, "search")
+
     def open_file_dialog(self, win: WindowRef, path: Path | str, *,
                          titles: Sequence[str] | None = None,
                          timeout_s: float = 90.0) -> bool:
@@ -1462,6 +1568,17 @@ class MacOSDriver:
         if panel is None:
             print(f"[macos] open_file_dialog: no open panel for pid {win.pid}")
             return False
+        # A just-saved file can be visible in the panel's current folder even
+        # before Spotlight indexes it for the Search fallback.
+        visible = [w for w in self._panel_ocr_words(panel)
+                   if w.rect.y > panel.rect.y + 100]
+        word = self._pick_file_word(visible, target)
+        if word is not None:
+            print(f"[macos] open_file_dialog: visible hit {word.text!r}")
+            if self._open_word(panel, word, "visible"):
+                return True
+        if self._search_open_file(panel, target):
+            return True
 
         home = Path.home().resolve()
         try:
@@ -1503,6 +1620,17 @@ class MacOSDriver:
         deadline = time.monotonic() + timeout_s
         for component in components:
             word = None
+            # The browser may restore a scrolled position inside a long
+            # folder.  Walk up to the top first; a folder above the current
+            # viewport (observed: 'pilot' in artifacts/mac) otherwise renders
+            # the whole import chain red.
+            for _up in range(8):
+                word = self._pick_rightmost(
+                    self._panel_ocr_words(panel), component)
+                if word is not None:
+                    break
+                self._scroll_browser(panel, down=False)
+                time.sleep(0.6)
             last_scroll = time.monotonic()
             pages = 0
             while time.monotonic() < deadline:
