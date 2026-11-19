@@ -642,6 +642,12 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m4", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m4e_macos_mixing_paint": {
+        "file": "tests/engine/macos_pilot/m4e_mixing_paint.py",
+        "windows_case": "m4e_mixing_paint",
+        "milestone": "m4", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
 }
 for _name, _meta in MACOS_BASELINE.items():
     _meta.setdefault("platforms", ("macos",))

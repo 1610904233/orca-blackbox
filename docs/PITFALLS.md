@@ -1235,3 +1235,10 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   `F2 50%+F3 50%`）和 Gradient（Gradient tab → 兼容 → OK，条目
   `F3->F2`），再切片导出。实测 gcode 1.35MB，换刀指令
   `T2/T1/T4/T3/T0`（5 种），用量 [1..5]。
+- **m4e 已打通（涂色调色板）**：选中 cube 后，3D 工具条 Color Painting
+  图标在窗口相对 `(996,90)`（tooltip `Color painting [N]`；兜底可从
+  x=480 起 12px 步进 hover 扫描）。激活后面板出现 `Filaments` /
+  `Selected filament` / `Remap filaments` / `Erase all painting`；调色板
+  色块在 x 860..1200、y 120..190 的饱和列投影为 5 段
+  （903-926 / 961-971 / 1013-1022 / 1116-1125 / 1167-1176）→ 5 个瓦片。
+  再点图标可关闭，面板消失。
