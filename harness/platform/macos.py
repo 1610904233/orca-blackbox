@@ -1547,6 +1547,39 @@ class MacOSDriver:
     def open_file_dialog(self, win: WindowRef, path: Path | str, *,
                          titles: Sequence[str] | None = None,
                          timeout_s: float = 90.0) -> bool:
+        """Open a file through a one-level home symlink to its parent.
+
+        The native panel's restored scroll position can hide deep folders
+        (``artifacts/mac/pilot``) and Search does not return freshly written
+        files.  A visible ``~/orca_bb_open`` symlink keeps the same file while
+        making the panel path one folder deep.
+        """
+        target = Path(path).expanduser().resolve()
+        link_dir = Path.home() / "orca_bb_open"
+        nav = target
+        try:
+            if link_dir.is_symlink() or link_dir.exists():
+                if link_dir.is_symlink():
+                    link_dir.unlink()
+                else:
+                    raise OSError(f"{link_dir} exists and is not a symlink")
+            link_dir.symlink_to(target.parent, target_is_directory=True)
+            nav = link_dir / target.name
+        except OSError as exc:
+            print(f"[macos] open_file_dialog: symlink fallback ({exc})")
+        try:
+            return self._open_file_dialog_impl(
+                win, nav, titles=titles, timeout_s=timeout_s)
+        finally:
+            try:
+                if link_dir.is_symlink():
+                    link_dir.unlink()
+            except OSError:
+                pass
+
+    def _open_file_dialog_impl(self, win: WindowRef, path: Path | str, *,
+                               titles: Sequence[str] | None = None,
+                               timeout_s: float = 90.0) -> bool:
         """Navigate the open native panel to ``path`` and press Open.
 
         macOS's NSOpenPanel opens on "Recents" and exposes its file rows as
@@ -1561,7 +1594,9 @@ class MacOSDriver:
         does not submit on this build) and return False.
         """
         self._require_ax()
-        target = Path(path).expanduser().resolve()
+        # Keep the symlinked home path intact (resolve() would follow it back
+        # into the deep artifacts tree and defeat the navigation shortcut).
+        target = Path(path).expanduser().absolute()
         panel = self.find_file_dialog(
             win.pid, titles=titles or self._OPEN_PANEL_TITLES,
             exclude_id=win.id, timeout_s=12.0)
