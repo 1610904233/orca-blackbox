@@ -360,6 +360,12 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m7", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m7t75_macos_layout_arrange_delete": {
+        "file": "tests/engine/macos_pilot/m7t75.py",
+        "windows_case": "m7t75",
+        "milestone": "m7", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
     "m8x_199_macos_new_project_confirm": {
         "file": "tests/engine/macos_pilot/m8x_199_new_project_confirm.py",
         "windows_case": "m8x_199",
