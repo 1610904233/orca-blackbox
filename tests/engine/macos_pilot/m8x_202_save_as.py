@@ -73,9 +73,16 @@ def dirty(driver, app, win, rep, tag: str) -> bool:
     return added and title.startswith("*")
 
 
-def open_save_as(driver, win, rep, attempts: int = 2) -> bool:
+def open_save_as(driver, win, rep, attempts: int = 3) -> bool:
     """Press File > Save Project as... until the native panel appears."""
     for attempt in range(attempts):
+        # Cube/context-menu work can leave the app non-key; the menu press then
+        # does not raise the native panel (observed in m8x_196/197 reruns).
+        try:
+            driver.set_foreground(win)
+        except Exception:
+            pass
+        time.sleep(0.4)
         item = menu_item(driver, win, "Save Project as...")
         if item is None:
             rep.log("[INFO] Save Project as... menu item missing")
@@ -83,9 +90,19 @@ def open_save_as(driver, win, rep, attempts: int = 2) -> bool:
         pressed = driver.click_control(item)
         panel = driver.find_file_dialog(
             win.pid, titles=driver._SAVE_PANEL_TITLES,
-            exclude_id=win.id, timeout_s=5.0)
+            exclude_id=win.id, timeout_s=8.0)
         rep.log(f"[INFO] Save Project as... attempt {attempt + 1}: "
                 f"pressed={pressed} panel={panel.title if panel else None}")
+        if panel is not None:
+            return True
+        # macOS Save As shortcut fallback (some runs swallow the AXPress).
+        driver.send_key("s", modifiers=("cmd", "shift"))
+        time.sleep(0.8)
+        panel = driver.find_file_dialog(
+            win.pid, titles=driver._SAVE_PANEL_TITLES,
+            exclude_id=win.id, timeout_s=5.0)
+        rep.log(f"[INFO] Save Project as... shortcut: "
+                f"panel={panel.title if panel else None}")
         if panel is not None:
             return True
     return False

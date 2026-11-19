@@ -131,9 +131,26 @@ def save_project(driver, win, rep, path: Path) -> bool:
     started = time.time()
     if c186.save_project(driver, win, rep, path):
         return True
-    recovered = recover_saved_file(path, started, [ARTIFACTS / "pilot"])
+    recovered = recover_saved_file(
+        path, started, [path.parent, ARTIFACTS / "pilot", HERE / "fixtures"])
     rep.log(f"[INFO] save recovery {path.name}: {recovered}")
     return recovered is not None
+
+
+def close_colors(driver, app) -> None:
+    """The app can restore the native Colors panel on screen; close it so it
+    cannot steal key/focus from the Add-Plate / Add-Cube clicks."""
+    w = next((w for w in driver.windows_for_pid(app.pid)
+              if w.on_screen and (w.title or "").lower() == "colors"), None)
+    if w is not None:
+        driver.click(w.rect.x + 12, w.rect.y + 12)
+        time.sleep(1.0)
+
+
+def add_cube(driver, app, win) -> bool:
+    driver.set_foreground(win)
+    time.sleep(0.5)
+    return m7b._add_cube(driver, app, win)
 
 
 def arrange(driver, win, rep, icon) -> str:
@@ -196,13 +213,14 @@ def main() -> int:
             return rep.save({"stage": "load"})
 
         # Two-plate layout; the new plate is current.
+        close_colors(driver, app)
         tip = c194.tooltip_below(driver, win, *ADD_PLATE_XY)
         rep.check("「添加新盘」按钮", "add plate" in tip.lower(), f"tip={tip!r}")
         driver.click(win.rect.x + ADD_PLATE_XY[0],
                      win.rect.y + ADD_PLATE_XY[1])
         time.sleep(3.0)
 
-        added = [m7b._add_cube(driver, app, win) for _ in range(2)]
+        added = [add_cube(driver, app, win) for _ in range(2)]
         rep.check("两个零件已添加", all(added), f"results={added}")
         if not all(added):
             return rep.save({"stage": "add-cubes"})
