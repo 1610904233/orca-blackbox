@@ -588,6 +588,12 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m8", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m8x_137_macos_flow_param_tabs": {
+        "file": "tests/engine/macos_pilot/m8x_137_flow_param_tabs.py",
+        "windows_case": "m8x_137_flow_param_tabs",
+        "milestone": "m8", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
     "m3k_macos_mixing_match": {
         "file": "tests/engine/macos_pilot/m3k_mixing_match.py",
         "windows_case": "m3k_mixing_match",
