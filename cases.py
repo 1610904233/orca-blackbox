@@ -372,6 +372,12 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m7", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m7t89_macos_create_paint_slice": {
+        "file": "tests/engine/macos_pilot/m7t89.py",
+        "windows_case": "m7t89",
+        "milestone": "m7", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
     "m8x_199_macos_new_project_confirm": {
         "file": "tests/engine/macos_pilot/m8x_199_new_project_confirm.py",
         "windows_case": "m8x_199",
