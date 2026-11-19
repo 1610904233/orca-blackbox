@@ -1231,3 +1231,7 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   `F3->F2`；点条目进 Edit Mix（仍为 Gradient 内容），方向交换按钮在
   窗口相对 `(734,186)`，点击后 OK 标签变 `F2->F3`。再次 Add Mix → Gradient
   → Cancel 不新增条目。
+- **m4i 已打通（混色切片）**：先注册 Ratio（推荐色块 → OK，条目
+  `F2 50%+F3 50%`）和 Gradient（Gradient tab → 兼容 → OK，条目
+  `F3->F2`），再切片导出。实测 gcode 1.35MB，换刀指令
+  `T2/T1/T4/T3/T0`（5 种），用量 [1..5]。
