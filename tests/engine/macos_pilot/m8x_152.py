@@ -115,11 +115,37 @@ def submenu_rows(driver, app, win):
 
 
 def assign_last(driver, app, win, rep) -> bool:
-    pt = model_point(driver.capture(win))
-    rep.log(f"[INFO] model point={pt}")
-    driver.click(win.rect.x + pt[0], win.rect.y + pt[1])
-    time.sleep(0.8)
-    _w, item = c8d.open_context_menu(driver, app, win, pt)
+    item = None
+    pt = None
+    for cand in ((814, 481), (814, 470), (814, 492), (814, 429),
+                 (814, 440), (800, 481), (828, 481)):
+        pt = cand
+        driver.click(win.rect.x + pt[0], win.rect.y + pt[1])
+        time.sleep(0.7)
+        _w, item = c8d.open_context_menu(driver, app, win, pt)
+        if item is not None:
+            break
+    rep.log(f"[INFO] model point={pt} change_item={bool(item)}")
+    if item is None:
+        # Canvas hit-testing is unreliable for the thin Prusa strip; use the
+        # Objects panel row context menu (same route as the Windows case).
+        words = c8d.ocr_window(driver, win)
+        tab = next((w for w in words
+                    if w.text.strip().lower() == "objects"), None)
+        if tab is not None:
+            driver.click(win.rect.x + tab.rect.center[0],
+                         win.rect.y + tab.rect.center[1])
+            time.sleep(1.5)
+            words = c8d.ocr_window(driver, win)
+            row = next((w for w in words
+                        if "prusa" in w.text.lower() and w.rect.y > 500),
+                       None)
+            if row is not None:
+                rep.log(f"[INFO] Objects row={row.text!r} "
+                        f"{row.rect.to_xywh()}")
+                _w, item = c8d.open_context_menu(
+                    driver, app, win,
+                    (row.rect.center[0], row.rect.center[1]))
     if item is None:
         rep.log("[INFO] Change Filament not found")
         return False

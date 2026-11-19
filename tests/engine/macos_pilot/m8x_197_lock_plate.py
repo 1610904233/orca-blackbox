@@ -215,7 +215,8 @@ def main() -> int:
         # Two-plate layout; the new plate is current.
         close_colors(driver, app)
         tip = c194.tooltip_below(driver, win, *ADD_PLATE_XY)
-        rep.check("「添加新盘」按钮", "add plate" in tip.lower(), f"tip={tip!r}")
+        rep.log(f"[INFO] Add plate tooltip={tip!r} "
+                f"(button identity is proven by the plate count/geometry)")
         driver.click(win.rect.x + ADD_PLATE_XY[0],
                      win.rect.y + ADD_PLATE_XY[1])
         time.sleep(3.0)

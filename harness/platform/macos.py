@@ -1642,17 +1642,6 @@ class MacOSDriver:
         if panel is None:
             print(f"[macos] open_file_dialog: no open panel for pid {win.pid}")
             return False
-        # A just-saved file can be visible in the panel's current folder even
-        # before Spotlight indexes it for the Search fallback.
-        visible = [w for w in self._panel_ocr_words(panel)
-                   if w.rect.y > panel.rect.y + 100]
-        word = self._pick_file_word(visible, target)
-        if word is not None:
-            print(f"[macos] open_file_dialog: visible hit {word.text!r}")
-            if self._open_word(panel, word, "visible"):
-                return True
-        if self._search_open_file(panel, target):
-            return True
 
         home = Path.home().resolve()
         try:

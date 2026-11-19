@@ -119,15 +119,24 @@ def field_values(fields, n: int | None = None):
     return [str(_copy(f, AS.kAXValueAttribute)) for f in picked]
 
 
-def click_ok(driver, dlg, attempts: int = 2) -> bool:
+def click_ok(driver, dlg, attempts: int = 6) -> bool:
     for _ in range(attempts):
         words = recognize_text(driver.capture_screen().crop(dlg.rect))
         ok = next((w for w in words if w.text.strip().lower() == "ok"), None)
-        if ok is None:
-            return False
-        driver.click(dlg.rect.x + ok.rect.center[0],
-                     dlg.rect.y + ok.rect.center[1])
-        time.sleep(0.6)
+        if ok is not None:
+            driver.click(dlg.rect.x + ok.rect.center[0],
+                         dlg.rect.y + ok.rect.center[1])
+        else:
+            # Custom-drawn OK can be missed by one OCR pass; try the AX tree
+            # before giving up, then wait for the next capture.
+            try:
+                btn = driver.find_control(dlg, role="AXButton", title="OK",
+                                          timeout_s=0)
+            except Exception:
+                btn = None
+            if btn is not None:
+                driver.click_control(btn)
+        time.sleep(0.8)
         if not any(w.on_screen and (w.title or "") == dlg.title
                    for w in driver.windows_for_pid(dlg.pid)):
             return True

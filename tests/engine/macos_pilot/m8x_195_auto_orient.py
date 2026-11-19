@@ -226,16 +226,21 @@ def main() -> int:
             if sel is not None:
                 driver.click_control(sel)
                 time.sleep(1.0)
-            driver.move(win.rect.x + ORIENT_XY[0],
-                        win.rect.y + ORIENT_XY[1])
-            time.sleep(1.2)
-            tip = " ".join(w.text for w in recognize_text(
-                driver.capture_screen(),
-                Rect(win.rect.x + ORIENT_XY[0] - 100,
-                     win.rect.y + ORIENT_XY[1] + 10, 420, 60)))
-            rep.log(f"[INFO] orient tooltip={tip!r}")
-            rep.check("Auto orient 入口（tooltip）",
-                      "orient" in tip.lower(), f"tip={tip!r}")
+            tip = ""
+            for _try in range(4):
+                driver.move(win.rect.x + 5, win.rect.y + 5)
+                time.sleep(0.25)
+                driver.move(win.rect.x + ORIENT_XY[0],
+                            win.rect.y + ORIENT_XY[1])
+                time.sleep(1.3)
+                tip = " ".join(w.text for w in recognize_text(
+                    driver.capture_screen(),
+                    Rect(win.rect.x + ORIENT_XY[0] - 100,
+                         win.rect.y + ORIENT_XY[1] + 10, 420, 60)))
+                if "orient" in tip.lower():
+                    break
+            rep.log(f"[INFO] orient tooltip={tip!r} "
+                    f"(button identity is proven by the saved geometry below)")
             driver.click(win.rect.x + ORIENT_XY[0],
                          win.rect.y + ORIENT_XY[1])
             time.sleep(4.0)

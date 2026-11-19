@@ -137,8 +137,21 @@ def main() -> int:
                 and "3mf" in c.title.lower()]
         rep.check("导入入口可用", bool(rows))
         for i in range(2):
-            driver.click_control(rows[0])
-            ok = driver.open_file_dialog(win, cube)
+            ok = False
+            for attempt in range(3):
+                menu = [c for c in driver.controls(win, max_depth=12)
+                        if c.role == "AXMenuItem"
+                        and c.title.strip().lower().startswith("import ")
+                        and "3mf" in c.title.lower()]
+                if not menu:
+                    break
+                driver.click_control(menu[0])
+                time.sleep(1.2)
+                ok = driver.open_file_dialog(win, cube)
+                if ok:
+                    break
+                driver.send_key("escape")
+                time.sleep(1.0)
             rep.check(f"2 号盘导入 cube20 #{i + 1}", ok)
             time.sleep(2.5)
 
