@@ -312,6 +312,12 @@ for _name, _meta in MACOS_SMOKE.items():
 # first entries; m8a/m4 ports will follow.  They stay out of CASES so the
 # Windows pytest/runner never collects them.
 MACOS_BASELINE: dict[str, dict] = {
+    "m2_macos_slice_chain": {
+        "file": "tests/engine/macos_pilot/m2_slice_chain.py",
+        "windows_case": "m2_slice_chain",
+        "milestone": "m2", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
     "m7a_macos_boot_shutdown": {
         "file": "tests/engine/macos_pilot/m7a_boot_shutdown.py",
         "windows_case": "m7a_boot_shutdown",
