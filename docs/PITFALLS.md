@@ -1225,3 +1225,9 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   18px（图例 y=385 → 条 y=367）：左端 `(450,367)` → 90/10，中点
   `(600,367)` → ~47/53；OK 后标签原地更新为 `F2 90%+F3 10%`。重开改比例
   后 Cancel 标签不变；再次 Add Mix 改比例后 Cancel 不新增条目。
+- **m3y 已打通（Gradient）**：Add Mix → Gradient tab `(710,105)`；兼容后
+  两行在 y=217/259、Mix Effect 标题 (452,331)；切行 1 到最后一个 PLA
+  （下拉最后一项）会重绘渐变（Mix Effect 区域 diff≈0.57）。OK 默认注册
+  `F3->F2`；点条目进 Edit Mix（仍为 Gradient 内容），方向交换按钮在
+  窗口相对 `(734,186)`，点击后 OK 标签变 `F2->F3`。再次 Add Mix → Gradient
+  → Cancel 不新增条目。
