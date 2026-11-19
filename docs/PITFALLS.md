@@ -1189,8 +1189,13 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   AX 按钮只有 (372,490/524/558) 与 (380,452)；逐个点击后 (372,558) 打开的是
   `Object/part setting` 参数表，没有 Add Mix 窗口。`Color Mixing` 头部
   的“+”可能是 hover 显示的自绘按钮，需另做像素/悬停标定。
-- **m4d 入口仍未定位**：F3 混合条目 "..." 不在 `(191,558)`（点击无窗口），
-  `(372,558)` 打开的是 Object/part setting；Filaments 头部的 `(380,452)`
-  打开的是**耗材预设菜单**（vendor/type 两级），不是删除/同步按钮。头部
-  sync/trash/add 很可能是 hover 才显示的自绘图标，需要专门的像素/悬停标定。
-  m4d（以及依赖同一入口的 m4e/m4i）暂缓。
+- **m4d 已打通**：Filaments 头部图标在 **y=375**（不是 452）：垃圾桶
+  `(378,375)`、加号 `(391,375)`；452 附近是耗材行的预设菜单。混合条目
+  "..." 在 **`(191,562)`**，菜单 Edit `(198,584)` / Merge with
+  `(196,608)` / Delete `(198,632)`；悬停 Merge with 后物理目标 flyout 在
+  x≈350，首个 Generic PETG 点击 `(400,615)` → 条目消失、物理耗材不变。
+  删除方案引用耗材时弹 title='Warning' 窗口（632,422,656,180），文案
+  `This filament is used in the following mixed filament configurations ...
+  Continue?`，OK/Cancel 在窗口相对 `(724,476)/(826,478)`。实测删除序列：
+  5→4→3 静默且方案保留；删第 3 个时 Warning，Cancel 保持 3、OK 级联
+  （方案消失、rows=2）；删到 1 时 Color Mixing 面板隐藏、trash 失效。
