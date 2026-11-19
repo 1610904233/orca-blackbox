@@ -636,6 +636,12 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m3", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m3v_macos_mixing_cycle_input": {
+        "file": "tests/engine/macos_pilot/m3v_mixing_cycle_input.py",
+        "windows_case": "m3v_mixing_cycle_input",
+        "milestone": "m3", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
     "m3y_macos_mixing_gradient": {
         "file": "tests/engine/macos_pilot/m3y_mixing_gradient.py",
         "windows_case": "m3y_mixing_gradient",
