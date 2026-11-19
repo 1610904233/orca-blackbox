@@ -636,6 +636,12 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m4", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m3t_macos_mixing_add_ratio": {
+        "file": "tests/engine/macos_pilot/m3t_mixing_add_ratio.py",
+        "windows_case": "m3t_mixing_add_ratio",
+        "milestone": "m3", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
     "m3u_macos_mixing_ratio_flow": {
         "file": "tests/engine/macos_pilot/m3u_mixing_ratio_flow.py",
         "windows_case": "m3u_mixing_ratio_flow",
