@@ -564,6 +564,18 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m8", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m8x_152_macos_transform_merge": {
+        "file": "tests/engine/macos_pilot/m8x_152.py",
+        "windows_case": "m8x_152",
+        "milestone": "m8", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
+    "m8x_156_macos_drag_transforms": {
+        "file": "tests/engine/macos_pilot/m8x_156.py",
+        "windows_case": "m8x_156",
+        "milestone": "m8", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
     "m8x_197_macos_lock_plate": {
         "file": "tests/engine/macos_pilot/m8x_197_lock_plate.py",
         "windows_case": "m8x_197",
