@@ -540,6 +540,12 @@ MACOS_BASELINE: dict[str, dict] = {
         "milestone": "m8", "tier": "A",
         "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
     },
+    "m8x_190_macos_move_xyz": {
+        "file": "tests/engine/macos_pilot/m8x_190.py",
+        "windows_case": "m8x_190",
+        "milestone": "m8", "tier": "A",
+        "suite": "macos_baseline", "platforms": ("macos",), "enabled": True,
+    },
     "m8x_197_macos_lock_plate": {
         "file": "tests/engine/macos_pilot/m8x_197_lock_plate.py",
         "windows_case": "m8x_197",
