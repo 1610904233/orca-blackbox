@@ -1199,3 +1199,22 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   Continue?`，OK/Cancel 在窗口相对 `(724,476)/(826,478)`。实测删除序列：
   5→4→3 静默且方案保留；删第 3 个时 Warning，Cancel 保持 3、OK 级联
   （方案消失、rows=2）；删到 1 时 Color Mixing 面板隐藏、trash 失效。
+
+### 22.20 Add Mix 对话框（m3t 预研）
+
+- **入口**：Color Mixing 头部青色 “+” 在主窗口相对 **`(388,521)`**（0.8 布局；
+  0.4 布局在视频里是 (388,493)）。点开独立窗口 `Add Mix`（约 380x694，
+  layer 8）。
+- **Ratio tab 默认**：两行 Filament Selection（F1 PETG + F2 PLA Silk），
+  跨类型横幅 “Filament 1 and Filament 2 cannot be mixed…”，50%/50% 图例。
+- **行 1 下拉**（点 (566,255)）只列未使用耗材（1 Generic PETG、3/4/5 PLA
+  Silk）；选一个 PLA（下拉项 (558,321)）横幅消失、预览变绿/黄，布局整体
+  上移 30px。
+- **比例条**：位于图例上方约 18px；端点点击 x=**450**（左）→ 90%/10%，
+  x=**735**（右）→ 10%/90%（两侧都夹到 10% 下限/90% 上限）。极端比例后
+  弹 `Filament 3 ratio is too high. Mix may be affected.`，布局再下移 30px，
+  下一次点击前要用新的图例 y 重新计算条的位置。
+- **行数**：头部 `Filament Selection` 右侧的 + 在其中心
+  （约 (735, 头部中心 y)）可把行数 2→3；到达 3 行上限后继续点同一点
+  **未观察到移除**（Windows 用例期望按钮切换为 REMOVE）。m3t 暂不注册，
+  后续需再找上限后的 remove 热区或确认这是 macOS 行为差异。

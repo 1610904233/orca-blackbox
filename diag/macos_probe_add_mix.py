@@ -50,9 +50,10 @@ def main() -> int:
                     and 450 < c.rect.y < 600 and c.rect.x < 430:
                 rep.log(f"[BUTTON] {c.title!r} {c.description!r} "
                         f"{c.rect.to_xywh()} actions={c.actions}")
-        candidates = [(372, 524), (372, 490), (372, 558), (380, 452),
-                      (404, 524), (404, 558)]
+        candidates = [(388, 521), (388, 522), (388, 493)]
         for (x, y) in candidates:
+            driver.move(win.rect.x + x, win.rect.y + y)
+            time.sleep(1.0)
             driver.click(win.rect.x + x, win.rect.y + y)
             time.sleep(1.2)
             wins = [w for w in driver.windows_for_pid(app.pid)
@@ -67,7 +68,8 @@ def main() -> int:
                             driver.capture_screen().crop(win.rect),
                             Rect(w.rect.x - win.rect.x, w.rect.y - win.rect.y,
                                  w.rect.w, w.rect.h))
-                        rep.log(f"[INFO]   OCR={[(q.text, q.rect.to_xywh()) for q in words][:25]}")
+                        rep.log(f"[INFO]   OCR={[(q.text, q.rect.to_xywh()) for q in words][:80]}")
+                        driver.capture_screen().save_png(OUT / "dialog_full.png")
                     except Exception as exc:
                         rep.log(f"[INFO]   OCR error {exc}")
                 break
