@@ -57,6 +57,34 @@ class Reporter:
         return code
 
 
+def close_stray_color_panel(driver, app, main_win) -> bool:
+    """Close an app-owned floating 'Colors' (NSColorPanel) left from boot.
+
+    The panel is a standard floating utility window, so it sits above the main
+    window in every recorded frame.  It is normally opened by the colour cases
+    themselves (m8b/m8x_153/m3x); a stale restored state can also surface it at
+    launch, which both dirties the video and makes the chip-click toggle
+    ambiguous.  Only windows owned by this app pid are touched.
+    """
+    closed = False
+    try:
+        for win in driver.windows_for_pid(app.pid):
+            if win.id == main_win.id or not win.on_screen:
+                continue
+            if (win.title or "").strip().lower() != "colors":
+                continue
+            print(f"[mac_common] closing stray Colors panel id={win.id}")
+            try:
+                driver.close_window(win)
+            except Exception as exc:  # noqa: BLE001 - cleanup must not be fatal
+                print(f"[mac_common] close Colors failed: {exc}")
+            closed = True
+            time.sleep(0.3)
+    except Exception:
+        pass
+    return closed
+
+
 def launch_and_focus(driver, datadir: Path, model: Path | None = None,
                      timeout_s: float = 150.0, log_path: Path | None = None):
     """Launch with an isolated datadir and bring the app forward for real clicks."""
@@ -66,6 +94,7 @@ def launch_and_focus(driver, datadir: Path, model: Path | None = None,
     driver.set_foreground(win)
     time.sleep(0.8)
     driver.window_rect(win)  # refresh geometry after activation
+    close_stray_color_panel(driver, app, win)
     # Start after the window is up: capturing while the app loads its local web
     # server makes 2.4.2 stall at "local server init" (measured 2026-11-20).
     macos_video.start(driver, case=Path(sys.argv[0]).stem)
