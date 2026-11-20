@@ -19,6 +19,7 @@ if str(HERE) not in sys.path:
 
 from harness import macos_video  # noqa: E402
 from harness.platform.base import Frame, Rect  # noqa: E402
+from harness.platform.macos_ocr import recognize_text  # noqa: E402
 
 ARTIFACTS = HERE / "artifacts" / "mac"
 
@@ -85,6 +86,145 @@ def close_stray_color_panel(driver, app, main_win) -> bool:
     return closed
 
 
+def _wizard_window(driver, pid):
+    try:
+        for win in driver.windows_for_pid(pid):
+            if win.on_screen and (win.title or "").strip().lower() == "setup wizard":
+                return win
+    except Exception:
+        pass
+    return None
+
+
+def _wizard_ocr(driver, win):
+    frame = driver.capture_screen().crop(win.rect)
+    return frame, recognize_text(frame, timeout_s=20)
+
+
+def _ocr_word(words, label):
+    wanted = label.strip().lower()
+    return next((w for w in words if w.text.strip().lower() == wanted), None)
+
+
+def _wizard_click(driver, win, word, dx: float = 0.0) -> None:
+    driver.click(win.rect.x + word.rect.center[0] + dx,
+                 win.rect.y + word.rect.center[1])
+
+
+def complete_setup_wizard(driver, pid, timeout_s: float = 120.0) -> bool:
+    """Walk the whole Setup Wizard: region -> UX program -> printer -> filament.
+
+    The wizard is a WebView, so AX exposes only the window; every page is driven
+    by OCR on the window pixels.  Defaults: keep Asia-Pacific, decline the UX
+    program (Skip), select Snapmaker U1, select all filaments (All), Finish.
+    Returns True once the wizard window is gone.  If anything unexpected
+    happens the caller's normal `_dismiss_boot_blockers` fallback still closes
+    it, so a launch never hangs on the wizard.
+    """
+    deadline = time.monotonic() + timeout_s
+    attempts = 0
+    last_page = ""
+    while time.monotonic() < deadline:
+        win = _wizard_window(driver, pid)
+        if win is None:
+            print("[mac_common] setup wizard: completed")
+            return True
+        try:
+            frame, words = _wizard_ocr(driver, win)
+        except Exception as exc:  # noqa: BLE001 - OCR can time out
+            print(f"[mac_common] setup wizard OCR failed: {exc}")
+            time.sleep(1.0)
+            continue
+        text = " ".join(w.text.strip().lower() for w in words)
+        page = ("welcome" if "welcome to snapmaker orca" in text else
+                "region" if "login region" in text else
+                "ux" if "experience improvement" in text else
+                "printer" if "printer selection" in text else
+                "filament" if "filament selection" in text else "other")
+        if page != last_page:
+            print(f"[mac_common] setup wizard page: {page}")
+            last_page = page
+        attempts += 1
+        if attempts % 10 == 1:
+            print(f"[mac_common] setup wizard text: {text[:140]}")
+
+        if page == "welcome":
+            target = _ocr_word(words, "get started")
+        elif page == "region":
+            target = _ocr_word(words, "next")
+        elif page == "ux":
+            target = _ocr_word(words, "skip")
+        elif page == "printer":
+            u1 = _ocr_word(words, "snapmaker u1")
+            if u1 is not None:
+                try:
+                    px = frame.pixel(int(round(u1.rect.x - 5)),
+                                     int(round(u1.rect.center[1])))
+                except Exception:
+                    px = (0, 0, 0, 0)
+                # Selected checkboxes paint the theme teal (BGR ~ 0,150,136).
+                checked = px[1] > 110 and px[0] < 140
+                print(f"[mac_common] setup wizard printer: u1={u1.rect.to_xywh()} "
+                      f"px={px} checked={checked}")
+                if not checked:
+                    # The checkbox is ~5px left of the label's left edge.
+                    # (_wizard_click centers on the word, which lands on the
+                    # label and does not toggle the web checkbox.)
+                    driver.click(win.rect.x + u1.rect.x - 5,
+                                 win.rect.y + u1.rect.center[1])
+                    time.sleep(1.5)
+                    try:
+                        frame2, _words2 = _wizard_ocr(driver, win)
+                        px2 = frame2.pixel(int(round(u1.rect.x - 5)),
+                                           int(round(u1.rect.center[1])))
+                        print(f"[mac_common] setup wizard printer: after click px={px2}")
+                    except Exception as exc:
+                        print(f"[mac_common] setup wizard printer recheck: {exc}")
+            target = _ocr_word(words, "next")
+        elif page == "filament":
+            if "at least one filament" in text:
+                yes = _ocr_word(words, "yes")
+                if yes is not None:
+                    _wizard_click(driver, win, yes)
+                    time.sleep(0.6)
+                    continue
+            alls = [w for w in words if w.text.strip().lower() == "all"]
+            select_all = None
+            if alls:
+                # The big "All" select button sits under the vendor filters
+                # (measured y~241); the filter checkboxes are higher up.
+                preferred = [w for w in alls
+                             if 200 <= w.rect.center[1] <= 300
+                             and w.rect.center[0] < 150]
+                select_all = (preferred or sorted(
+                    alls, key=lambda w: w.rect.center[1]))[-1]
+            if select_all is not None:
+                print(f"[mac_common] setup wizard filament: select-all="
+                      f"{select_all.rect.to_xywh()}")
+                _wizard_click(driver, win, select_all)
+                time.sleep(0.8)
+                target = _ocr_word(words, "finish")
+            else:
+                target = _ocr_word(words, "finish")
+        else:
+            target = None
+            for cand in ("next", "finish", "done", "complete", "ok", "yes"):
+                target = _ocr_word(words, cand)
+                if target is not None:
+                    break
+
+        if target is None:
+            print(f"[mac_common] setup wizard: no action on page: {text[:120]}")
+            time.sleep(0.8)
+            continue
+        print(f"[mac_common] setup wizard: click {target.text!r}")
+        _wizard_click(driver, win, target)
+        time.sleep(1.0)
+
+    print("[mac_common] setup wizard: timed out")
+    return _wizard_window(driver, pid) is None
+
+
 def launch_and_focus(driver, datadir: Path, model: Path | None = None,
                      timeout_s: float = 150.0, log_path: Path | None = None):
     """Launch with an isolated datadir and bring the app forward for real clicks."""
@@ -99,7 +239,9 @@ def launch_and_focus(driver, datadir: Path, model: Path | None = None,
     # boot blockers (Setup Wizard / homepage), so the video starts at boot.
     app = driver.launch(datadir=datadir, model=model, timeout_s=timeout_s,
                         dismiss_wizard=True, log_path=log_path,
-                        on_window_found=_start_video)
+                        on_window_found=_start_video,
+                        handle_wizard=lambda pid, _w: complete_setup_wizard(
+                            driver, pid))
     win = app.extra.get("window") or driver.find_main_window(app.pid, timeout_s=30)
     driver.set_foreground(win)
     time.sleep(0.8)

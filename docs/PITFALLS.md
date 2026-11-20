@@ -1277,3 +1277,14 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   `~/Library/Caches/com.snapmaker.snapmaker-orca`（不要直接删，用
   `.bak-<时间戳>` 重命名），冷启动后向导会在首屏出现。2026-11-20 实测 m7a
   录像 0.8s/1.5s 帧可见 `Setup Wizard`，用例仍全项通过。
+- **Setup Wizard 要走完而不是关掉（2026-11-20）**：向导是 WebView，AX 只有窗口
+  本体，必须用 OCR 驱动。流程：`Get Started` → 区域 `Next`（默认 Asia-Pacific）
+  → UX 计划 `Skip` → Printer Selection 勾选 `Snapmaker U1` → Filament Selection
+  点 `All` 全选 → `Finish`。`complete_setup_wizard`（tests/engine/mac_common.py）
+  在 `launch()` 的 `handle_wizard` 钩子里执行，失败才回退到原来的
+  `dismiss_boot_blockers`。
+- **U1 复选框要点标签左侧**：`Snapmaker U1` 的 OCR 框是整段文字，点文字中心
+  只会悬停高亮（像素变青但移开鼠标就恢复），必须点 `u1.rect.x - 5` 的复选框
+  本体；勾选后移开鼠标仍为青色即可确认。耗材页的 `All` 是筛选复选框下方的大
+  按钮（实测相对坐标约 (63,241)），点它才会全选列表里的耗材；随后 `Finish`
+  可正常关闭向导，m7a 全项通过。

@@ -470,6 +470,7 @@ class MacOSDriver:
         env: dict[str, str] | None = None,
         log_path: Path | str | None = None,
         on_window_found: Callable | None = None,
+        handle_wizard: Callable | None = None,
     ) -> AppHandle:
         if datadir is None:
             raise ValueError("datadir is required (isolation!)")
@@ -541,6 +542,16 @@ class MacOSDriver:
                 print(f"[macos] on_window_found failed: {exc}")
         if hold_blockers_s > 0:
             time.sleep(hold_blockers_s)
+
+        # Optional handler that completes the Setup Wizard by walking its pages
+        # (the wizard is a WebView; mac_common drives it with OCR).  Runs before
+        # the generic blocker dismissal, which stays as the failure fallback.
+        if handle_wizard is not None:
+            try:
+                done = handle_wizard(app.pid, win)
+                print(f"[macos] setup wizard handled: {done}")
+            except Exception as exc:  # noqa: BLE001 - fallback still dismisses
+                print(f"[macos] handle_wizard failed: {exc}")
 
         dismissed: list[str] = []
         if dismiss_wizard:
