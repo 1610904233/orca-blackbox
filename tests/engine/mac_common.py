@@ -17,6 +17,7 @@ HERE = Path(__file__).resolve().parents[2]  # repo root
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
+from harness import macos_video  # noqa: E402
 from harness.platform.base import Frame, Rect  # noqa: E402
 
 ARTIFACTS = HERE / "artifacts" / "mac"
@@ -32,6 +33,7 @@ class Reporter:
     def log(self, text: str = "") -> None:
         print(text)
         self.lines.append(text)
+        macos_video.mark(text)  # no-op unless a recording is active
 
     def check(self, name: str, ok: bool, detail: str = "") -> bool:
         state = "PASS" if ok else "FAIL"
@@ -64,6 +66,9 @@ def launch_and_focus(driver, datadir: Path, model: Path | None = None,
     driver.set_foreground(win)
     time.sleep(0.8)
     driver.window_rect(win)  # refresh geometry after activation
+    # Start after the window is up: capturing while the app loads its local web
+    # server makes 2.4.2 stall at "local server init" (measured 2026-11-20).
+    macos_video.start(driver, case=Path(sys.argv[0]).stem)
     return app, win
 
 
@@ -85,6 +90,7 @@ def close_app(driver, app, win) -> bool:
             fh.close()
         except Exception:
             pass
+    macos_video.stop("close_app")
     return not app.alive()
 
 

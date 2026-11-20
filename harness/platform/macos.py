@@ -233,6 +233,16 @@ class _FrameGrabber(NSObject):
         self.stopped.set()
 
 
+def _video_click(x: float, y: float, button: str = "left",
+                 clicks: int = 1) -> None:
+    """Tell the optional recorder about a real click (never fatal)."""
+    try:
+        from harness import macos_video
+        macos_video.note_click(x, y, button=button, clicks=clicks)
+    except Exception:
+        pass
+
+
 class MacOSDriver:
     """AX + ScreenCaptureKit implementation of :class:`Driver`."""
 
@@ -894,6 +904,8 @@ class MacOSDriver:
             return False
         for action in (AS.kAXPressAction, AS.kAXConfirmAction, "AXOpen"):
             if _ax_perform(ctl.handle, action):
+                if ctl.rect is not None and ctl.rect.area > 0:
+                    _video_click(*ctl.rect.center, button="ax")
                 return True
         if ctl.rect is not None and ctl.rect.area > 0:
             cx, cy = ctl.rect.center
@@ -1988,6 +2000,7 @@ class MacOSDriver:
     def click(self, x: float, y: float, *, button: str = "left",
               clicks: int = 1) -> None:
         self._require_ax()
+        _video_click(x, y, button, clicks)
         source = self._event_source()
         scale = self._scale_for_point(x, y)
         point = Quartz.CGPointMake(x / scale, y / scale)

@@ -50,6 +50,7 @@ MACOS_ONLY_PREFIXES = (
 )
 MACOS_ONLY_NAMES = {
     "tests/engine/mac_common.py",
+    "harness/macos_video.py",
     "tests/engine/m0_platform_contract.py",
     "tests/engine/m0_macos_boot_check.py",
     "tests/engine/m1_macos_tab_switch.py",

@@ -1242,3 +1242,24 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   色块在 x 860..1200、y 120..190 的饱和列投影为 5 段
   （903-926 / 961-971 / 1013-1022 / 1116-1125 / 1167-1176）→ 5 个瓦片。
   再点图标可关闭，面板消失。
+
+### 22.21 用例录像（macOS，2026-11-20）
+
+- **挂载点**：`tests/engine/mac_common.launch_and_focus` 在**主窗口就绪后**启动
+  `harness/macos_video.start()`；`close_app` / atexit / SIGTERM（runner 看门狗）
+  收尾。输出 `artifacts/mac/videos/<case>/<case>_<stamp>.mp4`，同名
+  `.timeline.jsonl`（日志行 + 点击）与 `.meta.json`（帧数/时长/停止原因）。
+  画面左上角有耗时，点击处有渐隐圆环，右下角显示最近 PASS/FAIL。
+- **不能在 launch 前开始录制**：提前起 SCK 抓帧会让 2.4.2 卡在
+  `local server init`，表现为 150s 找不到稳定主窗口（两次复现；禁用录制即通过）。
+- **不能用驱动 `capture_screen()` 逐帧抓**：每次新建 SCStream 约 120ms，
+  与用例自身的 SCK 并发时互相饿死（`SCStream produced no frame within 6.0s`），
+  5fps 录制会让 m8x_212 的菜单/对话框时序失败；2fps 仍偶发切片判定超时。
+- **不能用 `CGWindowListCreateImage` 录制**：约 6ms/帧很轻，但会漏掉应用
+  自绘对话框（m8x_212 的 Retraction 对话框整段不可见）。只作 SCK 启动失败时
+  的兜底，并在日志标注 `cgl-fallback`。
+- **采用常驻 SCStream**：录制器只建一条流（`SCStreamConfiguration`
+  `minimumFrameInterval=1/fps`），帧由其 delegate 转 CGImage，编码仍在录制线程。
+  m8x_212 对话框完整可见、案例通过；已回归 m3a / m8x_196 / m8x_125 / m8x_212。
+- 开关：`ORCA_BB_VIDEO=0` 关闭；`ORCA_BB_VIDEO_FPS=1..10`；`ORCA_BB_VIDEO_DIR`
+  改输出根。mp4v 1080p 约 8–11MB/分钟。
