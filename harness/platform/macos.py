@@ -37,7 +37,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Sequence
+from typing import Callable, Sequence
 
 import AppKit
 import ApplicationServices as AS
@@ -469,6 +469,7 @@ class MacOSDriver:
         dismiss_wizard: bool = True,
         env: dict[str, str] | None = None,
         log_path: Path | str | None = None,
+        on_window_found: Callable | None = None,
     ) -> AppHandle:
         if datadir is None:
             raise ValueError("datadir is required (isolation!)")
@@ -526,6 +527,20 @@ class MacOSDriver:
             app.terminate()
             log_fh.close()
             raise
+
+        # Optional hook fired before boot blockers (Setup Wizard / homepage) are
+        # dismissed, so the recorder can capture them.  Returning True asks the
+        # launcher to hold the blockers on screen briefly so they reach the
+        # video before dismissal.  Never fatal to launch.
+        hold_blockers_s = 0.0
+        if on_window_found is not None:
+            try:
+                if on_window_found(win):
+                    hold_blockers_s = 2.0
+            except Exception as exc:  # noqa: BLE001
+                print(f"[macos] on_window_found failed: {exc}")
+        if hold_blockers_s > 0:
+            time.sleep(hold_blockers_s)
 
         dismissed: list[str] = []
         if dismiss_wizard:

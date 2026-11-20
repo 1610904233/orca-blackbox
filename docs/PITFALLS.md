@@ -1269,3 +1269,11 @@ feed 请求日志 + 真实弹窗 WM_CLOSE 实测），逐条收敛 §19 的残�
   遍历本 app pid 的窗口，只关闭标题为 `Colors` 的可见窗口（不碰其它进程）；
   m8b / m8x_153 / m3x 需要时会在用例步骤中自行重新打开。2026-11-20 回归
   m8b、m8x_153 均通过，启动首帧无浮窗。
+- **录像要包含启动向导**：录制现在在 `launch()` 的 `on_window_found` 钩子里启动
+  （主窗口出现、`dismiss_boot_blockers` 之前），并让 launcher 在录制已启动时
+  停留 2s 再关向导，避免 5fps 首帧晚于关闭动作。若缓存太热、向导不出现，可先
+  备份并移走 `~/Library/Application Support/Snapmaker_Orca`、
+  `~/Library/WebKit/com.snapmaker.snapmaker-orca`、
+  `~/Library/Caches/com.snapmaker.snapmaker-orca`（不要直接删，用
+  `.bak-<时间戳>` 重命名），冷启动后向导会在首屏出现。2026-11-20 实测 m7a
+  录像 0.8s/1.5s 帧可见 `Setup Wizard`，用例仍全项通过。

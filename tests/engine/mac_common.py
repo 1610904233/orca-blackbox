@@ -88,16 +88,23 @@ def close_stray_color_panel(driver, app, main_win) -> bool:
 def launch_and_focus(driver, datadir: Path, model: Path | None = None,
                      timeout_s: float = 150.0, log_path: Path | None = None):
     """Launch with an isolated datadir and bring the app forward for real clicks."""
+    case_name = Path(sys.argv[0]).stem
+
+    def _start_video(_win) -> bool:
+        # Returning True makes the launcher hold the Setup Wizard/homepage for
+        # ~2s so it is present in the first recorded frames.
+        return macos_video.start(driver, case=case_name) is not None
+
+    # Record as soon as the main window exists but before the launcher dismisses
+    # boot blockers (Setup Wizard / homepage), so the video starts at boot.
     app = driver.launch(datadir=datadir, model=model, timeout_s=timeout_s,
-                        dismiss_wizard=True, log_path=log_path)
+                        dismiss_wizard=True, log_path=log_path,
+                        on_window_found=_start_video)
     win = app.extra.get("window") or driver.find_main_window(app.pid, timeout_s=30)
     driver.set_foreground(win)
     time.sleep(0.8)
     driver.window_rect(win)  # refresh geometry after activation
     close_stray_color_panel(driver, app, win)
-    # Start after the window is up: capturing while the app loads its local web
-    # server makes 2.4.2 stall at "local server init" (measured 2026-11-20).
-    macos_video.start(driver, case=Path(sys.argv[0]).stem)
     return app, win
 
 
