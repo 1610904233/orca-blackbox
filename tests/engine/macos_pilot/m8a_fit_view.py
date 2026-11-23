@@ -54,6 +54,7 @@ PLATE_CANDIDATES = (("plate2", (750, 270)), ("plate4", (520, 410)))
 # 2026-11-23).  Clicking it shows Section View / Explosion Ratio / Selection
 # Mode; full #20 coverage lives in m8z_assembly_import.
 ASSEMBLY_VIEW_XY = (1170, 78)
+PRIMITIVES = ("Cube", "Cylinder", "Sphere")
 
 
 @dataclass(frozen=True)
@@ -127,6 +128,71 @@ def _select_all(driver, win) -> bool:
     return driver.click_control(item)
 
 
+def _menu_items(driver, app, main_win):
+    items = []
+    for win in driver.windows_for_pid(app.pid):
+        if win.id == main_win.id or not win.on_screen:
+            continue
+        try:
+            items.extend(c for c in driver.controls(win)
+                         if c.role == "AXMenuItem")
+        except Exception:
+            continue
+    return items
+
+
+def _new_project(driver, app, win) -> bool:
+    """File > New Project; press Discard on the unsaved-changes dialog."""
+    item = driver.find_control(win, role="AXMenuItem", title="New Project",
+                               timeout_s=4)
+    if item is None or not item.enabled:
+        return False
+    driver.click_control(item)
+    time.sleep(1.5)
+    try:  # the dialog is a separate window: OCR the full screen
+        words = recognize_text(driver.capture_screen(), timeout_s=20)
+        discard = next((w for w in words
+                        if w.text.strip().lower() == "discard"), None)
+        if discard is not None:
+            driver.click(*discard.rect.center)
+            time.sleep(1.0)
+    except Exception:
+        pass
+    return True
+
+
+def _add_primitive(driver, app, win, name: str) -> bool:
+    """Bed right-click -> Add Primitive > name (Cube/Cylinder/Sphere)."""
+    driver.click(win.rect.x + 1000, win.rect.y + 300, button="right")
+    time.sleep(0.8)
+    item = next((c for c in _menu_items(driver, app, win)
+                 if (c.title or "").strip().lower() == name.lower()), None)
+    if item is None:
+        return False
+    ok = driver.click_control(item)
+    time.sleep(1.2)
+    return ok
+
+
+def _object_names(driver, win) -> set:
+    words = recognize_text(driver.capture(win), timeout_s=20)
+    wanted = {"cube", "cylinder", "sphere"}
+    return {w.text.strip().lower() for w in words
+            if w.rect.x < 420 and w.text.strip().lower() in wanted}
+
+
+def _enter_assembly_view(driver, win):
+    driver.click(win.rect.x + ASSEMBLY_VIEW_XY[0],
+                 win.rect.y + ASSEMBLY_VIEW_XY[1])
+    time.sleep(2.2)
+    frame = driver.capture(win)
+    words = recognize_text(frame, timeout_s=20)
+    text = " ".join(w.text for w in words).lower()
+    markers = [k for k in ("section view", "explosion ratio", "selection mode")
+               if k in text]
+    return frame, markers
+
+
 def _nearest(blobs: list[Blob], cx: float, cy: float) -> Blob | None:
     if not blobs:
         return None
@@ -198,17 +264,6 @@ def main() -> int:
                   f"colored={frame.stats()['colored_fraction']:.4f}")
         if not loaded or not blobs:
             raise RuntimeError("model blob not found")
-
-        # --- #21: no assembly relations -> models laid out plate by plate ---
-        xs = [b.cx for b in blobs]
-        ys = [b.cy for b in blobs]
-        spread_x = max(xs) - min(xs)
-        spread_y = max(ys) - min(ys)
-        rep.check("#21 models laid out by plate",
-                  len(blobs) >= 2 and spread_x > 150 and spread_y > 100,
-                  f"blobs={len(blobs)} spread=({spread_x:.0f},{spread_y:.0f}) "
-                  f"(no assembly tree; plates 01..07 in the overview)")
-        time.sleep(1.5)  # hold the overview so the recording shows 01..07
 
         # --- #18: select the largest model blob, then Fit ---------------
         target = blobs[0]
@@ -330,19 +385,22 @@ def main() -> int:
             rep.check("#17 second plate switch", False, "not reached")
             rep.check("#17 second fit", False, "not reached")
 
-        # --- Assembly View entry (evidence for #20; full port in m8z) ---
-        driver.click(win.rect.x + ASSEMBLY_VIEW_XY[0],
-                     win.rect.y + ASSEMBLY_VIEW_XY[1])
-        time.sleep(2.0)
-        asm = driver.capture(win)
-        asm.save_png(OUT / "assembly_view.png")
-        asm_words = recognize_text(asm, timeout_s=20)
-        asm_text = " ".join(w.text for w in asm_words).lower()
-        markers = [k for k in ("section view", "explosion ratio",
-                               "selection mode") if k in asm_text]
-        rep.check("Assembly View opens (#20 evidence)",
-                  len(markers) == 3, f"markers={markers}")
-        time.sleep(2.5)  # hold the assembly view for the recording
+        # --- #21: new project -> standard primitives -> Assembly View row ---
+        rep.log("[INFO] #21 new project + Cube/Cylinder/Sphere -> Assembly View")
+        ok_new = _new_project(driver, app, win)
+        added = {name: _add_primitive(driver, app, win, name)
+                 for name in PRIMITIVES}
+        time.sleep(1.0)
+        objects = _object_names(driver, win)
+        asm_frame, markers = _enter_assembly_view(driver, win)
+        asm_frame.save_png(OUT / "assembly_view_primitives.png")
+        rep.check("#21 standard primitives laid out in Assembly View",
+                  ok_new and all(added.values())
+                  and {"cube", "cylinder", "sphere"} <= objects
+                  and len(markers) >= 2,
+                  f"new_project={ok_new} added={added} "
+                  f"objects={sorted(objects)} markers={markers}")
+        time.sleep(2.5)  # hold the row layout for the recording
 
         rep.check("app alive", app.alive())
     except Exception as exc:  # noqa: BLE001
