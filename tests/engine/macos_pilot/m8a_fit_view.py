@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 import sys
 import time
@@ -36,6 +37,7 @@ import numpy as np  # noqa: E402
 
 from harness.platform.base import Frame, Rect  # noqa: E402
 from harness.platform.factory import get_driver  # noqa: E402
+from harness.platform.macos_ocr import recognize_text  # noqa: E402
 from mac_common import (  # noqa: E402
     ARTIFACTS, Reporter, close_app, dismiss_dialogs, launch_and_focus,
 )
@@ -166,7 +168,7 @@ def main() -> int:
     if args.datadir.exists():
         shutil.rmtree(args.datadir, ignore_errors=True)
     rep = Reporter(OUT)
-    rep.log("=== m8a macOS Fit-view (#16-#19) ===")
+    rep.log("=== m8a macOS Fit-view (#16-#19/#21) ===")
     rep.log(f"datadir={args.datadir} model={args.model}")
 
     driver = None
@@ -192,6 +194,17 @@ def main() -> int:
                   f"colored={frame.stats()['colored_fraction']:.4f}")
         if not loaded or not blobs:
             raise RuntimeError("model blob not found")
+
+        # --- #21: no assembly relations -> models laid out plate by plate ---
+        xs = [b.cx for b in blobs]
+        ys = [b.cy for b in blobs]
+        spread_x = max(xs) - min(xs)
+        spread_y = max(ys) - min(ys)
+        rep.check("#21 models laid out by plate",
+                  len(blobs) >= 2 and spread_x > 150 and spread_y > 100,
+                  f"blobs={len(blobs)} spread=({spread_x:.0f},{spread_y:.0f}) "
+                  f"(no assembly tree; plates 01..07 in the overview)")
+        time.sleep(1.5)  # hold the overview so the recording shows 01..07
 
         # --- #18: select the largest model blob, then Fit ---------------
         target = blobs[0]
@@ -226,16 +239,46 @@ def main() -> int:
                   f"fit_press={ok_fit} area {target.area:.0f}->{area1:.0f} "
                   f"ratio={ratio:.2f} centered={centered} diff={diff18:.4f}")
 
-        # --- #19: Select All -> Fit (evidence only, Windows F-11 note) ---
+        # --- #19: Select All -> Fit (union bbox of all selected models) ---
         ok_all = _select_all(driver, win)
         time.sleep(1.0)
+        sel_all_frame = driver.capture(win)
+        sel_all_frame.save_png(OUT / "after_select_all.png")
+        n_sel = 0
+        sel_text = ""
+        for attempt in range(2):
+            try:
+                words = recognize_text(sel_all_frame, timeout_s=15)
+                sel_text = " ".join(w.text for w in words)
+                match = re.search(r"selected objects:\s*(\d+)", sel_text, re.I)
+                if match:
+                    n_sel = int(match.group(1))
+                    break
+            except Exception as exc:  # noqa: BLE001 - OCR can time out
+                rep.log(f"[INFO] #19 OCR retry: {exc}")
+            time.sleep(0.5)
+            sel_all_frame = driver.capture(win)
+        rep.check("#19 select all selects multiple models", n_sel >= 2,
+                  f"selected={n_sel}")
+        time.sleep(2.5)  # keep the selection toast on screen for the video
         ok_fit2 = _fit(driver, win)
-        time.sleep(1.5)
+        time.sleep(2.0)
         all_frame = driver.capture(win)
         all_frame.save_png(OUT / "after_select_all_fit.png")
+        all_blobs = blob_stats(all_frame)
+        axs = [b.cx for b in all_blobs]
+        ays = [b.cy for b in all_blobs]
+        union_x = max(axs) - min(axs) if axs else 0
+        union_y = max(ays) - min(ays) if ays else 0
         diff19 = fitted.difference(all_frame)
+        rep.check("#19 fit frames all selected models",
+                  ok_fit2 and len(all_blobs) >= 2
+                  and union_x > 150 and union_y > 100,
+                  f"fit_press={ok_fit2} blobs={len(all_blobs)} "
+                  f"union=({union_x:.0f},{union_y:.0f}) diff={diff19:.4f}")
         rep.log(f"[INFO] #19 select_all={ok_all} fit={ok_fit2} "
-                f"viewport_diff={diff19:.4f} (evidence only)")
+                f"viewport_diff={diff19:.4f}")
+        time.sleep(1.5)  # hold the union view for the recording
 
         # --- #16: switch plate -> Fit -> zoom_to_bed -------------------
         prev = all_frame
