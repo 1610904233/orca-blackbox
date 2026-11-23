@@ -50,6 +50,10 @@ MODEL_BLOB_MIN = 800.0
 # Avoid object pixels so the click switches the current plate instead of
 # selecting an object.
 PLATE_CANDIDATES = (("plate2", (750, 270)), ("plate4", (520, 410)))
+# Assembly View toolbar slot at the default 1200pt window (tooltip measured
+# 2026-11-23).  Clicking it shows Section View / Explosion Ratio / Selection
+# Mode; full #20 coverage lives in m8z_assembly_import.
+ASSEMBLY_VIEW_XY = (1170, 78)
 
 
 @dataclass(frozen=True)
@@ -326,6 +330,20 @@ def main() -> int:
             rep.check("#17 second plate switch", False, "not reached")
             rep.check("#17 second fit", False, "not reached")
 
+        # --- Assembly View entry (evidence for #20; full port in m8z) ---
+        driver.click(win.rect.x + ASSEMBLY_VIEW_XY[0],
+                     win.rect.y + ASSEMBLY_VIEW_XY[1])
+        time.sleep(2.0)
+        asm = driver.capture(win)
+        asm.save_png(OUT / "assembly_view.png")
+        asm_words = recognize_text(asm, timeout_s=20)
+        asm_text = " ".join(w.text for w in asm_words).lower()
+        markers = [k for k in ("section view", "explosion ratio",
+                               "selection mode") if k in asm_text]
+        rep.check("Assembly View opens (#20 evidence)",
+                  len(markers) == 3, f"markers={markers}")
+        time.sleep(2.5)  # hold the assembly view for the recording
+
         rep.check("app alive", app.alive())
     except Exception as exc:  # noqa: BLE001
         rep.check("unexpected", False, f"{type(exc).__name__}: {exc}")
@@ -339,8 +357,8 @@ def main() -> int:
         elif app is not None:
             rep.log(f"[INFO] --keep: app pid={app.pid} left running")
         exit_code = rep.save({"partial": False,
-                              "covered": ["#18", "#16", "#17"],
-                              "evidence_only": ["#19"]})
+                              "covered": ["#16", "#17", "#18", "#19", "#21"],
+                              "evidence": ["#20 Assembly View entry"]})
     return exit_code
 
 
