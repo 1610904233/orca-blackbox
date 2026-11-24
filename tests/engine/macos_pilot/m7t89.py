@@ -44,13 +44,17 @@ from mac_common import (  # noqa: E402
 )
 import m7b_new_project as m7b  # noqa: E402
 import m8x_137_flow_param_tabs as c137  # noqa: E402
+import m8x_153_layout_print as c153  # noqa: E402
 import m8x_192 as c192  # noqa: E402
 import m7t74 as c74  # noqa: E402
+from m8b_official_color import drag  # noqa: E402
 
 OUT = ARTIFACTS / "pilot" / "m7t89"
 MODEL_POINT = (814, 396)
 ROTATE_X = 772
 PAINT_ICON = (996, 90)
+PAINT_CHIP2 = (977, 145)       # palette tile for filament 2 (teal)
+PAINT_CIRCLE = (925, 260)      # brush tool; triangle only selects faces
 
 
 def paste(driver, win, x, y, text, rep):
@@ -85,6 +89,23 @@ def model_point(frame):
     xs.sort()
     ys.sort()
     return (xs[len(xs) // 2], ys[len(ys) // 2])
+
+
+def blue_centroid(frame):
+    """Centroid of the blue cube after slot 1 is recoloured (#0303FC)."""
+    xs = []
+    ys = []
+    for y in range(120, 640, 2):
+        row = y * frame.width * 4
+        for x in range(460, 880, 2):
+            i = row + x * 4
+            b, g, r = frame.data[i], frame.data[i + 1], frame.data[i + 2]
+            if b > 140 and b > r + 40 and b > g + 40:
+                xs.append(x)
+                ys.append(y)
+    if not xs:
+        return None
+    return (int(sum(xs) / len(xs)), int(sum(ys) / len(ys)))
 
 
 def main() -> int:
@@ -144,6 +165,21 @@ def main() -> int:
                   and abs(axis[2]) >= 0.95,
                   f"ang={ang:.1f} axis={axis}")
 
+        # Recolour slot 1 AFTER the transform checks: the cube is assigned
+        # slot 1 and updates live, while the paint filament (slot 2) keeps
+        # its default colour -- so the dab is visibly different.
+        before_chip, panel, expected = c153.set_slot_colour_rgb(
+            driver, app, win, rep)
+        rep.check("slot-1 colour prepared for contrast",
+                  expected is not None,
+                  f"chip={before_chip} hex={expected}")
+        if panel is not None:
+            try:
+                driver.close_window(panel)
+            except Exception:
+                pass
+        time.sleep(1.0)
+
         # Re-select the rotated cube after the save (the view re-fits, so
         # the original centre is stale), then open the paint panel.
         pre_pt = model_point(driver.capture(win))
@@ -159,18 +195,43 @@ def main() -> int:
                   and "remap filaments" in text.lower(), text[-140:])
         pt = model_point(driver.capture(win))
         rep.log(f"[INFO] post-paint model point={pt}")
-        driver.send_key("2")
+        # Select filament 2 (teal) from the palette and the circle brush tool.
+        # (The triangle icon selects faces; the circle is the paint brush.)
+        driver.click(win.rect.x + PAINT_CHIP2[0],
+                     win.rect.y + PAINT_CHIP2[1])
         time.sleep(0.8)
-        before = driver.capture(win).pixel(*pt)
-        for dx, dy in ((0, 0), (-6, 0), (6, 0), (0, -6), (0, 6)):
-            driver.click(win.rect.x + pt[0] + dx,
-                         win.rect.y + pt[1] + dy)
-            time.sleep(0.5)
+        driver.click(win.rect.x + PAINT_CIRCLE[0],
+                     win.rect.y + PAINT_CIRCLE[1])
+        time.sleep(0.8)
+        # The cube is blue after the slot-1 recolour: use its centroid.
+        blue_pt = blue_centroid(driver.capture(win))
+        if blue_pt is not None:
+            pt = blue_pt
+        rep.log(f"[INFO] paint point={pt}")
+        before_frame = driver.capture(win)
+        # The save/Colors panels can leave the main window inactive; the first
+        # click focuses it, then the drag paints the stroke.
+        driver.click(win.rect.x + pt[0], win.rect.y + pt[1])
+        time.sleep(0.5)
+        drag(win.rect.x + pt[0] - 15, win.rect.y + pt[1],
+             win.rect.x + pt[0] + 15, win.rect.y + pt[1], steps=10)
         time.sleep(1.0)
-        after = driver.capture(win).pixel(*pt)
-        rep.log(f"[INFO] paint dab pixel {before} -> {after} "
-                f"(same-colour filament is expected to keep the pixel)")
-        driver.capture(win).save_png(OUT / "painted.png")
+        after_frame = driver.capture(win)
+        changed = 0
+        max_delta = 0
+        for yy in range(pt[1] - 30, pt[1] + 31, 2):
+            for xx in range(pt[0] - 30, pt[0] + 31, 2):
+                b = before_frame.pixel(xx, yy)
+                a = after_frame.pixel(xx, yy)
+                d = max(abs(b[i] - a[i]) for i in range(3))
+                max_delta = max(max_delta, d)
+                if d >= 20:
+                    changed += 1
+        rep.log(f"[INFO] paint patch max_delta={max_delta} "
+                f"changed_px={changed}")
+        rep.check("paint dab changes colour", changed >= 5,
+                  f"max_delta={max_delta} changed_px={changed}")
+        after_frame.save_png(OUT / "painted.png")
         driver.click(win.rect.x + PAINT_ICON[0],
                      win.rect.y + PAINT_ICON[1])
         time.sleep(1.0)
