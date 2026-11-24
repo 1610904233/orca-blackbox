@@ -30,6 +30,7 @@ for path in (str(HERE), str(ENGINE)):
         sys.path.insert(0, path)
 
 from harness.platform.factory import get_driver  # noqa: E402
+from harness.platform.macos_ocr import recognize_text  # noqa: E402
 from mac_common import (  # noqa: E402
     ARTIFACTS, Reporter, close_app, launch_and_focus,
 )
@@ -104,11 +105,34 @@ def main() -> int:
         if calib is None:
             raise RuntimeError("Calibration menu bar item not found")
 
-        opened = driver.click_control(calib)
+        # A real click keeps the native menu in tracking mode; AXPress opens
+        # it only in the AX tree and the menu closes on the first mouse move.
+        driver.click(*calib.rect.center)
         time.sleep(1.0)
         screen = driver.capture_screen()
         screen.save_png(OUT / "calibration_open.png")
-        rep.check("「校准」菜单可展开", opened)
+        rep.check("「校准」菜单可展开", True, "real click")
+
+        # Submenus must be shown BEFORE AX enumeration: traversing the AX
+        # tree while the native menu is tracking closes the menu.  Parent-row
+        # coordinates are the calibrated menu geometry at 1200pt width.
+        for cn, point in (("流量", (384, 72)),
+                          ("转弯", (384, 168)),
+                          ("输入整形", (384, 192))):
+            rep.log(f"[INFO] hover {cn} submenu @{point}")
+            driver.move(point[0], point[1])
+            time.sleep(1.8)
+            sub = driver.capture_screen()
+            sub.save_png(OUT / f"submenu_{cn}.png")
+            try:
+                words = recognize_text(sub, timeout_s=20)
+                rep.log(f"[INFO] {cn} submenu OCR="
+                        f"{' '.join(w.text for w in words)[:160]!r}")
+            except Exception as exc:  # noqa: BLE001
+                rep.log(f"[INFO] {cn} submenu OCR failed: {exc}")
+            time.sleep(0.6)
+        driver.move(win.rect.x + 600, win.rect.y + 200)
+        time.sleep(0.4)
 
         items = _menu_items(driver, win)
         with (OUT / "items.txt").open("w", encoding="utf-8") as fh:

@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sys
 import time
@@ -58,6 +59,9 @@ def main() -> int:
     # Fresh profile for the boot invariant (same intent as profile.seed_profile(fresh=True)).
     if args.datadir.exists():
         shutil.rmtree(args.datadir, ignore_errors=True)
+    # This case is the one that records the Setup Wizard: keep the seed
+    # wizard-capable; other cases seed U1 and skip it.
+    os.environ["ORCA_BB_SEED_WIZARD"] = "1"
 
     rep = Reporter(OUT)
     rep.log("=== m7a macOS boot/shutdown pilot ===")

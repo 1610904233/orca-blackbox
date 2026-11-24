@@ -403,6 +403,20 @@ class MacOSDriver:
                 },
                 "firstguide": {"finish": True},
             }
+            # A fresh profile with only firstguide.finish=true still makes
+            # 2.4.2 show the Setup Wizard; the app also requires a configured
+            # printer (models + active preset).  Seeding U1 skips the wizard
+            # for normal cases.  ORCA_BB_SEED_WIZARD=1 keeps it for m7a.
+            if os.environ.get("ORCA_BB_SEED_WIZARD", "0") != "1":
+                minimal["models"] = [{
+                    "model": "Snapmaker U1",
+                    "nozzle_diameter": "0.2;0.4;0.6;0.8",
+                    "vendor": "Snapmaker",
+                }]
+                minimal["presets"] = {
+                    "filaments": None,
+                    "machine": "Snapmaker U1 (0.4 nozzle)",
+                }
             body = json.dumps(minimal, indent=4, ensure_ascii=False)
             digest = hashlib.md5((body + "\n").encode("utf-8")).hexdigest().upper()
             conf_path.write_text(
