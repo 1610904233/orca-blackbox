@@ -22,7 +22,10 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import shutil
+import subprocess
 import sys
 import time
 import traceback
@@ -36,9 +39,11 @@ for path in (str(HERE), str(ENGINE), str(PILOTS)):
         sys.path.insert(0, path)
 
 import AppKit  # noqa: E402
+import numpy as np  # noqa: E402
 
 from harness.platform.macos_ocr import recognize_text  # noqa: E402
 from harness.platform.factory import get_driver  # noqa: E402
+from harness import macos_video  # noqa: E402
 from mac_common import (  # noqa: E402
     ARTIFACTS, Reporter, close_app, launch_and_focus, slice_and_export,
 )
@@ -108,12 +113,185 @@ def blue_centroid(frame):
     return (int(sum(xs) / len(xs)), int(sum(ys) / len(ys)))
 
 
+def interior_blue_point(frame):
+    """Blue pixel well inside the cube, restricted to the 3D viewport.
+
+    A full-frame centroid is pulled toward the blue filament chip in the
+    sidebar; eroding the viewport mask gives a point that is guaranteed to be
+    on the cube and at least 4px away from its silhouette.
+    """
+    arr = np.frombuffer(frame.data, np.uint8).reshape(
+        frame.height, frame.width, 4)
+    b = arr[:, :, 0].astype(int)
+    g = arr[:, :, 1].astype(int)
+    r = arr[:, :, 2].astype(int)
+    mask = (b > 140) & (b > r + 40) & (b > g + 40)
+    view = np.zeros_like(mask)
+    view[120:640, 460:880] = True
+    mask &= view
+    eroded = mask.copy()
+    for dy in range(-4, 5):
+        for dx in range(-4, 5):
+            eroded &= np.roll(np.roll(mask, dy, axis=0), dx, axis=1)
+    ys, xs = np.nonzero(eroded)
+    if len(xs) == 0:
+        return None
+    ys0, xs0 = np.nonzero(mask)
+    i = int(np.argmin((xs - xs0.mean()) ** 2 + (ys - ys0.mean()) ** 2))
+    return (int(xs[i]), int(ys[i]))
+
+
+def _dismiss_save_prompt(driver, app, win) -> bool:
+    """If a 'Save changes?' dialog appears, choose No/Discard."""
+    for w in driver.windows_for_pid(app.pid):
+        if w.id == win.id or not w.on_screen:
+            continue
+        if "save" not in (w.title or "").lower():
+            continue
+        try:
+            words = recognize_text(driver.capture(w), timeout_s=15)
+        except Exception:
+            return False
+        for word in words:
+            if word.text.strip().lower() in (
+                    "no", "discard", "don't save", "dont save"):
+                driver.click(w.rect.x + word.rect.center[0],
+                             w.rect.y + word.rect.center[1])
+                time.sleep(1.0)
+                return True
+    return False
+
+
+class _Log:
+    def log(self, text: str = "") -> None:
+        print(text)
+
+
+def phase2(args) -> int:
+    """Fresh app session started by OPENING the project, then paint + slice.
+
+    Windows §21.20: the first dab only lands in a session whose app was
+    started by opening the project; an in-session open is not enough on macOS.
+    """
+    checks: list[dict] = []
+
+    def chk(name: str, ok: bool, detail: str = "") -> bool:
+        checks.append({"name": name, "ok": bool(ok), "detail": detail})
+        print(f"[{'PASS' if ok else 'FAIL'}] {name}: {detail}")
+        return ok
+
+    log = _Log()
+    proj = Path(args.project).expanduser().resolve()
+    out_json = Path(args.out_json).expanduser()
+    driver = None
+    app = None
+    win = None
+    try:
+        driver = get_driver()
+        paint_datadir = OUT / "profile_paint"
+        shutil.rmtree(paint_datadir, ignore_errors=True)
+        src_profile = Path(args.datadir)
+        if src_profile.exists():
+            # Reuse the initialized phase-1 profile (no first-run wizard) but
+            # start a fresh app session by OPENING the project.
+            shutil.copytree(src_profile, paint_datadir)
+        app, win = launch_and_focus(
+            driver, paint_datadir, model=proj, timeout_s=args.timeout,
+            log_path=OUT / "app_launch_paint.log")
+        chk("paint session opened project",
+            proj.stem.lower() in (win.title or "").lower(),
+            f"title={win.title!r}")
+        time.sleep(3.0)
+
+        before_chip, panel, expected = c153.set_slot_colour_rgb(
+            driver, app, win, log)
+        chk("slot-1 colour prepared for contrast", expected is not None,
+            f"chip={before_chip} hex={expected}")
+        # set_slot_colour_rgb already closed the Colors panel; closing it a
+        # second time disturbs the following gizmo session.
+        time.sleep(1.0)
+
+        pt = interior_blue_point(driver.capture(win))
+        chk("paint point on cube", pt is not None, str(pt))
+        if pt is not None:
+            driver.click(win.rect.x + pt[0], win.rect.y + pt[1])
+            time.sleep(1.0)
+            driver.click(win.rect.x + PAINT_ICON[0],
+                         win.rect.y + PAINT_ICON[1])
+            time.sleep(2.0)
+            # Proven probe sequence: choose filament 2 + circle brush and
+            # stroke BEFORE any OCR; OCR pauses break the ImGui gizmo state.
+            driver.click(win.rect.x + PAINT_CHIP2[0],
+                         win.rect.y + PAINT_CHIP2[1])
+            time.sleep(0.8)
+            driver.click(win.rect.x + PAINT_CIRCLE[0],
+                         win.rect.y + PAINT_CIRCLE[1])
+            time.sleep(0.8)
+            before_frame = driver.capture(win)
+            before = before_frame.pixel(*pt)
+            bg = (600, 200)
+            bg_before = before_frame.pixel(*bg)
+            drag(win.rect.x + pt[0] - 8, win.rect.y + pt[1],
+                 win.rect.x + pt[0] + 8, win.rect.y + pt[1], steps=8)
+            time.sleep(1.0)
+            after_frame = driver.capture(win)
+            after = after_frame.pixel(*pt)
+            bg_after = after_frame.pixel(*bg)
+            text = " ".join(w.text for w in recognize_text(after_frame))
+            active = ("selected filament" in text.lower()
+                      and "remap filaments" in text.lower())
+            chk("cube selected", "object name: cube" in text.lower(), "")
+            chk("color painting activates", active, text[-140:])
+            delta = max(abs(before[i] - after[i]) for i in range(3))
+            bg_delta = max(abs(bg_before[i] - bg_after[i]) for i in range(3))
+            log.log(f"[INFO] phase2 paint {before[:3]} -> {after[:3]} "
+                    f"delta={delta} bg_delta={bg_delta}")
+            chk("paint dab changes colour",
+                active and delta >= 20 and bg_delta <= 5,
+                f"panel={active} delta={delta} bg_delta={bg_delta}")
+            after_frame.save_png(OUT / "painted_phase2.png")
+            time.sleep(2.5)  # hold the visible stroke for the recording
+            driver.click(win.rect.x + PAINT_ICON[0],
+                         win.rect.y + PAINT_ICON[1])
+            time.sleep(1.0)
+
+        gcode = OUT / "work" / "m7t89_phase2.gcode"
+        ok = slice_and_export(
+            driver, win, log, gcode,
+            [OUT / "work", OUT, ARTIFACTS / "pilot", HERE / "fixtures"])
+        chk("slice completes",
+            ok and gcode.exists() and gcode.stat().st_size > 0,
+            f"size={gcode.stat().st_size if gcode.exists() else 0}")
+    except Exception as exc:  # noqa: BLE001
+        chk("phase2 unexpected", False, f"{type(exc).__name__}: {exc}")
+        traceback.print_exc()
+    finally:
+        if app is not None:
+            try:
+                close_app(driver, app, win)
+            except Exception:
+                pass
+    payload = {"checks": checks, "ok": all(c["ok"] for c in checks)}
+    out_json.parent.mkdir(parents=True, exist_ok=True)
+    out_json.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8")
+    return 0 if payload["ok"] else 2
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--exe", default=None)
     ap.add_argument("--datadir", default=OUT / "profile", type=Path)
     ap.add_argument("--timeout", default=150.0, type=float)
+    ap.add_argument("--phase2", action="store_true")
+    ap.add_argument("--project", default=None, type=Path)
+    ap.add_argument("--out-json", default=None, type=Path)
     args = ap.parse_args()
+    if args.phase2:
+        if args.project is None or args.out_json is None:
+            raise SystemExit("--phase2 requires --project and --out-json")
+        return phase2(args)
 
     work = OUT / "work"
     for path in (args.datadir, work):
@@ -165,91 +343,49 @@ def main() -> int:
                   and abs(axis[2]) >= 0.95,
                   f"ang={ang:.1f} axis={axis}")
 
-        # Recolour slot 1 AFTER the transform checks: the cube is assigned
-        # slot 1 and updates live, while the paint filament (slot 2) keeps
-        # its default colour -- so the dab is visibly different.
-        before_chip, panel, expected = c153.set_slot_colour_rgb(
-            driver, app, win, rep)
-        rep.check("slot-1 colour prepared for contrast",
-                  expected is not None,
-                  f"chip={before_chip} hex={expected}")
-        if panel is not None:
+        # --- phase 1 done; phase 2 must start by OPENING the project ---
+        rep.log("[INFO] phase-1 done: closing; child opens the saved project")
+        alive_before = app.alive()
+        fh = app.extra.get("log_fh")
+        if fh:
             try:
-                driver.close_window(panel)
+                fh.close()
             except Exception:
                 pass
-        time.sleep(1.0)
-
-        # Re-select the rotated cube after the save (the view re-fits, so
-        # the original centre is stale), then open the paint panel.
-        pre_pt = model_point(driver.capture(win))
-        rep.log(f"[INFO] post-save model point={pre_pt}")
-        driver.click(win.rect.x + pre_pt[0], win.rect.y + pre_pt[1])
-        time.sleep(1.0)
-        driver.click(win.rect.x + PAINT_ICON[0],
-                     win.rect.y + PAINT_ICON[1])
-        time.sleep(2.0)
-        text = " ".join(w.text for w in recognize_text(driver.capture(win)))
-        rep.check("color painting activates",
-                  "selected filament" in text.lower()
-                  and "remap filaments" in text.lower(), text[-140:])
-        pt = model_point(driver.capture(win))
-        rep.log(f"[INFO] post-paint model point={pt}")
-        # Select filament 2 (teal) from the palette and the circle brush tool.
-        # (The triangle icon selects faces; the circle is the paint brush.)
-        driver.click(win.rect.x + PAINT_CHIP2[0],
-                     win.rect.y + PAINT_CHIP2[1])
-        time.sleep(0.8)
-        driver.click(win.rect.x + PAINT_CIRCLE[0],
-                     win.rect.y + PAINT_CIRCLE[1])
-        time.sleep(0.8)
-        # The cube is blue after the slot-1 recolour: use its centroid.
-        blue_pt = blue_centroid(driver.capture(win))
-        if blue_pt is not None:
-            pt = blue_pt
-        rep.log(f"[INFO] paint point={pt}")
-        before_frame = driver.capture(win)
-        # The save/Colors panels can leave the main window inactive; the first
-        # click focuses it, then the drag paints the stroke.
-        driver.click(win.rect.x + pt[0], win.rect.y + pt[1])
-        time.sleep(0.5)
-        drag(win.rect.x + pt[0] - 15, win.rect.y + pt[1],
-             win.rect.x + pt[0] + 15, win.rect.y + pt[1], steps=10)
-        time.sleep(1.0)
-        after_frame = driver.capture(win)
-        changed = 0
-        max_delta = 0
-        for yy in range(pt[1] - 30, pt[1] + 31, 2):
-            for xx in range(pt[0] - 30, pt[0] + 31, 2):
-                b = before_frame.pixel(xx, yy)
-                a = after_frame.pixel(xx, yy)
-                d = max(abs(b[i] - a[i]) for i in range(3))
-                max_delta = max(max_delta, d)
-                if d >= 20:
-                    changed += 1
-        rep.log(f"[INFO] paint patch max_delta={max_delta} "
-                f"changed_px={changed}")
-        rep.check("paint dab changes colour", changed >= 5,
-                  f"max_delta={max_delta} changed_px={changed}")
-        after_frame.save_png(OUT / "painted.png")
-        driver.click(win.rect.x + PAINT_ICON[0],
-                     win.rect.y + PAINT_ICON[1])
-        time.sleep(1.0)
-
-        if not slice_and_export(
-                driver, win, rep, gcode,
-                [work, OUT, ARTIFACTS / "pilot", HERE / "fixtures"]):
-            rep.check("slice completes", False, "slice/export failed")
-            return rep.save({"stage": "slice"})
-        rep.check("slice completes", gcode.exists() and gcode.stat().st_size > 0,
-                  f"size={gcode.stat().st_size}")
-        rep.check("app alive", app.alive())
-
-        alive_before = app.alive()
-        closed = close_app(driver, app, win)
+        try:
+            app.terminate()
+        except Exception:
+            pass
+        deadline = time.monotonic() + 10.0
+        while app.alive() and time.monotonic() < deadline:
+            time.sleep(0.3)
+        rep.check("phase-1 software closed", not app.alive(),
+                  f"alive_before={alive_before}")
         app = None
-        rep.check("software closed", alive_before and closed,
-                  f"alive_before={alive_before} closed={closed}")
+
+        rep.log("[INFO] phase-2 child: open project -> paint -> slice")
+        phase2_json = OUT / "phase2_result.json"
+        env = os.environ.copy()
+        env["ORCA_BB_VIDEO"] = "0"
+        proc = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()),
+             "--phase2", "--datadir", str(args.datadir),
+             "--project", str(proj), "--out-json", str(phase2_json)],
+            env=env, capture_output=True, text=True, timeout=600,
+            cwd=str(HERE))
+        rep.log(f"[INFO] phase2 rc={proc.returncode}")
+        if proc.stdout:
+            rep.log(proc.stdout[-1200:])
+        if proc.stderr:
+            rep.log(proc.stderr[-1200:])
+        payload = (json.loads(phase2_json.read_text(encoding="utf-8"))
+                   if phase2_json.exists()
+                   else {"checks": [], "ok": False})
+        for check in payload.get("checks", []):
+            rep.check(check["name"], check["ok"], check.get("detail", ""))
+        rep.check("phase2 child completed", bool(payload.get("ok")),
+                  f"rc={proc.returncode}")
+        return rep.save({"covered": ["#170"]})
     except Exception as exc:  # noqa: BLE001
         rep.check("unexpected", False, f"{type(exc).__name__}: {exc}")
         traceback.print_exc()
@@ -259,6 +395,8 @@ def main() -> int:
                 rep.check("close", close_app(driver, app, win))
             except Exception as exc:  # noqa: BLE001
                 rep.check("close", False, f"{type(exc).__name__}: {exc}")
+        else:
+            macos_video.stop("m7t89")
         exit_code = rep.save({"covered": ["#170"]})
     return exit_code
 
