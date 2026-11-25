@@ -12,11 +12,13 @@
 # macOS mapping (one gizmo per session, as on Windows):
 #   s1 -> import Prusa.stl; the red Move arrow is dragged at (860,430),
 #         Position X must increase while Y stays.
-#   s2 -> CLI-load Prusa; Rotate toolbar field Z=45 (the arrow cone is not a
-#         stable hit target; Windows also falls back to input).
+#   s2 -> CLI-load Prusa; Rotate row Z=45 (the arrow cone is not a stable
+#         hit target; Windows also falls back to input).
 #   s3 -> CLI-load Prusa; Scale corner handle at (848,444) is dragged out,
 #         the first percentage must increase.
 #   s4 -> CLI-load Prusa; slice_and_export + used_filaments.
+#   Move/Rotate/Scale slots come from one tooltip scan (the seeded printer
+#   moved them); Rotate's row is OCR-located.
 #
 # Artifacts: artifacts/mac/pilot/m8x_156/{report.log,result.json,*.png,
 #            work/*.gcode,*.3mf}.
@@ -29,6 +31,9 @@ import sys
 import time
 import traceback
 from pathlib import Path
+
+import cv2
+import numpy as np
 
 HERE = Path(__file__).resolve().parents[3]       # repo root
 ENGINE = Path(__file__).resolve().parents[1]     # tests/engine
@@ -46,9 +51,11 @@ from mac_common import (  # noqa: E402
     wait_for_model,
 )
 import mac_gcode  # noqa: E402
+import m8x_191 as c191  # noqa: E402
 import m8x_192 as c192  # noqa: E402
 import m7t74 as c74  # noqa: E402
 from m8b_official_color import drag  # noqa: E402
+from m8x_152 import find_transform_slots  # noqa: E402
 
 OUT = ARTIFACTS / "pilot" / "m8x_156"
 STL = HERE / "fixtures" / "Prusa.stl"
@@ -56,9 +63,18 @@ MODEL_POINT = (814, 481)
 MOVE_ARROW = (860, 430)
 SCALE_HANDLE = (848, 444)
 SCALE_HANDLE_END = (868, 424)
-MOVE_X = 736
-ROTATE_X = 772
-SCALE_X = 796
+MOVE_X = 761                # seeded-U1 layout; tooltip scan below
+ROTATE_X = 793
+SCALE_X = 825
+_SLOTS = None
+
+
+def transform_slots(driver, win):
+    """Scan once per process; toolbar layout is identical across sessions."""
+    global _SLOTS
+    if _SLOTS is None:
+        _SLOTS = find_transform_slots(driver, win)
+    return _SLOTS
 
 
 def ocr(driver, win):
@@ -77,17 +93,79 @@ def numbers(driver, win, y, xmin=880):
 
 
 def click_model(driver, win) -> bool:
-    """Click candidate points on the thin Prusa strip until object-info shows it."""
+    """Select the loaded Prusa; canvas hit-test, then the Objects tree.
+
+    The object-info panel ("Object name: Prusa.stl") is the proof — a bare
+    'prusa.stl' can also come from the tree or a tooltip.  A CLI-loaded
+    model is not at the same screen point as a File>Import one, which made
+    the old canvas-only hit-test miss in the rotate/scale sessions.
+    """
+    def selected() -> bool:
+        text = " ".join(w.text for w in ocr(driver, win)).lower()
+        # Full-window OCR can misread "Object" as "Obiect"; Size is the
+        # second line of the same info panel.
+        return "prusa.stl" in text and (
+            "object name" in text or "obiect name" in text or "size:" in text)
+
+    if selected():
+        return True
     for x, y in ((814, 481), (814, 470), (814, 492), (800, 481),
                  (828, 481), (790, 485), (840, 485),
                  (814, 429), (814, 440), (814, 450), (814, 500),
                  (814, 510), (800, 460), (828, 460)):
         driver.click(win.rect.x + x, win.rect.y + y)
         time.sleep(0.7)
-        text = " ".join(w.text for w in ocr(driver, win)).lower()
-        if "prusa.stl" in text:
+        if selected():
             return True
-    return False
+    words = ocr(driver, win)
+    tab = next((w for w in words
+                if w.text.strip().lower() == "objects"
+                and w.rect.x < 450), None)
+    point = tab.rect.center if tab else (152, 520)
+    driver.click(win.rect.x + point[0], win.rect.y + point[1])
+    time.sleep(1.5)
+    words = ocr(driver, win)
+    plate = next((w for w in words
+                  if "plate 1" in w.text.lower()
+                  and w.rect.x < 430 and w.rect.y > 500), None)
+    if plate is not None:
+        driver.click(win.rect.x + 30, win.rect.y + plate.rect.y + 23)
+        time.sleep(2.0)
+        if selected():
+            return True
+    row = next((w for w in words
+                if "prusa" in w.text.lower()
+                and w.rect.x < 430 and w.rect.y > 500), None)
+    if row is not None:
+        driver.click(win.rect.x + row.rect.center[0],
+                     win.rect.y + row.rect.center[1])
+        time.sleep(2.0)
+    return selected()
+
+
+def scale_handles(driver, win):
+    """Teal corner cubes of the Scale gizmo (the seeded layout moved them).
+
+    The old fixed (848,444) was far outside the gizmo; detect the small
+    teal squares in the viewport and let the caller drag the outermost one
+    away from their centroid.
+    """
+    frame = driver.capture(win)
+    arr = np.frombuffer(frame.data, dtype=np.uint8).reshape(
+        frame.height, frame.width, 4)
+    b, g, r = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+    mask = ((b > 110) & (g > 120) & (r < 110)).astype(np.uint8)
+    mask[:300, :] = 0          # exclude toolbar/paint icons
+    mask[:, :650] = 0          # exclude the left panels
+    n, _lab, stats, cents = cv2.connectedComponentsWithStats(mask, 8)
+    out = []
+    for i in range(1, n):
+        _x, _y, w, h, area = stats[i]
+        if 60 <= area <= 600 and 8 <= w <= 30 and 8 <= h <= 30:
+            out.append((int(cents[i][0]), int(cents[i][1])))
+    ys, xs = np.nonzero(mask)
+    center = (float(xs.mean()), float(ys.mean())) if len(xs) else None
+    return out, center
 
 
 def paste(driver, win, x, y, text):
@@ -130,7 +208,10 @@ def session_move(driver, datadir, rep):
         if not ok:
             return False
         rep.check("s2 选中模型", click_model(driver, win))
-        driver.click(win.rect.x + MOVE_X, win.rect.y + 90)
+        slot, tip = transform_slots(driver, win).get(
+            "move", ((MOVE_X, 75), ""))
+        rep.log(f"[INFO] Move slot={slot} tip={tip!r}")
+        driver.click(win.rect.x + slot[0], win.rect.y + slot[1])
         time.sleep(1.5)
         before = numbers(driver, win, 142)
         rep.log(f"[INFO] move before={before}")
@@ -165,9 +246,15 @@ def session_rotate(driver, datadir, rep):
         if not ok:
             return False
         rep.check("s3 选中模型", click_model(driver, win))
-        driver.click(win.rect.x + ROTATE_X, win.rect.y + 90)
+        slot, tip = transform_slots(driver, win).get(
+            "rotate", ((ROTATE_X, 75), ""))
+        rep.log(f"[INFO] Rotate slot={slot} tip={tip!r}")
+        driver.click(win.rect.x + slot[0], win.rect.y + slot[1])
         time.sleep(1.5)
-        paste(driver, win, 1047, 148, "45")
+        rows = c191.rotate_row_fields(driver, win)
+        rel = rows.get("rel") or [(921, 148), (984, 148), (1047, 148)]
+        rep.log(f"[INFO] Rotate rows={rows}")
+        paste(driver, win, rel[2][0], rel[2][1], "45")
         proj = datadir / "rotate.3mf"
         rep.check("s3 另存旋转项目",
                   c192.save_project(driver, win, rep, proj) and proj.exists())
@@ -197,13 +284,31 @@ def session_scale(driver, datadir, rep):
         if not ok:
             return False
         rep.check("s4 选中模型", click_model(driver, win))
-        driver.click(win.rect.x + SCALE_X, win.rect.y + 90)
+        slot, tip = transform_slots(driver, win).get(
+            "scale", ((SCALE_X, 75), ""))
+        rep.log(f"[INFO] Scale slot={slot} tip={tip!r}")
+        driver.click(win.rect.x + slot[0], win.rect.y + slot[1])
         time.sleep(1.5)
         before = numbers(driver, win, 142, xmin=930)
         rep.log(f"[INFO] scale before={before}")
-        drag(win.rect.x + SCALE_HANDLE[0], win.rect.y + SCALE_HANDLE[1],
-             win.rect.x + SCALE_HANDLE_END[0],
-             win.rect.y + SCALE_HANDLE_END[1])
+        pts, center = scale_handles(driver, win)
+        rep.log(f"[INFO] scale handles={pts} center={center}")
+        hx, hy = SCALE_HANDLE
+        cx, cy = center or (820.0, 330.0)
+        if pts:
+            hx, hy = max(pts, key=lambda p: (p[0] - cx) ** 2
+                         + (p[1] - cy) ** 2)
+            dx, dy = hx - cx, hy - cy
+            if abs(dx) + abs(dy) < 1.0:   # single handle: use up-right
+                dx, dy = 1.0, -1.0
+            norm = max(1.0, (dx * dx + dy * dy) ** 0.5)
+            ex = int(round(hx + dx / norm * 25.0))
+            ey = int(round(hy + dy / norm * 25.0))
+        else:
+            ex, ey = SCALE_HANDLE_END
+        rep.log(f"[INFO] scale drag=({hx},{hy})->({ex},{ey})")
+        drag(win.rect.x + hx, win.rect.y + hy,
+             win.rect.x + ex, win.rect.y + ey)
         time.sleep(1.2)
         after = numbers(driver, win, 142, xmin=930)
         driver.capture(win).save_png(OUT / "scale_drag.png")
