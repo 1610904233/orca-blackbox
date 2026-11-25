@@ -276,6 +276,26 @@ def main() -> int:
                       f"tz={ {n: (t0[n][11], t_all[n][11]) for n in t0 if n in t_all} }")
             rep.check("盘映射不变", plate_map(p_all) == plates0,
                       f"{plates0} -> {plate_map(p_all)}")
+            # Show the final two-plate layout in the recording; the current
+            # view is plate 1, so the plate-2 cube would otherwise stay
+            # off-screen.
+            fit = next((c for c in driver.controls(win, max_depth=12)
+                        if c.role == "AXMenuItem"
+                        and c.title.strip().lower().startswith("fit in all view")),
+                       None)
+            rep.log(f"[INFO] fit-in-all view={fit is not None}")
+            if fit is not None:
+                driver.click_control(fit)
+                time.sleep(2.0)
+            # Fit can stay centred on plate 1; zoom out so the plate-2 cube
+            # is visible in the final layout too.
+            for _ in range(5):
+                driver.wheel(win.rect.x + 800, win.rect.y + 400, 1)
+                time.sleep(0.2)
+            time.sleep(1.5)
+            final = driver.capture(win)
+            final.save_png(OUT / "after_all.png")
+            time.sleep(2.5)
             rep.check("app alive (s2)", app.alive())
         except Exception as exc:  # noqa: BLE001
             rep.check("s2 unexpected", False, f"{type(exc).__name__}: {exc}")
