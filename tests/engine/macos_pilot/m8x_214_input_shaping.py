@@ -36,9 +36,23 @@ from mac_common import (  # noqa: E402
 )
 import mac_calib as cal  # noqa: E402
 import m8x_213_max_flow as c213  # noqa: E402
+import m7b_new_project as m7b  # noqa: E402
 
 OUT = ARTIFACTS / "pilot" / "m8x_214"
 OBJ_KEYWORDS = ("input_shaping", "ringing", "shaping")
+
+
+def _dialog_by_title(driver, app, main_win, needle, timeout_s=6.0):
+    """Separate dialog window; the main window title can also match."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        for w in driver.windows_for_pid(app.pid):
+            if w.id == main_win.id or not w.on_screen:
+                continue
+            if needle.lower() in (w.title or "").lower():
+                return w
+        time.sleep(0.3)
+    return None
 
 
 def main() -> int:
@@ -115,6 +129,69 @@ def main() -> int:
         cal.slice_plate(driver, win)
         sliced, text = cal.wait_gcode(driver, win)
         rep.check("切片成功（生成 G-code）", sliced, f"tail={text[-160:]!r}")
+
+        # --- Extra coverage: Fast Tower in a fresh app session ---
+        rep.log("[INFO] Fast Tower: terminating and relaunching a fresh session")
+        fh = app.extra.get("log_fh")
+        if fh:
+            try:
+                fh.close()
+            except Exception:
+                pass
+        try:
+            app.terminate()
+        except Exception:
+            pass
+        deadline = time.monotonic() + 10.0
+        while app.alive() and time.monotonic() < deadline:
+            time.sleep(0.3)
+        time.sleep(1.0)
+        fast_profile = OUT / "profile_fast"
+        shutil.rmtree(fast_profile, ignore_errors=True)
+        app, win = launch_and_focus(
+            driver, fast_profile, model=None, timeout_s=args.timeout,
+            log_path=OUT / "app_launch_fast.log")
+        rep.check("Fast Tower 新会话启动", True, win.title)
+        time.sleep(2.0)
+        rep.check("打开 Input Shaping Frequency（Fast）",
+                  cal.open_calib(driver, win, "Input Shaping Frequency"))
+        dlg2 = cal.window_by_title(driver, app, "Input shaping Frequency",
+                                   timeout_s=15.0)
+        if dlg2 is None:
+            cal.open_calib(driver, win, "Input Shaping Frequency")
+            dlg2 = cal.window_by_title(driver, app,
+                                       "Input shaping Frequency",
+                                       timeout_s=10.0)
+        rep.check("Fast Tower 对话框打开", dlg2 is not None)
+        if dlg2 is not None:
+            words = recognize_text(driver.capture(win), timeout_s=20)
+            fast = next((w for w in words
+                         if "fast" in w.text.lower()), None)
+            rep.log(f"[INFO] Fast Tower label="
+                    f"{fast.rect.to_xywh() if fast else None}")
+            if fast is not None:
+                cx = win.rect.x + fast.rect.center[0]
+                cy = win.rect.y + fast.rect.center[1]
+                driver.click(cx, cy)
+                time.sleep(0.6)
+                driver.click(cx - 18, cy)
+                time.sleep(0.6)
+            rep.check("选择 Fast Tower", fast is not None)
+            vp_before = m7b._vp_colored(driver.capture(win))
+            rep.check("Fast Tower 确定", cal.click_ok(driver, dlg2))
+            arrived2, frame2, vp2 = cal.wait_model(
+                driver, win, vp_before, delta=0.003)
+            if frame2 is not None:
+                frame2.save_png(OUT / "after_ok_fast.png")
+            info2 = cal.object_info_text(driver, win)
+            rep.check("生成 fast_tower 对象",
+                      arrived2 and "fast" in info2.lower()
+                      and "tower" in info2.lower(),
+                      f"tail={info2[-160:]!r}")
+            cal.slice_plate(driver, win)
+            sliced2, text2 = cal.wait_gcode(driver, win)
+            rep.check("Fast Tower 切片成功", sliced2,
+                      f"tail={text2[-160:]!r}")
         rep.check("app alive", app.alive())
     except Exception as exc:  # noqa: BLE001
         rep.check("unexpected", False, f"{type(exc).__name__}: {exc}")
