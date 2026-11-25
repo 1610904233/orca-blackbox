@@ -91,6 +91,15 @@ def main() -> int:
         rep.check("推荐版对象名精确一致（11 块）", len(flow_rec) == 11,
                   f"names={names_rec}")
 
+        # Slice the recommended version too (the user-facing comparison
+        # expects both variants to be slicable).
+        cal.slice_plate(driver, win)
+        sliced_rec, text_rec = cal.wait_gcode(driver, win)
+        rep.check("推荐版切片成功（生成 G-code）", sliced_rec,
+                  f"tail={text_rec[-160:]!r}")
+        driver.click(win.rect.x + 60, win.rect.y + 45)  # Prepare tab
+        time.sleep(1.2)
+
         # ---- clear the bed -------------------------------------------
         delete = next((c for c in driver.controls(win, max_depth=12)
                        if c.role == "AXMenuItem"
