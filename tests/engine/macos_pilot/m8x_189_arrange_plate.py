@@ -35,7 +35,9 @@ for path in (str(HERE), str(ENGINE), str(PILOTS)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
+from harness.platform.base import Rect  # noqa: E402
 from harness.platform.factory import get_driver  # noqa: E402
+from harness.platform.macos_ocr import recognize_text  # noqa: E402
 from mac_common import (  # noqa: E402
     ARTIFACTS, Reporter, close_app, launch_and_focus,
 )
@@ -50,6 +52,20 @@ BED = (0.5, 270.5, 1.0, 271.0)
 MIN_GAP = 2.0
 MIN_MOVE = 2.0
 EPS = 1e-3
+
+
+def find_add_plate_slot(driver, win):
+    """Toolbar layout depends on the project; scan for 'Add plate' tooltip."""
+    for x in range(460, 571, 10):
+        driver.move(win.rect.x + x, win.rect.y + 75)
+        time.sleep(1.0)
+        words = recognize_text(
+            driver.capture_screen(),
+            Rect(win.rect.x + x - 120, win.rect.y + 85, 400, 80))
+        text = " ".join(w.text for w in words).strip()
+        if "add plate" in text.lower():
+            return (x, 75), text
+    return None, ""
 
 
 def save_project(driver, win, rep, path: Path) -> bool:
@@ -121,15 +137,27 @@ def main() -> int:
                   f"blockers={app.extra.get('blockers')}")
         time.sleep(3.0)
 
-        # Add plate 2 (current).
+        # Add plate 2 (current).  The toolbar Add-plate slot moves with the
+        # project layout, so scan the tooltip instead of using a fixed x.
+        slot, tip = find_add_plate_slot(driver, win)
+        rep.log(f"[INFO] Add plate slot={slot} tip={tip!r}")
+        if slot is None:
+            slot = c186.ADD_PLATE_XY
+        plate_ok = False
+        last = None
         for attempt in range(1, 4):
-            driver.click(win.rect.x + c186.ADD_PLATE_XY[0],
-                         win.rect.y + c186.ADD_PLATE_XY[1])
+            driver.click(win.rect.x + slot[0], win.rect.y + slot[1])
             time.sleep(2.0)
             cand = work / f"m8x_189_add{attempt}.3mf"
+            last = cand
             if save_project(driver, win, rep, cand) and \
                     len(mac_3mf.read_plates(cand)) == 2:
+                plate_ok = True
                 break
+        rep.check("添加 2 号盘", plate_ok,
+                  f"last={last.name if last else None}")
+        if not plate_ok:
+            raise RuntimeError("plate 2 not created")
 
         rows = [c for c in driver.controls(win, max_depth=12)
                 if c.role == "AXMenuItem"
