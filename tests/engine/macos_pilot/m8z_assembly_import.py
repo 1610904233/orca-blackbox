@@ -116,15 +116,37 @@ def select_plate1_object(driver, win, rep) -> tuple[bool, str]:
         time.sleep(1.5)
         return ocr_window(driver, win)
 
+    def read_info_panel():
+        # OCR the panel region directly: a full-window pass downscales this
+        # small line and Vision misreads "Object" as "Obiect" (seen
+        # 2026-11-25), which made the selection check a false negative.
+        frame = driver.capture_screen().crop(win.rect)
+        words = recognize_text(frame, region=info_region)
+        name = (find_word(words, "object name", region=info_region)
+                or find_word(words, "obiect name", region=info_region))
+        return (name, find_word(words, "size:", region=info_region))
+
     def click_child_row(plate1, tag):
         row_y = plate1.rect.y + 23.0
         rep.log(f"[INFO] {tag}: Plate 1 @ {plate1.rect.to_xywh()} "
                 f"-> child row (25,{row_y:.0f})")
         driver.click(win.rect.x + 25.0, win.rect.y + row_y)
-        time.sleep(2.0)
-        words = ocr_window(driver, win)
-        name = find_word(words, "object name", region=info_region)
-        size = find_word(words, "size:", region=info_region)
+        # The info panel for a 45k-triangle part populates asynchronously
+        # (measured ~4s on 2026-11-25), so poll instead of a single OCR after
+        # a fixed 2s wait; a too-early read was a false negative.
+        deadline = time.monotonic() + 12.0
+        name = size = None
+        attempt = 0
+        while time.monotonic() < deadline:
+            time.sleep(1.5)
+            attempt += 1
+            name, size = read_info_panel()
+            name_text = name.text if name else None
+            size_text = size.text if size else None
+            rep.log(f"[INFO] {tag}: info OCR #{attempt} "
+                    f"name={name_text!r} size={size_text!r}")
+            if name is not None:
+                break
         return name, size
 
     words = click_objects_tab()
