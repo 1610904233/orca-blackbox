@@ -70,6 +70,20 @@ def tooltip(driver, win, x, y) -> str:
     return ""
 
 
+def find_add_slot(driver, win):
+    """Scan the toolbar for the Add import icon (tooltip 'Add [...]')."""
+    for x in range(460, 561, 10):
+        driver.move(win.rect.x + x, win.rect.y + 75)
+        time.sleep(1.0)
+        words = recognize_text(
+            driver.capture_screen(),
+            Rect(win.rect.x + x - 120, win.rect.y + 85, 400, 80))
+        text = " ".join(w.text for w in words).strip()
+        if "add" in text.lower() and "plate" not in text.lower():
+            return (x, 75), text
+    return ADD_XY, ""
+
+
 def wait_arrival(driver, win, timeout_s: float = 90.0):
     deadline = time.monotonic() + timeout_s
     last = None
@@ -126,12 +140,13 @@ def main() -> int:
         vp0 = m7b._vp_colored(driver.capture(win))
         rep.check("空盘启动", vp0 < EMPTY_BED_MAX, f"viewport={vp0:.4f}")
 
-        tip = tooltip(driver, win, *ADD_XY)
-        rep.log(f"[INFO] Add slot tooltip={tip!r}")
+        slot, tip = find_add_slot(driver, win)
+        rep.log(f"[INFO] Add slot={slot} tooltip={tip!r}")
         rep.check("工具栏「添加」按钮", "add" in tip.lower()
-                  and "plate" not in tip.lower(), f"tip={tip!r}")
+                  and "plate" not in tip.lower(),
+                  f"slot={slot} tip={tip!r}")
 
-        driver.click(win.rect.x + ADD_XY[0], win.rect.y + ADD_XY[1])
+        driver.click(win.rect.x + slot[0], win.rect.y + slot[1])
         panel = driver.find_file_dialog(
             win.pid, titles=driver._OPEN_PANEL_TITLES,
             exclude_id=win.id, timeout_s=8.0)
