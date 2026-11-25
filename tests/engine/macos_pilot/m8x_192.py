@@ -37,6 +37,7 @@ for path in (str(HERE), str(ENGINE), str(PILOTS)):
 
 import AppKit  # noqa: E402
 
+from harness.platform.base import Rect  # noqa: E402
 from harness.platform.macos_ocr import recognize_text  # noqa: E402
 from harness.platform.factory import get_driver  # noqa: E402
 from mac_common import (  # noqa: E402
@@ -49,10 +50,25 @@ import m8x_202_save_as as c202  # noqa: E402
 OUT = ARTIFACTS / "pilot" / "m8x_192"
 PRUSA = HERE / "fixtures" / "Prusa.stl"
 CUBE = HERE / "fixtures" / "cube20.stl"
-SCALE_X = 796
+SCALE_X = 825               # seeded-U1 layout; scan below absorbs drift
 Y_PCT = 142
 PCT_CENTERS = (971, 1033, 1097)
 UNIFORM_CHECKBOX = (790, 200)
+
+
+def find_scale_slot(driver, win):
+    """The toolbar layout moves with the (seeded) printer; only a tooltip
+    that literally says 'Scale' wins (fixed 796 opened Rotate on 2026-11-25)."""
+    for x in range(720, 921, 10):
+        driver.move(win.rect.x + x, win.rect.y + 75)
+        time.sleep(1.0)
+        words = recognize_text(
+            driver.capture_screen(),
+            Rect(win.rect.x + x - 120, win.rect.y + 85, 420, 80))
+        text = " ".join(w.text for w in words).strip()
+        if "scale" in text.lower():
+            return (x, 75), text
+    return None, ""
 
 
 def save_project(driver, win, rep, path: Path) -> bool:
@@ -155,9 +171,16 @@ def main() -> int:
             return rep.save({"stage": "geometry-p0"})
 
         # --- Scale 150% uniform ------------------------------------------
-        driver.click(win.rect.x + SCALE_X, win.rect.y + 90)
+        slot, tip = find_scale_slot(driver, win)
+        rep.log(f"[INFO] Scale slot={slot} tip={tip!r}")
+        if slot is None:
+            slot = (SCALE_X, 75)
+        driver.click(win.rect.x + slot[0], win.rect.y + slot[1])
         time.sleep(2.0)
         driver.capture(win).save_png(OUT / "scale_open.png")
+        text = " ".join(w.text for w in recognize_text(driver.capture(win)))
+        rep.check("Scale 面板打开（非 Rotate）",
+                  "uniform scale" in text.lower(), f"tip={tip!r}")
         # Uniform scale should already be on; set the first percentage field.
         paste(driver, win, PCT_CENTERS[0], Y_PCT, "150", rep)
         words = [w for w in recognize_text(driver.capture(win))
@@ -165,9 +188,13 @@ def main() -> int:
         got = [w.text for w in words if w.text.replace(".", "").isdigit()]
         rep.log(f"[INFO] percentage row after set={got}")
         if not got or sum("150" in v for v in got) < 3:
-            rep.log("[INFO] uniform did not propagate; clicking checkbox")
-            driver.click(win.rect.x + UNIFORM_CHECKBOX[0],
-                         win.rect.y + UNIFORM_CHECKBOX[1])
+            label = next((w for w in recognize_text(driver.capture(win))
+                          if "uniform" in w.text.lower()), None)
+            ux, uy = ((label.rect.x - 20, label.rect.center[1])
+                      if label else UNIFORM_CHECKBOX)
+            rep.log(f"[INFO] uniform did not propagate; clicking checkbox "
+                    f"({ux:.0f},{uy:.0f})")
+            driver.click(win.rect.x + ux, win.rect.y + uy)
             time.sleep(0.8)
             paste(driver, win, PCT_CENTERS[0], Y_PCT, "150", rep)
             words = [w for w in recognize_text(driver.capture(win))
