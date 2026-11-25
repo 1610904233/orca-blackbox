@@ -46,6 +46,7 @@ from mac_common import (  # noqa: E402
 import mac_3mf  # noqa: E402
 import mac_calib as cal  # noqa: E402
 import m8x_186_add_plate as c186  # noqa: E402
+import m8x_191 as c191  # noqa: E402
 
 OUT = ARTIFACTS / "pilot" / "m8x_195"
 DEFAULT_MODEL = HERE / "fixtures" / "Prusa.stl"
@@ -193,9 +194,29 @@ def main() -> int:
             imported = driver.open_file_dialog(win, cube)
             time.sleep(3.0)
             rep.check("s1 加盘并导入 cube20", imported)
-            rep.check("s1 项目保存", cal.save_project_anywhere(
-                driver, win, base, search_root=HERE / "artifacts" / "mac")
-                and base.exists())
+            # Rotate immediately while the imported cube is still selected;
+            # a Save As before this deselects it and the fields apply to
+            # nothing (caught 2026-11-25).
+            rot_slot, rot_tip = find_toolbar_slot(
+                driver, win, "rotate", x0=700, x1=851)
+            rep.log(f"[INFO] Rotate slot={rot_slot} tip={rot_tip!r}")
+            rep.check("s1 Rotate 按钮", rot_slot is not None,
+                      f"slot={rot_slot} tip={rot_tip!r}")
+            if rot_slot is not None:
+                driver.click(win.rect.x + rot_slot[0],
+                             win.rect.y + rot_slot[1])
+                time.sleep(1.5)
+            rot_text = " ".join(w.text for w in
+                                recognize_text(driver.capture(win)))
+            rep.check("s1 Rotate 面板可用",
+                      "rotate (relative)" in rot_text.lower(),
+                      rot_text[-140:])
+            c191.paste(driver, win, 921, 148, "45", rep)
+            rep.check("s1 Rotate X=45 后项目保存",
+                      cal.save_project_anywhere(
+                          driver, win, tilted,
+                          search_root=HERE / "artifacts" / "mac")
+                      and tilted.exists())
         except Exception as exc:  # noqa: BLE001
             rep.check("s1 unexpected", False, f"{type(exc).__name__}: {exc}")
             traceback.print_exc()
@@ -203,10 +224,10 @@ def main() -> int:
             if app is not None:
                 rep.check("s1 close", close_app(driver, app, win))
 
-        if not base.exists():
-            raise RuntimeError("base project missing")
-        plates0 = plate_map(base)
-        t0 = transforms(base)
+        if not tilted.exists():
+            raise RuntimeError("tilted project missing")
+        plates0 = plate_map(tilted)
+        t0 = transforms(tilted)
         rep.log(f"[INFO] base plates={plates0} transforms={t0}")
         rep.check("s1 基线（2 盘，cube 在 2 号盘）",
                   len(plates0) == 2
@@ -214,9 +235,7 @@ def main() -> int:
                           for objs in plates0.values() for n in objs),
                   f"plates={plates0}")
 
-        rep.check("构造倾斜模型（45° X）",
-                  tilt_project(base, tilted, "cube20", 45.0)
-                  and tilted.exists())
+        rep.check("s1 UI Rotate X=45 已保存", tilted.exists())
         rep.check("倾斜后 cube 绕 X 旋转 45°",
                   abs(transforms(tilted).get("cube20.stl", (0,) * 12)[4]
                       - math.cos(math.radians(45))) < 1e-4,
