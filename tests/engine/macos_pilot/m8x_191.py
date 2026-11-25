@@ -12,10 +12,10 @@
 #
 # macOS mapping:
 #   scene  -> Prusa.stl + Import cube20 (auto-selected, volume 8000).
-#   rotate -> Rotate toolbar (772,90); relative fields y=148, absolute
-#             y=174, X/Y/Z centres 921/984/1047; click + Cmd+A paste +
-#             Enter.  One session does the relative chain, a fresh session
-#             does the absolute chain (both with 3 saves).
+#   rotate -> Rotate toolbar found by tooltip (layout moves with the seeded
+#             printer); the relative/absolute rows are OCR-located, then
+#             X/Y/Z fields accept click + Cmd+A paste + Enter.  One session
+#             does the relative chain, a fresh session the absolute chain.
 #   oracle -> mac_3mf item matrices + the Windows matrix math.
 #
 # Artifacts: artifacts/mac/pilot/m8x_191/{report.log,result.json,work/*.3mf,
@@ -40,6 +40,7 @@ for path in (str(HERE), str(ENGINE), str(PILOTS)):
 
 import AppKit  # noqa: E402
 
+from harness.platform.base import Rect  # noqa: E402
 from harness.platform.macos_ocr import recognize_text  # noqa: E402
 from harness.platform.factory import get_driver  # noqa: E402
 from mac_common import (  # noqa: E402
@@ -50,11 +51,52 @@ import m8x_192 as c192  # noqa: E402
 OUT = ARTIFACTS / "pilot" / "m8x_191"
 PRUSA = HERE / "fixtures" / "Prusa.stl"
 CUBE = HERE / "fixtures" / "cube20.stl"
-ROTATE_X = 772
+ROTATE_X = 793              # seeded-U1 layout; tooltip scan below
 REL_Y = 148
 ABS_Y = 174
-X_CENTERS = (921, 984, 1047)
+X_CENTERS = (945, 1009, 1068)
+_ROTATE_SLOT = None
 IDENT = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0]
+
+
+def find_rotate_slot(driver, win):
+    """Rotate toolbar; the tooltip must say 'Rotate' (fixed 772,90 missed
+    after the seeded-U1 toolbar shift on 2026-11-25)."""
+    global _ROTATE_SLOT
+    if _ROTATE_SLOT is not None:
+        return _ROTATE_SLOT
+    for x in range(740, 921, 10):
+        driver.move(win.rect.x + x, win.rect.y + 75)
+        time.sleep(1.0)
+        words = recognize_text(
+            driver.capture_screen(),
+            Rect(win.rect.x + x - 120, win.rect.y + 85, 420, 80))
+        text = " ".join(w.text for w in words).strip()
+        if "rotate" in text.lower():
+            _ROTATE_SLOT = ((x, 75), text)
+            return _ROTATE_SLOT
+    return None, ""
+
+
+def rotate_row_fields(driver, win):
+    """OCR the relative/absolute rows; returns {'rel': [...], 'abs': [...]}."""
+    words = recognize_text(driver.capture(win))
+    out = {}
+    for key, needle in (("rel", "relative"), ("abs", "absolute")):
+        label = next((w for w in words
+                      if needle in w.text.lower()
+                      and w.rect.x > 650 and w.rect.y < 280), None)
+        if label is None:
+            continue
+        nums = [w for w in words
+                if abs(w.rect.center[1] - label.rect.center[1]) <= 8
+                and w.rect.x > label.rect.x + 60
+                and w.text.replace(".", "").replace("-", "").isdigit()]
+        nums.sort(key=lambda w: w.rect.x)
+        if len(nums) >= 3:
+            out[key] = [(int(w.rect.center[0]), int(w.rect.center[1]))
+                        for w in nums[:3]]
+    return out
 
 
 # --- matrix math (same criteria as the Windows case) -----------------------
@@ -125,7 +167,7 @@ def paste(driver, win, x, y, text, rep):
     driver.send_key("return")
     time.sleep(1.2)
     row = [w.text for w in recognize_text(driver.capture(win))
-           if abs(w.rect.y - y) < 4]
+           if abs(w.rect.center[1] - y) < 8 and w.rect.x > 650]
     rep.log(f"[INFO] rotate {text} @({x},{y}); row={row}")
 
 
@@ -151,7 +193,10 @@ def ensure_rotate(driver, win):
     text = " ".join(w.text for w in recognize_text(driver.capture(win)))
     if "rotate (relative)" in text.lower():
         return True
-    driver.click(win.rect.x + ROTATE_X, win.rect.y + 90)
+    slot, tip = find_rotate_slot(driver, win)
+    if slot is None:
+        slot = (ROTATE_X, 75)
+    driver.click(win.rect.x + slot[0], win.rect.y + slot[1])
     time.sleep(1.5)
     text = " ".join(w.text for w in recognize_text(driver.capture(win)))
     return "rotate (relative)" in text.lower()
@@ -201,8 +246,11 @@ def main() -> int:
             return rep.save({"stage": "rel-setup"})
         if not ensure_rotate(driver, win):
             return rep.save({"stage": "rel-panel"})
-        for i, (x, axis) in enumerate(zip(X_CENTERS, "XYZ"), start=1):
-            paste(driver, win, x, REL_Y, "45", rep)
+        rows = rotate_row_fields(driver, win)
+        rep.log(f"[INFO] rotate rows={rows}")
+        rel = rows.get("rel") or [(x, REL_Y) for x in X_CENTERS]
+        for i, ((x, y), axis) in enumerate(zip(rel, "XYZ"), start=1):
+            paste(driver, win, x, y, "45", rep)
             rep.check(f"relative {axis}=45 saved",
                       save_step(driver, win, rep, p[i]))
             driver.capture(win).save_png(OUT / f"rel_{axis}.png")
@@ -223,8 +271,11 @@ def main() -> int:
             return rep.save({"stage": "abs-setup"})
         if not ensure_rotate(driver, win):
             return rep.save({"stage": "abs-panel"})
-        for i, (x, axis) in enumerate(zip(X_CENTERS, "XYZ"), start=1):
-            paste(driver, win, x, ABS_Y, "45", rep)
+        rows = rotate_row_fields(driver, win)
+        rep.log(f"[INFO] rotate rows={rows}")
+        ab = rows.get("abs") or [(x, ABS_Y) for x in X_CENTERS]
+        for i, ((x, y), axis) in enumerate(zip(ab, "XYZ"), start=1):
+            paste(driver, win, x, y, "45", rep)
             rep.check(f"absolute {axis}=45 saved",
                       save_step(driver, win, rep, a[i]))
             driver.capture(win).save_png(OUT / f"abs_{axis}.png")
