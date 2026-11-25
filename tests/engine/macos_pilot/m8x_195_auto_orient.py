@@ -53,6 +53,20 @@ DEFAULT_STL = HERE / "fixtures" / "cube20.stl"
 ORIENT_XY = (555, 75)
 
 
+def find_toolbar_slot(driver, win, needle, x0=460, x1=621, y=75):
+    """Scan the toolbar tooltips for a slot (layout moves with the project)."""
+    for x in range(x0, x1, 10):
+        driver.move(win.rect.x + x, win.rect.y + y)
+        time.sleep(1.0)
+        words = recognize_text(
+            driver.capture_screen(),
+            Rect(win.rect.x + x - 120, win.rect.y + y + 10, 420, 80))
+        text = " ".join(w.text for w in words).strip()
+        if needle in text.lower():
+            return (x, y), text
+    return None, ""
+
+
 def transforms(path: Path) -> dict[str, tuple]:
     geo = mac_3mf.read_project(path)
     names = {o.id: (o.name or o.id) for o in geo.objects}
@@ -155,9 +169,13 @@ def main() -> int:
             rep.check("s1 启动", True, f"pid={app.pid} title={win.title!r}")
             time.sleep(3.0)
             added = False
+            add_slot, add_tip = find_toolbar_slot(driver, win, "add plate")
+            rep.log(f"[INFO] Add plate slot={add_slot} tip={add_tip!r}")
+            if add_slot is None:
+                add_slot = c186.ADD_PLATE_XY
             for attempt in range(1, 4):
-                driver.click(win.rect.x + c186.ADD_PLATE_XY[0],
-                             win.rect.y + c186.ADD_PLATE_XY[1])
+                driver.click(win.rect.x + add_slot[0],
+                             win.rect.y + add_slot[1])
                 time.sleep(2.0)
                 cand = work / f"add{attempt}.3mf"
                 if cal.save_project_anywhere(
@@ -226,23 +244,13 @@ def main() -> int:
             if sel is not None:
                 driver.click_control(sel)
                 time.sleep(1.0)
-            tip = ""
-            for _try in range(4):
-                driver.move(win.rect.x + 5, win.rect.y + 5)
-                time.sleep(0.25)
-                driver.move(win.rect.x + ORIENT_XY[0],
-                            win.rect.y + ORIENT_XY[1])
-                time.sleep(1.3)
-                tip = " ".join(w.text for w in recognize_text(
-                    driver.capture_screen(),
-                    Rect(win.rect.x + ORIENT_XY[0] - 100,
-                         win.rect.y + ORIENT_XY[1] + 10, 420, 60)))
-                if "orient" in tip.lower():
-                    break
-            rep.log(f"[INFO] orient tooltip={tip!r} "
-                    f"(button identity is proven by the saved geometry below)")
-            driver.click(win.rect.x + ORIENT_XY[0],
-                         win.rect.y + ORIENT_XY[1])
+            orient_slot, tip = find_toolbar_slot(
+                driver, win, "orient", x0=500, x1=621)
+            rep.log(f"[INFO] orient slot={orient_slot} tip={tip!r}")
+            if orient_slot is None:
+                orient_slot = ORIENT_XY
+            driver.click(win.rect.x + orient_slot[0],
+                         win.rect.y + orient_slot[1])
             time.sleep(4.0)
             rep.check("s2 项目保存", cal.save_project_anywhere(
                 driver, win, after, search_root=HERE / "artifacts" / "mac")
