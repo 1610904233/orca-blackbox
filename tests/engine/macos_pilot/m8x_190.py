@@ -10,9 +10,10 @@
 #
 # macOS mapping:
 #   scene -> Prusa.stl + Import cube20.stl (auto-selected, volume 8000).
-#   move  -> Move toolbar (736,90); Position fields at y=148,
-#            x 931/993/1053; click + Cmd+A paste + Enter.  X/Y commit in
-#            one session (the panel stays open); Z is bed-constrained.
+#   move  -> Move toolbar found by tooltip (layout moves with the seeded
+#            printer); the Position row is OCR-located, then X/Y/Z fields
+#            accept click + Cmd+A paste + Enter.  X/Y commit in one macOS
+#            session (the panel stays open); Z stays bed-constrained at 10.
 #   oracle-> Save P0/P1 and compare mac_3mf item transforms.
 #
 # Artifacts: artifacts/mac/pilot/m8x_190/{report.log,result.json,work/*.3mf,
@@ -36,6 +37,7 @@ for path in (str(HERE), str(ENGINE), str(PILOTS)):
 
 import AppKit  # noqa: E402
 
+from harness.platform.base import Rect  # noqa: E402
 from harness.platform.macos_ocr import recognize_text  # noqa: E402
 from harness.platform.factory import get_driver  # noqa: E402
 from mac_common import (  # noqa: E402
@@ -46,9 +48,43 @@ import m8x_192 as c192  # noqa: E402
 OUT = ARTIFACTS / "pilot" / "m8x_190"
 PRUSA = HERE / "fixtures" / "Prusa.stl"
 CUBE = HERE / "fixtures" / "cube20.stl"
-MOVE_X = 736
+MOVE_X = 761                # seeded-U1 layout; tooltip scan below
 Y_POS = 148
-POS_CENTERS = (931, 993, 1053)
+POS_CENTERS = (945, 1009, 1068)
+
+
+def find_move_slot(driver, win):
+    """The toolbar layout moves with the (seeded) printer; only a tooltip
+    that literally says 'Move' wins (fixed 736,90 opened nothing on
+    2026-11-25)."""
+    for x in range(700, 901, 10):
+        driver.move(win.rect.x + x, win.rect.y + 75)
+        time.sleep(1.0)
+        words = recognize_text(
+            driver.capture_screen(),
+            Rect(win.rect.x + x - 120, win.rect.y + 85, 420, 80))
+        text = " ".join(w.text for w in words).strip()
+        if "move" in text.lower():
+            return (x, 75), text
+    return None, ""
+
+
+def position_fields(driver, win):
+    """OCR the Move panel's Position row; returns three (x,y) field centres."""
+    words = recognize_text(driver.capture(win))
+    label = next((w for w in words
+                  if w.text.strip().lower() == "position"
+                  and w.rect.x > 650 and w.rect.y < 240), None)
+    if label is None:
+        return None
+    nums = [w for w in words
+            if abs(w.rect.center[1] - label.rect.center[1]) <= 8
+            and w.rect.x > label.rect.x + 80
+            and w.text.replace(".", "").isdigit()]
+    nums.sort(key=lambda w: w.rect.x)
+    if len(nums) < 3:
+        return None
+    return [(int(w.rect.center[0]), int(w.rect.center[1])) for w in nums[:3]]
 
 
 def paste(driver, win, x, y, text, rep):
@@ -64,7 +100,7 @@ def paste(driver, win, x, y, text, rep):
     driver.send_key("return")
     time.sleep(1.2)
     row = [w.text for w in recognize_text(driver.capture(win))
-           if abs(w.rect.y - y) < 4]
+           if abs(w.rect.center[1] - y) < 8 and w.rect.x > 650]
     rep.log(f"[INFO] set {text} @({x},{y}); row={row}")
 
 
@@ -128,11 +164,22 @@ def main() -> int:
             return rep.save({"stage": "geometry-p0"})
 
         # --- Move X/Y/Z = 100 --------------------------------------------
-        driver.click(win.rect.x + MOVE_X, win.rect.y + 90)
+        slot, tip = find_move_slot(driver, win)
+        rep.log(f"[INFO] Move slot={slot} tip={tip!r}")
+        if slot is None:
+            slot = (MOVE_X, 75)
+        driver.click(win.rect.x + slot[0], win.rect.y + slot[1])
         time.sleep(2.0)
         driver.capture(win).save_png(OUT / "move.png")
-        for x, label in zip(POS_CENTERS, ("X", "Y", "Z")):
-            paste(driver, win, x, Y_POS, "100", rep)
+        text = " ".join(w.text for w in recognize_text(driver.capture(win)))
+        rep.check("Move 面板打开（Position 行）",
+                  "position" in text.lower(), f"tip={tip!r}")
+        centers = position_fields(driver, win)
+        rep.log(f"[INFO] Position fields={centers}")
+        if centers is None:
+            centers = [(x, Y_POS) for x in POS_CENTERS]
+        for (x, y), label in zip(centers, ("X", "Y", "Z")):
+            paste(driver, win, x, y, "100", rep)
         driver.capture(win).save_png(OUT / "moved.png")
 
         rep.check("另存 P1", c192.save_project(driver, win, rep, p1)
