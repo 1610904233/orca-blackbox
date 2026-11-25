@@ -32,7 +32,9 @@ for path in (str(HERE), str(ENGINE), str(PILOTS)):
     if path not in sys.path:
         sys.path.insert(0, path)
 
+from harness.platform.base import Rect  # noqa: E402
 from harness.platform.factory import get_driver  # noqa: E402
+from harness.platform.macos_ocr import recognize_text  # noqa: E402
 from mac_common import (  # noqa: E402
     ARTIFACTS, Reporter, close_app, launch_and_focus,
 )
@@ -41,6 +43,19 @@ import mac_calib as cal  # noqa: E402
 import m8x_186_add_plate as c186  # noqa: E402
 
 OUT = ARTIFACTS / "pilot" / "m8x_187"
+
+
+def find_add_plate_slot(driver, win):
+    for x in range(460, 571, 10):
+        driver.move(win.rect.x + x, win.rect.y + 75)
+        time.sleep(1.0)
+        words = recognize_text(
+            driver.capture_screen(),
+            Rect(win.rect.x + x - 120, win.rect.y + 85, 400, 80))
+        text = " ".join(w.text for w in words).strip()
+        if "add plate" in text.lower():
+            return (x, 75), text
+    return None, ""
 DEFAULT_MODEL = HERE / "fixtures" / "Prusa.stl"
 DEFAULT_STL = HERE / "fixtures" / "cube20.stl"
 
@@ -151,9 +166,13 @@ def main() -> int:
             rep.check("s1 启动", True, f"pid={app.pid} title={win.title!r}")
             time.sleep(3.0)
             added = False
+            slot, tip = find_add_plate_slot(driver, win)
+            rep.log(f"[INFO] Add plate slot={slot} tip={tip!r}")
+            if slot is None:
+                slot = c186.ADD_PLATE_XY
             for attempt in range(1, 4):
-                driver.click(win.rect.x + c186.ADD_PLATE_XY[0],
-                             win.rect.y + c186.ADD_PLATE_XY[1])
+                driver.click(win.rect.x + slot[0],
+                             win.rect.y + slot[1])
                 time.sleep(2.0)
                 cand = work / f"add{attempt}.3mf"
                 if cal.save_project_anywhere(
@@ -236,18 +255,10 @@ def main() -> int:
                           face_down(t_shift[changed[0]][:9]),
                           f"rot={t_shift[changed[0]][:9]}")
 
-            # ---- Q: all plates (Select All + toolbar Auto orient) ---
-            sel = next((c for c in driver.controls(win, max_depth=12)
-                        if c.role == "AXMenuItem"
-                        and c.title.strip().lower().startswith("select all")),
-                       None)
-            rep.check("Select All（Q 阶段）", sel is not None)
-            if sel is not None:
-                driver.click_control(sel)
-                time.sleep(1.0)
-            driver.move(win.rect.x + 555, win.rect.y + 75)
-            time.sleep(1.0)
-            driver.click(win.rect.x + 555, win.rect.y + 75)
+            # ---- Q: all plates (Esc clears selection; toolbar all-objects) ---
+            driver.send_key("escape")
+            time.sleep(0.5)
+            driver.click(win.rect.x + 560, win.rect.y + 75)
             time.sleep(5.0)
             rep.check("Q 后项目保存", cal.save_project_anywhere(
                 driver, win, p_all,
