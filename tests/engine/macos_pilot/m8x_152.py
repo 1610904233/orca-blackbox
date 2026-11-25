@@ -12,8 +12,9 @@
 #
 # macOS mapping:
 #   one session (mac fields commit repeatedly):
-#   New Project -> Import Prusa.stl; Move/Rotate/Scale via the toolbar fields
-#   (click + Cmd+A paste + Enter); save the project and verify the matrix.
+#   New Project -> Import Prusa.stl; Move/Rotate/Scale toolbar slots found by
+#   one tooltip scan and their panel rows OCR-located (the seeded printer
+#   moves both); click + Cmd+A paste + Enter; save and verify the matrix.
 #   Change Filament -> last 'Generic PLA' submenu row (slot 4); Slice A.
 #   Slot-4 row menu at screen (752,526) -> Merge with... -> first Generic PLA
 #   target; sidebar drops 4 -> 3 filaments; Slice B.
@@ -25,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import shutil
 import sys
 import time
@@ -40,6 +42,7 @@ for path in (str(HERE), str(ENGINE), str(PILOTS)):
 
 import AppKit  # noqa: E402
 
+from harness.platform.base import Rect  # noqa: E402
 from harness.platform.macos_ocr import recognize_text  # noqa: E402
 from harness.platform.factory import get_driver  # noqa: E402
 from mac_common import (  # noqa: E402
@@ -48,15 +51,53 @@ from mac_common import (  # noqa: E402
 )
 import mac_gcode  # noqa: E402
 import m8d_purifier_gcode as c8d  # noqa: E402
+import m8x_190 as c190  # noqa: E402
+import m8x_191 as c191  # noqa: E402
 import m8x_192 as c192  # noqa: E402
 import m7t74 as c74  # noqa: E402
 
 OUT = ARTIFACTS / "pilot" / "m8x_152"
 STL = HERE / "fixtures" / "Prusa.stl"
-MOVE_X = 736
-ROTATE_X = 772
-SCALE_X = 796
+MOVE_X = 761                # seeded-U1 layout; tooltip scan below
+ROTATE_X = 793
+SCALE_X = 825
 SLOT4_MENU = (761, 535)       # screen coords of slot-4 row '...' button
+
+
+def find_transform_slots(driver, win):
+    """One toolbar pass: the seeded printer moves Move/Rotate/Scale slots."""
+    slots = {}
+    for x in range(700, 921, 10):
+        driver.move(win.rect.x + x, win.rect.y + 75)
+        time.sleep(1.0)
+        words = recognize_text(
+            driver.capture_screen(),
+            Rect(win.rect.x + x - 120, win.rect.y + 85, 420, 80))
+        text = " ".join(w.text for w in words).strip().lower()
+        for name in ("move", "rotate", "scale"):
+            if name in text and name not in slots:
+                slots[name] = ((x, 75), text)
+        if len(slots) == 3:
+            break
+    return slots
+
+
+def scale_fields(driver, win):
+    """OCR the Scale panel's percentage row (label 'Scale', not 'Size')."""
+    words = recognize_text(driver.capture(win))
+    label = next((w for w in words
+                  if w.text.strip().lower() == "scale"
+                  and w.rect.x > 650 and 120 <= w.rect.y <= 195), None)
+    if label is None:
+        return None
+    nums = [w for w in words
+            if abs(w.rect.center[1] - label.rect.center[1]) <= 8
+            and w.rect.x > label.rect.x + 80
+            and w.text.replace(".", "").isdigit()]
+    nums.sort(key=lambda w: w.rect.x)
+    if len(nums) < 3:
+        return None
+    return [(int(w.rect.center[0]), int(w.rect.center[1])) for w in nums[:3]]
 
 
 def paste(driver, win, x, y, text, rep):
@@ -72,7 +113,7 @@ def paste(driver, win, x, y, text, rep):
     driver.send_key("return")
     time.sleep(1.2)
     row = [w.text for w in recognize_text(driver.capture(win))
-           if abs(w.rect.y - y) < 6 and w.rect.x > 700]
+           if abs(w.rect.center[1] - y) < 8 and w.rect.x > 650]
     rep.log(f"[INFO] set {text} @({x},{y}); row={row}")
 
 
@@ -202,6 +243,11 @@ def main() -> int:
     g_b = work / "m8x_152_b.gcode"
     roots = [work, OUT, ARTIFACTS / "pilot", HERE / "fixtures"]
 
+    # First-install semantics: let the real Setup Wizard run and select all
+    # U1 filaments, otherwise a seeded profile only has ONE physical slot and
+    # the "assign last + merge into slot 1" chain cannot be exercised.
+    os.environ["ORCA_BB_SEED_WIZARD"] = "1"
+
     rep = Reporter(OUT)
     rep.log("=== m8x_152 macOS transform + physical merge chain ===")
     rep.log(f"datadir={args.datadir} stl={STL}")
@@ -260,15 +306,30 @@ def main() -> int:
         time.sleep(0.8)
 
         # --- transforms ---------------------------------------------------
-        driver.click(win.rect.x + MOVE_X, win.rect.y + 90)
+        slots = find_transform_slots(driver, win)
+        rep.log(f"[INFO] transform slots={slots}")
+        mv = slots.get("move", ((MOVE_X, 75), ""))[0]
+        driver.click(win.rect.x + mv[0], win.rect.y + mv[1])
         time.sleep(1.5)
-        paste(driver, win, 931, 148, "60", rep)
-        driver.click(win.rect.x + ROTATE_X, win.rect.y + 90)
+        pos = c190.position_fields(driver, win) \
+            or [(931, 148), (993, 148), (1053, 148)]
+        rep.log(f"[INFO] Move fields={pos}")
+        paste(driver, win, pos[0][0], pos[0][1], "60", rep)
+
+        rt = slots.get("rotate", ((ROTATE_X, 75), ""))[0]
+        driver.click(win.rect.x + rt[0], win.rect.y + rt[1])
         time.sleep(1.5)
-        paste(driver, win, 1047, 148, "45", rep)
-        driver.click(win.rect.x + SCALE_X, win.rect.y + 90)
+        rows = c191.rotate_row_fields(driver, win)
+        rel = rows.get("rel") or [(921, 148), (984, 148), (1047, 148)]
+        rep.log(f"[INFO] Rotate rows={rows}")
+        paste(driver, win, rel[2][0], rel[2][1], "45", rep)
+
+        sc = slots.get("scale", ((SCALE_X, 75), ""))[0]
+        driver.click(win.rect.x + sc[0], win.rect.y + sc[1])
         time.sleep(1.5)
-        paste(driver, win, 971, 142, "120", rep)
+        sf = scale_fields(driver, win) or [(971, 142), (1033, 142), (1097, 142)]
+        rep.log(f"[INFO] Scale fields={sf}")
+        paste(driver, win, sf[0][0], sf[0][1], "120", rep)
         driver.capture(win).save_png(OUT / "transformed.png")
 
         rep.check("另存变换后项目", c192.save_project(driver, win, rep, proj)
