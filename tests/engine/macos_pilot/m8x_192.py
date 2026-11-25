@@ -3,16 +3,22 @@
 # feishu: baseline#192  (macOS port; corresponds to the enabled Windows
 #         m8x_192, registered in cases.MACOS_BASELINE)
 #
-# Windows assertions:
-#   a 20mm cube20 is selected; Uniform scale ON; 150% makes the AABB
-#   30x30x30 (3 axes), XY centre unchanged, the cube stays on the bed, and
-#   the Prusa spectator's item transform is bit-identical.
+# Feishu baseline #192 expectation:
+#   the standard 27mm cube is selected; Uniform scale ON; 150% makes the
+#   three axes 40.5x40.5x40.5, XY centre unchanged, the cube stays on the
+#   bed, and the Prusa spectator's item transform is bit-identical.
+#
+# Windows note: the Windows case imports the repo's cube20 fixture (20mm ->
+#   30x30x30) and documents that fixture deviation in its header.  macOS can
+#   add the real built-in Cube (27mm), so this port follows the Feishu
+#   expectation exactly (27 -> 40.5) instead of inheriting the deviation.
 #
 # macOS mapping:
-#   scene  -> launch Prusa.stl; Import cube20.stl (it is auto-selected;
-#             object-info says volume 8000mm³).
-#   scale  -> Scale toolbar (796,90); the percentage field row is y=142
-#             (x 971/1033/1097); the Uniform-scale checkbox is at (790,200).
+#   scene  -> launch Prusa.stl; bed right-click > Add Primitive > Cube (the
+#             27mm built-in primitive, auto-selected; volume 19683mm³).
+#   scale  -> Scale toolbar found by tooltip (layout moves with the seeded
+#             printer); the percentage field row is y=142 (x 971/1033/1097);
+#             the Uniform-scale checkbox is at (790,200), also OCR-located.
 #             Fields accept click + Cmd+A paste + Enter (no AX children).
 #   oracle -> Save Project as P0/P1 and mac_3mf item transforms/AABBs.
 #
@@ -45,11 +51,11 @@ from mac_common import (  # noqa: E402
     wait_for_model,
 )
 import mac_3mf  # noqa: E402
+import m7b_new_project as m7b  # noqa: E402
 import m8x_202_save_as as c202  # noqa: E402
 
 OUT = ARTIFACTS / "pilot" / "m8x_192"
 PRUSA = HERE / "fixtures" / "Prusa.stl"
-CUBE = HERE / "fixtures" / "cube20.stl"
 SCALE_X = 825               # seeded-U1 layout; scan below absorbs drift
 Y_PCT = 142
 PCT_CENTERS = (971, 1033, 1097)
@@ -127,7 +133,7 @@ def main() -> int:
 
     rep = Reporter(OUT)
     rep.log("=== m8x_192 macOS uniform 150% scale ===")
-    rep.log(f"datadir={args.datadir} prusa={PRUSA} cube={CUBE}")
+    rep.log(f"datadir={args.datadir} prusa={PRUSA} cube=built-in 27mm")
 
     driver = None
     app = None
@@ -147,24 +153,17 @@ def main() -> int:
         if not ok:
             return rep.save({"stage": "load"})
 
-        rows = [c for c in driver.controls(win, max_depth=12)
-                if c.role == "AXMenuItem"
-                and c.title.strip().lower().startswith("import ")
-                and "3mf" in c.title.lower()]
-        rep.check("导入入口可用", bool(rows))
-        if not rows:
-            return rep.save({"stage": "import-item"})
-        driver.click_control(rows[0])
-        rep.check("导入 cube20", driver.open_file_dialog(win, CUBE))
-        time.sleep(4.0)
+        rep.check("添加内置 Cube（27mm）", m7b._add_cube(driver, app, win))
+        time.sleep(2.5)
         driver.capture(win).save_png(OUT / "imported.png")
         text = " ".join(w.text for w in recognize_text(driver.capture(win)))
-        rep.check("cube20 已选中（体积 8000）", "8000" in text, text[-160:])
+        rep.check("Cube 已选中（27³ = 19683mm³）",
+                  "19683" in text or "27 x 27 x 27" in text, text[-160:])
         rep.check("另存 P0", save_project(driver, win, rep, p0) and p0.exists())
         if not p0.exists():
             return rep.save({"stage": "save-p0"})
 
-        t_cube0 = item(p0, "cube20")
+        t_cube0 = item(p0, "Cube")
         t_prusa0 = item(p0, "Prusa")
         rep.log(f"[INFO] P0 cube={t_cube0} prusa={t_prusa0}")
         if t_cube0 is None or t_prusa0 is None:
@@ -207,7 +206,7 @@ def main() -> int:
         rep.check("另存 P1", save_project(driver, win, rep, p1) and p1.exists())
         if not p1.exists():
             return rep.save({"stage": "save-p1"})
-        t_cube1 = item(p1, "cube20")
+        t_cube1 = item(p1, "Cube")
         t_prusa1 = item(p1, "Prusa")
         rep.log(f"[INFO] P1 cube={t_cube1} prusa={t_prusa1}")
         rep.check("Prusa 位姿逐位不变",
@@ -217,10 +216,10 @@ def main() -> int:
 
         aabbs = mac_3mf.object_aabbs_by_id(p1)
         cube_box = next((b for _oid, (n, b) in aabbs.items()
-                         if "cube20" in n.lower()), None)
-        rep.check("cube AABB 30×30×30",
+                         if "cube" in n.lower()), None)
+        rep.check("cube AABB 40.5×40.5×40.5（27→40.5）",
                   cube_box is not None
-                  and all(abs((cube_box[1][i] - cube_box[0][i]) - 30.0) <= 0.2
+                  and all(abs((cube_box[1][i] - cube_box[0][i]) - 40.5) <= 0.2
                           for i in range(3)),
                   f"box={cube_box}")
         if cube_box is not None:
