@@ -12,6 +12,8 @@
 #      > 120 screen px in the Windows oracle)
 #
 # macOS mapping:
+#   plate 2   -> Add plate slot found by tooltip (the seeded printer moved
+#                it away from the old fixed 520,75), then save-verified.
 #   rail      -> (952,271) at 1200x800 with two plates, tooltip
 #                "Arrange objects on current plate" (right-side tooltip).
 #   geometry  -> Save Project as S0/S1 and parse with mac_3mf: build-item
@@ -150,13 +152,24 @@ def main() -> int:
             return rep.save({"stage": "load"})
 
         close_colors(driver, app)
-        tip = c194.tooltip_below(driver, win, *ADD_PLATE_XY)
-        rep.log(f"[INFO] Add plate tooltip={tip!r} "
-                f"(button identity is proven by the plate count below)")
-        driver.click(win.rect.x + ADD_PLATE_XY[0],
-                     win.rect.y + ADD_PLATE_XY[1])
-        time.sleep(3.0)
-        rep.log("[INFO] add plate clicked")
+        slot, tip = c194.find_add_plate_slot(driver, win)
+        rep.log(f"[INFO] Add plate slot={slot} tip={tip!r}")
+        if slot is None:
+            slot = ADD_PLATE_XY
+        plate_ok = False
+        cand = None
+        for attempt in range(1, 4):
+            driver.click(win.rect.x + slot[0], win.rect.y + slot[1])
+            time.sleep(3.0)
+            cand = work / f"m8x_196_add{attempt}.3mf"
+            if save_project(driver, win, rep, cand) \
+                    and len(mac_3mf.read_plates(cand)) == 2:
+                plate_ok = True
+                break
+        rep.check("新建 2 号盘", plate_ok,
+                  f"slot={slot} last={cand.name if cand else None}")
+        if not plate_ok:
+            return rep.save({"stage": "add-plate"})
 
         added = [add_cube(driver, app, win) for _ in range(2)]
         rep.check("两个零件已添加", all(added), f"results={added}")
