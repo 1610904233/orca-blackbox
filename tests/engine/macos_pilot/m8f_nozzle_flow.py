@@ -60,7 +60,7 @@ import m8d_purifier_gcode as c8d  # noqa: E402
 
 OUT = ARTIFACTS / "pilot" / "m8f"
 COMPARE = HERE / "tools" / "compare_gcode.py"
-PROC_ROW = {"HF": 0, "STD": 1, "FLOW": 2}      # menu order at y=616/640/668
+PROC_ROW = {"HF": 0, "STD": 1, "FLOW": 2}      # user rows at y=550/576/602
 FIL_ROW = {"FLOW": 1, "HF": 1, "STD": 2}       # doc list: 标准=0, 流量=1,
 #                                                 高流量=2
 
@@ -174,22 +174,21 @@ def select_process(driver, win, rep, which: str) -> bool:
         return False
     click_word(driver, win, combo)
     ws = ocr(driver, win)
-    rows = [w for w in ws if w.rect.x < 430 and 600 <= w.rect.y <= 700
+    # The popup truncates the preset suffix, so select by the fixed order of
+    # the user rows (HF / STD / FLOW) instead of matching the hidden text.
+    # The current app lists them at y=550/576/602; the System header and
+    # rows start below 630.
+    rows = [w for w in ws if w.rect.x < 430 and 540 <= w.rect.y <= 620
             and len(w.text) > 10 and "system" not in w.text.lower()]
     rows.sort(key=lambda w: w.rect.y)
     rep.log(f"[INFO] process rows={[(w.text, round(w.rect.y)) for w in rows]}")
-    if which == "FLOW":
-        # The menu truncates the "- FLOW-TEST" suffix; the FLOW-TEST process
-        # is the only 0.24mm Standard row visible (the current is 0.20mm).
-        match = next((w for w in rows
-                      if "0.24mm standard" in w.text.lower()), None)
-    else:
-        needle = f"- {which.lower()}-test"
-        match = next((w for w in rows if needle in w.text.lower()), None)
-    if match is None:
+    idx = PROC_ROW[which]
+    if len(rows) <= idx:
+        rep.log(f"[INFO] user process rows missing (need {idx + 1})")
         driver.send_key("escape")
         return False
-    rep.log(f"[INFO] process {which} -> {match.text!r} "
+    match = rows[idx]
+    rep.log(f"[INFO] process {which} -> row {idx} {match.text!r} "
             f"@ {match.rect.to_xywh()}")
     click_word(driver, win, match)
     return True
@@ -442,7 +441,7 @@ def main() -> int:
             rep.log(f"[INFO] effective mismatches: {bad[:8]}")
         rep.check("#135 标准/高流量 effective values identical "
                   "（口径同 Windows effective_diff + mode>=1）",
-                  not bad and mode_diff >= 1,
+                  not bad and checked > 0 and mode_diff >= 1,
                   f"checked={checked} mismatches={len(bad)} "
                   f"mode={mode_diff} numeric={num_diff}")
 
