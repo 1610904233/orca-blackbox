@@ -20,9 +20,11 @@
 #   scene     -> Edit > Delete All + bed right-click Add Primitive > Cube
 #   remap     -> object context menu "Change Filament" -> Snapmaker PLA Silk
 #                (real AXMenuItem tree, verified by PITFALLS 22.14 probe)
-#   preset    -> the self-drawn sidebar combo: click slot 2 at (242,414),
-#                click vendor "Generic" in the popup, then ABS/PC in the
-#                submenu; read the row text back
+#   preset    -> slot-2 combo (row OCR-located) -> "Add/Remove filament" ->
+#                System Filaments dialog: Clear all, tick Generic ABS/PC,
+#                Confirm.  The inline vendor submenu cannot be expanded by
+#                synthetic hover/click on this build, so the dialog is the
+#                reliable route; the row text is read back as proof.
 #   slice     -> mac_common.slice_and_export (m8x_158 recipe)
 #   oracle    -> mac_gcode.purifier_params / used_filaments
 #
@@ -60,6 +62,38 @@ DEFAULT_MODEL = HERE / "fixtures" / "mixed_filament_test.3mf"
 MODEL_POINT = (814, 396)          # canvas point that hits the cube
 SLOT2_ROW_Y = 414
 SEARCH_ROOTS = None                # filled in main()
+
+# The repo's resources/Snapmaker snapshot predates 2.4.2: its Snapmaker.json
+# index has no "Generic ABS/PC @U1 0.4 nozzle" entries and the files are
+# absent too, so the vendor submenu only offers PETG/PLA and the
+# high-temperature branch cannot be selected.  Pre-stage the installed app
+# bundle's complete preset set for this case (the harness seed skips an
+# existing system dir).  A fresh, unseeded profile loads exactly this set.
+def stage_purifier_presets(profile: Path, rep) -> None:
+    system = profile / "system"
+    dst = system / "Snapmaker"
+    for app in Path("/Applications").glob("*.app"):
+        profiles = app / "Contents" / "Resources" / "profiles"
+        cand = profiles / "Snapmaker"
+        probe = cand / "filament" / "Generic ABS @U1 0.4 nozzle.json"
+        if not probe.exists():
+            continue
+        if dst.exists():
+            shutil.rmtree(dst)
+        shutil.copytree(cand, dst)
+        index = profiles / "Snapmaker.json"
+        if index.exists():
+            shutil.copy2(index, system / "Snapmaker.json")
+        rep.log(f"[INFO] staged app-bundle presets from {cand}")
+        return
+    # Fallback: repo snapshot (the case will report the missing presets).
+    if not dst.exists():
+        shutil.copytree(HERE / "resources" / "Snapmaker", dst)
+        vendor_json = HERE / "resources" / "Snapmaker.json"
+        if vendor_json.exists():
+            shutil.copy2(vendor_json, system / "Snapmaker.json")
+    rep.log("[INFO] app bundle Generic ABS/PC presets not found; "
+            "using repo snapshot")
 
 
 def ocr_window(driver, win):
@@ -132,26 +166,55 @@ def change_filament_to_silk(driver, app, win, rep) -> str:
     return "ok"
 
 
+def slot2_row_y(driver, win):
+    """Y centre of the slot-2 filament row.
+
+    The sidebar row pitch depends on the loaded project (the mixed fixture
+    shows five slots at y≈421/459/497/535/573); the old fixed y=414 clicked
+    slot 1.  Locate the row by its visible index "2", then by the first
+    filament-name row.
+    """
+    words = ocr_window(driver, win)
+    idx = next((w for w in words
+                if w.text.strip() == "2" and w.rect.x < 45
+                and 380 < w.rect.y < 650), None)
+    if idx is not None:
+        return idx.rect.center[1]
+    cands = [w for w in words
+             if 200 < w.rect.x < 420 and 430 < w.rect.y < 650
+             and any(k in w.text.lower() for k in ("pla", "abs", "pc"))]
+    return min((w.rect.center[1] for w in cands), default=None)
+
+
 def read_slot2(driver, win) -> str:
+    y = slot2_row_y(driver, win)
     words = ocr_window(driver, win)
     rows = [w for w in words
-            if 200 < w.rect.x < 400 and 400 <= w.rect.y <= 435]
+            if 200 < w.rect.x < 420 and y is not None
+            and abs(w.rect.center[1] - y) <= 12]
     return " ".join(w.text for w in rows).strip()
 
 
 def select_slot2_preset(driver, win, rep, type_name: str,
                         vendor_name: str = "Generic",
                         contains: bool = False) -> str:
-    """Open the slot-2 combo -> vendor -> type; return the row text.
+    """Set slot 2 to Generic <type> via the System Filaments dialog.
 
-    ``vendor_name`` defaults to Generic (ABS/PC); use "Snapmaker" for the
-    original PLA Silk row.  ``contains`` matches the type as a substring
-    (the submenu OCR prefixes the current entry with a bullet).
+    The inline vendor submenu is not expandable with synthetic hover/click
+    on this build (the popup closes instead), so open the combo and press
+    Right: that opens the "System Filaments" selector.  Clear all, tick the
+    requested Generic type, Confirm.  ``vendor_name``/``contains`` are kept
+    for call compatibility; the dialog always uses the Generic vendor.
     """
+    y2 = slot2_row_y(driver, win)
     words = ocr_window(driver, win)
     combo = next((w for w in words
-                  if 200 < w.rect.x < 400
-                  and 400 <= w.rect.y <= 435), None)
+                  if 200 < w.rect.x < 400 and y2 is not None
+                  and abs(w.rect.center[1] - y2) <= 12), None)
+    if combo is None:
+        combo = next((w for w in words
+                      if 200 < w.rect.x < 400
+                      and 430 <= w.rect.y <= 470), None)
     if combo is None:
         return "slot-2 combo not found"
     rep.log(f"[INFO] click slot-2 combo {combo.text!r} "
@@ -160,34 +223,56 @@ def select_slot2_preset(driver, win, rep, type_name: str,
                  win.rect.y + combo.rect.center[1])
     time.sleep(1.2)
     words = ocr_window(driver, win)
-    vendor = next((w for w in words
-                   if w.text.strip().lower() == vendor_name.lower()
-                   and 200 < w.rect.x < 490 and w.rect.y > 440), None)
-    if vendor is None:
-        rep.log(f"[INFO] vendor popup words="
-                f"{[(w.text, w.rect.to_xywh()) for w in words if w.rect.y > 430][:30]}")
-        return f"no {vendor_name!r} vendor entry"
-    rep.log(f"[INFO] click vendor {vendor.text!r} @ {vendor.rect.to_xywh()}")
-    driver.click(win.rect.x + vendor.rect.center[0],
-                 win.rect.y + vendor.rect.center[1])
-    time.sleep(1.0)
-    words = ocr_window(driver, win)
-    if contains:
-        target = next((w for w in words
-                       if type_name.lower() in w.text.lower()
-                       and w.rect.x > 450 and w.rect.y > 430), None)
+    addrem = next((w for w in words
+                   if "add/remove filament" in w.text.lower()), None)
+    if addrem is None:
+        driver.click(win.rect.x + combo.rect.center[0],
+                     win.rect.y + combo.rect.center[1])
+        time.sleep(1.0)
+        words = ocr_window(driver, win)
+        addrem = next((w for w in words
+                       if "add/remove filament" in w.text.lower()), None)
+    if addrem is not None:
+        rep.log(f"[INFO] click {addrem.text!r} @ {addrem.rect.to_xywh()}")
+        driver.click(win.rect.x + addrem.rect.center[0],
+                     win.rect.y + addrem.rect.center[1])
+        time.sleep(1.5)
     else:
-        target = next((w for w in words
-                       if w.text.strip().lower() == type_name.lower()
-                       and w.rect.x > 450 and w.rect.y > 430), None)
+        driver.send_key("right")
+        time.sleep(1.5)
+    driver.capture(win).save_png(OUT / f"filament_dialog_{type_name}.png")
+    words = ocr_window(driver, win)
+    if not any("system filaments" in w.text.lower() for w in words):
+        rep.log("[INFO] System Filaments dialog did not open")
+        return "preset dialog not open"
+    clear = next((w for w in words if "clear all" in w.text.lower()), None)
+    if clear is not None:
+        driver.click(win.rect.x + clear.rect.center[0],
+                     win.rect.y + clear.rect.center[1])
+        time.sleep(1.0)
+        words = ocr_window(driver, win)
+    needle = f"generic {type_name}".lower()
+    target = next((w for w in words
+                   if w.text.strip().lower() == needle), None)
     if target is None:
-        rep.log(f"[INFO] type submenu words="
-                f"{[(w.text, w.rect.to_xywh()) for w in words if w.rect.x > 450 and w.rect.y > 430][:20]}")
-        return f"no {type_name} entry"
-    rep.log(f"[INFO] click type {target.text!r} @ {target.rect.to_xywh()}")
-    driver.click(win.rect.x + target.rect.center[0],
+        target = next((w for w in words
+                       if needle in w.text.lower()), None)
+    if target is None:
+        rep.log(f"[INFO] dialog preset words="
+                f"{[(w.text, w.rect.to_xywh()) for w in words if w.rect.x > 150 and w.rect.y < 700][:30]}")
+        return f"no {needle} entry"
+    rep.log(f"[INFO] tick {target.text!r} @ {target.rect.to_xywh()}")
+    driver.click(win.rect.x + target.rect.x - 12,
                  win.rect.y + target.rect.center[1])
-    time.sleep(2.0)
+    time.sleep(0.9)
+    words = ocr_window(driver, win)
+    confirm = next((w for w in words if w.text.strip().lower() == "confirm"),
+                   None)
+    if confirm is None:
+        return "no Confirm button"
+    driver.click(win.rect.x + confirm.rect.center[0],
+                 win.rect.y + confirm.rect.center[1])
+    time.sleep(2.5)
     return read_slot2(driver, win)
 
 
@@ -223,6 +308,7 @@ def main() -> int:
     rep = Reporter(OUT)
     rep.log("=== m8d macOS purifier gcode ===")
     rep.log(f"datadir={args.datadir} model={model}")
+    stage_purifier_presets(args.datadir, rep)
 
     driver = None
     app = None
@@ -276,6 +362,11 @@ def main() -> int:
                   and params_a.get("ALARM_TEMP") == "48",
                   f"params={params_a}")
 
+        # Slice/export leaves the app on Preview; the filament sidebar only
+        # exists on Prepare (fixed 2026-11-26 — the old code clicked the
+        # preview legend and "found" PETG/PLA there).
+        driver.click(win.rect.x + 60, win.rect.y + 45)
+        time.sleep(2.0)
         row_abs = select_slot2_preset(driver, win, rep, "ABS")
         rep.log(f"[INFO] slot-2 row after ABS={row_abs!r}")
         rep.check("slot2 -> Generic ABS", "abs" in row_abs.lower(), row_abs)
@@ -305,6 +396,8 @@ def main() -> int:
             for k in ("MODE", "DESIRE_TEMP", "FAN_SPEED", "DELAY_OFF")),
             f"params={params_b}")
 
+        driver.click(win.rect.x + 60, win.rect.y + 45)  # back to Prepare
+        time.sleep(2.0)
         row_pc = select_slot2_preset(driver, win, rep, "PC")
         rep.log(f"[INFO] slot-2 row after PC={row_pc!r}")
         rep.check("slot2 -> Generic PC",
