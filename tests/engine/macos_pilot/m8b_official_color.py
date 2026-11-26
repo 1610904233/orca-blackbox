@@ -38,11 +38,13 @@ from __future__ import annotations
 
 import argparse
 import colorsys
+import json
 import re
 import shutil
 import sys
 import time
 import traceback
+import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parents[3]       # repo root
@@ -194,6 +196,28 @@ def select_rainbow(driver, win, rep) -> bool:
         ws = c8d.ocr_window(driver, win)
         add = next((w for w in ws
                     if "add/remove filament" in w.text.lower()), None)
+    if add is None:
+        return False
+    # Fast path: type-ahead in the preset popup selects the Rainbow *preset*,
+    # which carries the Pastel Rainbow official card.  The System Filaments
+    # dialog only changes the filament type and loses that card association.
+    for ch in "rainbow":
+        driver.send_key(ch)
+        time.sleep(0.08)
+    time.sleep(0.8)
+    driver.send_key("return")
+    time.sleep(1.5)
+    row = c8d.read_slot2(driver, win)
+    rep.log(f"[INFO] type-ahead slot2={row!r}")
+    if "rainbow" in row.lower():
+        return True
+    # Popup may have closed; reopen it for the Add/Remove fallback.
+    driver.click(win.rect.x + combo.rect.center[0],
+                 win.rect.y + combo.rect.center[1])
+    time.sleep(1.0)
+    ws = c8d.ocr_window(driver, win)
+    add = next((w for w in ws
+                if "add/remove filament" in w.text.lower()), None)
     if add is None:
         return False
     rep.log(f"[INFO] click {add.text!r} @ {add.rect.to_xywh()}")
@@ -416,6 +440,49 @@ def settings_id(path: Path) -> list[str]:
     return [v.strip().strip('"') for v in m.group(1).split(";") if v.strip()]
 
 
+def make_04_rainbow_project(src: Path, dst: Path) -> None:
+    """Rewrite the fixture into the user's 0.4 U1 dual/gradient project.
+
+    Slot 1 = Snapmaker PLA Silk @U1 0.4 (Sunset Ember dual-colour card:
+    #D9A63A/#CC434F); slot 2 = Snapmaker PLA Rainbow @U1 0.4 (Pastel
+    Rainbow gradient card sku 34360, mode 1, colours #64C5D9/#8CB1DF/
+    #CB95D0/#D7BFAA/#C6D4C0).  Printer/process are switched to 0.4.
+    """
+    silk = "Snapmaker PLA Silk @U1 0.4 nozzle"
+    rain = "Snapmaker PLA Rainbow @U1 0.4 nozzle"
+    silk_colors = ["#D9A63A", "#CC434F"]
+    rain_colors = ["#64C5D9", "#8CB1DF", "#CB95D0", "#D7BFAA", "#C6D4C0"]
+    with zipfile.ZipFile(src) as zin, \
+            zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+        for entry in zin.infolist():
+            data = zin.read(entry.filename)
+            if entry.filename == "Metadata/project_settings.config":
+                cfg = json.loads(data.decode("utf-8"))
+                cfg["printer_settings_id"] = "Snapmaker U1 (0.4 nozzle)"
+                cfg["printer_variant"] = "0.4"
+                cfg["nozzle_diameter"] = ["0.4"] * 4
+                cfg["print_compatible_printers"] = [
+                    "Snapmaker U1 (0.4 nozzle)"]
+                cfg["print_settings_id"] = (
+                    "0.20mm Standard @Snapmaker U1 (0.4 nozzle)")
+                n = len(cfg["filament_settings_id"])
+                cfg["filament_settings_id"] = [silk] * n
+                cfg["filament_settings_id"][1] = rain
+                cfg["filament_colour"] = [silk_colors[0]] * n
+                cfg["filament_colour"][1] = rain_colors[0]
+                cfg["filament_colour_mode"] = ["0"] * n
+                cfg["filament_colour_mode"][1] = "1"
+                cfg["filament_multi_colors"] = [
+                    "|".join(silk_colors)] * n
+                cfg["filament_multi_colors"][1] = "|".join(rain_colors)
+                cfg["filament_type"] = ["PLA"] * n
+                cfg["filament_vendor"] = ["Snapmaker"] * n
+                cfg["filament_ids"] = ["1195313935011"] * n
+                cfg["filament_ids"][1] = "SNPPRB001"
+                data = json.dumps(cfg, indent=4).encode("utf-8")
+            zout.writestr(entry, data)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--exe", default=None)
@@ -436,6 +503,11 @@ def main() -> int:
     rep = Reporter(OUT)
     rep.log("=== m8b macOS official colours + gradient filament ===")
     rep.log(f"datadir={args.datadir} model={model}")
+    # The repo preset snapshot is older than the installed 2.4.2 and lacks
+    # filaments_colours.json entries (Pastel Rainbow and other dual/gradient
+    # official cards), so the sandbox's picker shows fewer cards than the
+    # app the user sees.  Pre-stage the app bundle's full preset set.
+    c8d.stage_purifier_presets(args.datadir, rep)
 
     driver = None
     app = None
@@ -528,36 +600,78 @@ def main() -> int:
             driver.close_window(native)
             time.sleep(1.0)
 
-        # ---------- #55 slot 2 -> PLA Rainbow ----------------------------
-        rep.check("#55 槽 2 切到 PLA Rainbow", select_rainbow(driver, win, rep))
+        # ---------- phase 2: user's 0.4 dual + gradient project ----------
+        rep.check("phase 1 close", close_app(driver, app, win))
+        app = win = None
+        rainbow_project = work / "m8b_rainbow_04.3mf"
+        make_04_rainbow_project(model, rainbow_project)
+        app, win = launch_and_focus(
+            driver, args.datadir, model=rainbow_project,
+            timeout_s=args.timeout,
+            log_path=OUT / "app_launch_rainbow.log")
+        rep.check("phase 2 启动（0.4 双拼/渐变工程）", True,
+                  f"pid={app.pid} title={win.title!r}")
+        ok, frame, frac, _seen = wait_for_model(
+            driver, app, win, timeout_s=120.0, threshold=0.03)
+        frame.save_png(OUT / "rainbow_project.png")
+        rep.check("0.4 双拼/渐变工程载入", ok, f"colored={frac:.4f}")
+        if not ok:
+            return rep.save({"stage": "rainbow-load"})
         ws = c8d.ocr_window(driver, win)
-        row2 = " ".join(w.text for w in ws
-                        if 200 < w.rect.x < 400 and 400 <= w.rect.y <= 435)
-        rep.log(f"[INFO] slot2 row={row2!r}")
-        rep.check("#55 槽 2 行显示 Rainbow",
-                  "rainbow" in row2.lower() or "pla ra" in row2.lower(), row2)
+        nozzle = " ".join(w.text for w in ws
+                          if w.rect.y < 330
+                          and ("0.4" in w.text or "0.8" in w.text))
+        rep.check("喷嘴 0.4mm", "0.4" in nozzle and "0.8" not in nozzle,
+                  nozzle)
+        rows = [(w.text, w.rect.to_xywh()) for w in ws
+                if 200 < w.rect.x < 400 and 400 < w.rect.y < 500]
+        rep.log(f"[INFO] 0.4 project rows={rows}")
+        rainbow_row = next((w for w in ws
+                            if 200 < w.rect.x < 400
+                            and 400 < w.rect.y < 440
+                            and ("rainbow" in w.text.lower()
+                                 or "pla ra" in w.text.lower())), None)
+        rep.check("#55 2 号（渐变）槽 = Snapmaker PLA Rainbow",
+                  rainbow_row is not None, str(rows))
 
-        # ---------- #44 gradient picker is still official -----------------
-        grad = open_official(driver, app, win)
-        grad_text = dialog_text(driver, win, grad) if grad else ""
-        rep.log(f"[INFO] gradient dialog={grad_text!r}")
-        rep.check("#44 渐变耗材仍是官方色卡列表",
-                  grad is not None and "official filaments" in grad_text.lower(),
-                  grad_text[:60])
-        if grad is not None:
-            # The gradient picker can be shorter than the card dialog, so the
-            # fixed CANCEL_REL lands below its button; use the OCR label and
-            # fall back to Escape, else the modal keeps Delete All disabled.
-            cancel = next((w for w in c8d.ocr_window(driver, win)
+        def close_card():
+            ws2 = c8d.ocr_window(driver, win)
+            cancel = next((w for w in ws2
                            if w.text.strip().lower() == "cancel"), None)
             if cancel is not None:
                 driver.click(win.rect.x + cancel.rect.center[0],
                              win.rect.y + cancel.rect.center[1])
             else:
-                click_button(driver, grad, CANCEL_REL)
+                driver.send_key("escape")
             time.sleep(1.0)
-            driver.send_key("escape")
-            time.sleep(0.8)
+
+        # Gradient official card: Pastel Rainbow sku 34360.
+        grad = open_official(driver, app, win, point=(220, 414))
+        grad_text = dialog_text(driver, win, grad) if grad else ""
+        if grad is not None:
+            driver.capture(win).save_png(OUT / "pastel_rainbow_card.png")
+            time.sleep(1.5)
+        rep.log(f"[INFO] gradient card dialog={grad_text!r}")
+        rep.check("#44 渐变卡 = Pastel Rainbow sku 34360",
+                  grad is not None
+                  and "pastel rainbow" in grad_text.lower()
+                  and "34360" in grad_text, grad_text[:80])
+        if grad is not None:
+            close_card()
+
+        # Dual-colour official card: Sunset Ember sku 34202.
+        dual = open_official(driver, app, win, point=(220, 448))
+        dual_text = dialog_text(driver, win, dual) if dual else ""
+        if dual is not None:
+            driver.capture(win).save_png(OUT / "sunset_ember_card.png")
+            time.sleep(1.5)
+        rep.log(f"[INFO] dual card dialog={dual_text!r}")
+        rep.check("#55 1 号（双拼）槽 = Sunset Ember sku 34202",
+                  dual is not None
+                  and "sunset ember" in dual_text.lower()
+                  and "34202" in dual_text, dual_text[:80])
+        if dual is not None:
+            close_card()
 
         # ---------- #58 cube on the rainbow slot + slice ------------------
         item = driver.find_control(win, role="AXMenuItem",
@@ -589,12 +703,12 @@ def main() -> int:
         ids = settings_id(gcode)
         colours = gcode_colours(gcode)
         rep.log(f"[INFO] used={used} ids={ids} colours={colours}")
-        # The dialog maps Rainbow to every slot, but the object must be
-        # assigned to slot 2 (the second Change Filament row), matching the
-        # baseline and the expected sidebar state.
+        # Only slot 2 is Rainbow in the 0.4 project; the other slots stay
+        # dual-colour Silk.  The used slot must be 2 and its settings id must
+        # be the Rainbow preset.
         rep.check("#58 cube 使用 2 号 Rainbow 槽",
-                  2 in used and bool(ids)
-                  and all("rainbow" in i.lower() for i in ids),
+                  2 in used and len(ids) >= 2
+                  and "rainbow" in ids[1].lower(),
                   f"used={used} ids={ids}")
         attrs = mixed_attrs(gcode)
         rep.log(f"[INFO] mixed attrs={attrs}")
