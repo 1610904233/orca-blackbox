@@ -146,14 +146,21 @@ def select_process(driver, win, rep, which: str) -> bool:
     rows = [w for w in ws if w.rect.x < 430 and 600 <= w.rect.y <= 700
             and len(w.text) > 10 and "system" not in w.text.lower()]
     rows.sort(key=lambda w: w.rect.y)
-    idx = PROC_ROW[which]
-    if len(rows) <= idx:
-        rep.log(f"[INFO] process rows={[(w.text, w.rect.y) for w in rows]}")
+    rep.log(f"[INFO] process rows={[(w.text, round(w.rect.y)) for w in rows]}")
+    if which == "FLOW":
+        # The menu truncates the "- FLOW-TEST" suffix; the FLOW-TEST process
+        # is the only 0.24mm Standard row visible (the current is 0.20mm).
+        match = next((w for w in rows
+                      if "0.24mm standard" in w.text.lower()), None)
+    else:
+        needle = f"- {which.lower()}-test"
+        match = next((w for w in rows if needle in w.text.lower()), None)
+    if match is None:
         driver.send_key("escape")
         return False
-    rep.log(f"[INFO] process {which} -> row {idx} {rows[idx].text!r} "
-            f"@ {rows[idx].rect.to_xywh()}")
-    click_word(driver, win, rows[idx])
+    rep.log(f"[INFO] process {which} -> {match.text!r} "
+            f"@ {match.rect.to_xywh()}")
+    click_word(driver, win, match)
     return True
 
 
