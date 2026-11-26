@@ -229,20 +229,26 @@ def select_filament(driver, win, rep, which: str) -> bool:
     return True
 
 
+def _norm_combo(text: str) -> str:
+    """Combo values OCR as '- Standard' / '~ Standard' (icon glyphs leak
+    into the word).  Compare the label itself, not the decoration."""
+    return re.sub(r"^[^A-Za-z0-9]+", "", text.strip()).strip().lower()
+
+
 def set_flow(driver, win, rep, target: str) -> bool:
     ws = ocr(driver, win)
-    combo = next((w for w in ws if w.text.strip().lower() in
+    combo = next((w for w in ws if _norm_combo(w.text) in
                   ("standard", "high flow") and w.rect.x > 200
                   and w.rect.y < 350), None)
     if combo is None:
         rep.log("[INFO] flow combo not found")
         return False
-    if combo.text.strip().lower() == target.lower():
+    if _norm_combo(combo.text) == target.lower():
         rep.log(f"[INFO] flow already {target}")
         return True
     click_word(driver, win, combo)
     ws = ocr(driver, win)
-    option = next((w for w in ws if w.text.strip().lower() == target.lower()
+    option = next((w for w in ws if _norm_combo(w.text) == target.lower()
                    and w.rect.y > 310), None)
     if option is None:
         rep.log(f"[INFO] flow options={[(w.text, w.rect.y) for w in ws if 300 < w.rect.y < 400]}")

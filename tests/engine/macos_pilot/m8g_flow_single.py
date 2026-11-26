@@ -11,28 +11,38 @@
 #   tools/compare_gcode.py.
 #
 # macOS mapping:
-#   two separate app sessions: each copies default.zip's user presets
-#   BYTE-FOR-BYTE (no preset JSON is edited), starts an EMPTY project, adds
-#   the built-in Cube, selects the 流量测试 process/filament through the UI,
-#   sets the Nozzle Flow combo and exports a gcode.
+#   filament scenario (A/B): two app sessions; each copies default.zip's
+#   user presets byte-for-byte, starts an EMPTY project, adds the built-in
+#   Cube, selects the 流量测试 process/filament through the UI, sets the
+#   Nozzle Flow combo and exports a gcode.
+#   process scenario (C, one session): the doc 流量测试 process copy keeps
+#   every parameter except its single initial_layer_speed value, which is
+#   set to 61 (the preset stores one value shared by the Standard flow and
+#   High flow tabs).  The video opens Process -> Speed and shows 61 in both
+#   tabs, slices Standard, switches the printer to High Flow, slices again.
+#   The same filament (流量测试, max volumetric speed 40) is unchanged.
+#   A-vs-C must differ in exactly one numeric config key (initial_layer_speed
+#   60 -> 61, mode=0); C-vs-D must differ only in high-flow mode fields.
 #   High Flow raises 'Custom Filament Grouping'; the PLA chip is moved with
 #   the middle transfer button (synthetic drag does not fire), then Confirm.
 #   compare -> tools/compare_gcode.py; parse the Chinese report counts.
 #
 # Artifacts: artifacts/mac/pilot/m8g/{report.log,result.json,
-#            session_a/*.gcode,session_b/*.gcode}.
+#            session_a/*.gcode,session_b/*.gcode,
+#            session_c/*.gcode,session_d/*.gcode}.
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
 import time
 import traceback
-import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parents[3]       # repo root
@@ -53,8 +63,165 @@ OUT = ARTIFACTS / "pilot" / "m8g"
 COMPARE = HERE / "tools" / "compare_gcode.py"
 
 
-FLOW_CN = "Snapmaker PLA SnapSpeed @U1 - 流量测试"
 PROC_CN = "0.24mm Standard @Snapmaker U1 (0.4 nozzle) - 流量测试"
+
+# The process preset is verified through Process -> Speed.  That tab is
+# only shown in advanced user mode (the user's setting); at the default 420px
+# sidebar the six tabs are compressed, so the process session starts from the
+# same minimal conf with a 520px sidebar.  Only the AUI layout string is
+# copied -- no user project/preset state, so no Restore prompt.
+WIDE_LAYOUT = (
+    "layout2|name=sidebar;caption=;state=1996;dir=4;layer=0;row=0;pos=0;"
+    "prop=100000;bestw=520;besth=900;minw=-1;minh=-1;maxw=-1;maxh=-1;"
+    "floatx=-1;floaty=-1;floatw=-1;floath=-1|name=main;caption=;state=256;"
+    "dir=5;layer=0;row=0;pos=0;prop=100000;bestw=20;besth=20;minw=-1;"
+    "minh=-1;maxw=-1;maxh=-1;floatx=-1;floaty=-1;floatw=-1;floath=-1|"
+    "dock_size(5,0,0)=20|dock_size(4,0,0)=522|")
+
+
+def patch_process_first_layer(profile: Path, value: int = 61) -> Path:
+    """Set the doc 流量测试 process copy's single initial_layer_speed value.
+
+    The doc preset stores ONE value (initial_layer_speed: ["60"]), shared by
+    the Standard flow and High flow tabs; changing that one value is exactly
+    the user's 'only First layer speed=61' edit.  The fixture in the repo is
+    untouched -- only this session's user-preset copy is changed.
+    """
+    proc_dir = profile / "user" / "default" / "process"
+    matches = [p for p in proc_dir.glob("*.json")
+               if "流量测试" in p.name and "0.24mm" in p.name]
+    if not matches:
+        raise FileNotFoundError(f"流量测试 process preset not found in {proc_dir}")
+    path = matches[0]
+    data = json.loads(path.read_text(encoding="utf-8-sig"))
+    data["initial_layer_speed"] = [str(value)]
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=4),
+                    encoding="utf-8")
+    return path
+
+
+def prepare_advanced_profile(profile: Path) -> None:
+    """Fresh sandbox profile for the process scenario.
+
+    - advanced user mode + 520px sidebar: Process -> Speed (the per-flow
+      First layer speed tabs) is visible; only the AUI layout string is
+      copied, no user project/preset state -> no Restore prompt.
+    - the doc 流量测试 process copy gets its single initial_layer_speed
+      value set to 61; the filament presets and every other process
+      parameter stay byte-for-byte as the doc default.
+    """
+    prepare_flow_cn(profile)
+    patch_process_first_layer(profile, 61)
+    conf = profile / "Snapmaker_Orca.conf"
+    if conf.exists():
+        data = json.loads(conf.read_text(encoding="utf-8")
+                          .split("\n# MD5")[0])
+    else:
+        data = {
+            "app": {
+                "language": "en_US",
+                "show_splash_screen": False,
+                "single_instance": False,
+                "default_page": "1",
+                "privacy_policy_isagree": True,
+                "backup_switch": False,
+                "window_mainframe": os.environ.get(
+                    "ORCA_BB_WINDOW_FRAME", "360; 80; 1200; 800; 0"),
+            },
+            "firstguide": {"finish": True},
+            "models": [{
+                "model": "Snapmaker U1",
+                "nozzle_diameter": "0.2;0.4;0.6;0.8",
+                "vendor": "Snapmaker",
+            }],
+            "presets": {
+                "filaments": None,
+                "machine": "Snapmaker U1 (0.4 nozzle)",
+            },
+        }
+    app = data.setdefault("app", {})
+    app["user_mode"] = "advanced"
+    app["window_layout"] = WIDE_LAYOUT
+    app["window_mainframe"] = os.environ.get(
+        "ORCA_BB_WINDOW_FRAME", app.get("window_mainframe",
+                                       "360; 80; 1200; 800; 0"))
+    body = json.dumps(data, indent=4, ensure_ascii=False)
+    digest = hashlib.md5((body + "\n").encode("utf-8")).hexdigest().upper()
+    conf.write_text(body + "\n# MD5 checksum " + digest + "\n",
+                    encoding="utf-8")
+
+
+def _ocr_win(driver, win):
+    from harness.platform.macos_ocr import recognize_text
+    return recognize_text(driver.capture(win))
+
+
+def _click_word(driver, win, word, pause=1.2):
+    driver.click(win.rect.x + word.rect.center[0],
+                 win.rect.y + word.rect.center[1])
+    time.sleep(pause)
+
+
+def _speed_value_words(words):
+    return [w for w in words
+            if w.rect.x > 150 and 615 <= w.rect.y <= 650
+            and re.fullmatch(r"\d{2,3}(?:\.\d+)?", w.text.strip())]
+
+
+def _flow_tab_points(words):
+    """Return (standard_point, high_flow_point) in window coordinates."""
+    for w in words:
+        text = w.text.lower()
+        if "standard flow" in text and "high flow" in text:
+            x, y = w.rect.x, w.rect.y
+            wid, hei = w.rect.w, w.rect.h
+            return ((x + wid * 0.25, y + hei / 2),
+                    (x + wid * 0.75, y + hei / 2))
+    std = next((w for w in words
+                if w.text.strip().lower() == "standard flow"), None)
+    hf = next((w for w in words
+               if w.text.strip().lower() == "high flow"), None)
+    if std and hf:
+        return std.rect.center, hf.rect.center
+    return None
+
+
+def verify_speed_tabs(driver, win, rep, tag: str,
+                      value: int = 61) -> bool:
+    """Process -> Speed evidence: the single initial_layer_speed value
+    appears as First layer speed=61 in BOTH flow tabs.  No field is edited
+    here; the session profile's 流量测试 preset copy already carries 61
+    (patch_process_first_layer), and this opens the two tabs before slicing
+    so the recording shows the modified process."""
+    words = _ocr_win(driver, win)
+    tab = next((w for w in words if w.text.strip().lower() == "speed"
+                and 480 <= w.rect.y <= 570), None)
+    if tab is None:
+        rep.log(f"[INFO] {tag} Speed tab not found")
+        return False
+    _click_word(driver, win, tab)
+    words = _ocr_win(driver, win)
+    points = _flow_tab_points(words)
+    rep.log(f"[INFO] {tag} flow tabs={points} "
+            f"values={[(w.text, w.rect.to_xywh()) for w in _speed_value_words(words)]}")
+    if points is None:
+        rep.log(f"[INFO] {tag} flow sub-tabs not found: "
+                f"{[(w.text, w.rect.to_xywh()) for w in words if 550 < w.rect.y < 600]}")
+        return False
+    std_pt, hf_pt = points
+    ok = True
+    for label, pt in (("Standard flow", std_pt), ("High flow", hf_pt)):
+        driver.click(win.rect.x + pt[0], win.rect.y + pt[1])
+        time.sleep(0.9)
+        words = _ocr_win(driver, win)
+        vals = _speed_value_words(words)
+        good = any(w.text.strip() == str(value) for w in vals)
+        rep.log(f"[INFO] {tag} {label} First layer speed="
+                f"{[(w.text, w.rect.to_xywh()) for w in vals]} ok={good}")
+        ok = ok and good
+    driver.click(win.rect.x + std_pt[0], win.rect.y + std_pt[1])
+    time.sleep(0.8)
+    return ok
 
 
 def _profile_src(kind: str, name: str) -> Path:
@@ -76,13 +243,53 @@ def prepare_flow_cn(profile: Path) -> None:
     shutil.copytree(src, dst)
 
 
+def _check_export(rep, tag: str, gcode: Path, process_edit: bool) -> bool:
+    fids, pid = c8f.gcode_ids(gcode)
+    rep.log(f"[INFO] {tag} ids={fids} print={pid}")
+    text = gcode.read_text(encoding="utf-8", errors="replace")
+    match = re.search(r"^; filament_max_volumetric_speed = (.*)$",
+                      text, re.M)
+    maxv = match.group(1).strip() if match else ""
+    speed = re.search(r"^; initial_layer_speed = (.*)$", text, re.M)
+    speed_v = speed.group(1).strip() if speed else ""
+    rep.log(f"[INFO] {tag} initial_layer_speed={speed_v}")
+    rep.check(f"{tag} 流量测试预设生效",
+              pid is not None
+              and ((pid == PROC_CN) if not process_edit
+                   else (PROC_CN in pid))
+              and any("流量测试" in f for f in fids),
+              f"print={pid} filament={fids}")
+    if process_edit:
+        rep.check(f"{tag} 工艺参数 First layer speed = 61,61",
+                  bool(speed_v)
+                  and all(v.strip() == "61"
+                          for v in speed_v.split(",")),
+                  f"initial_layer_speed={speed_v}")
+    rep.check(f"{tag} max volumetric speed = 40（通用两页签）",
+              bool(maxv) and all(v.strip() == "40"
+                                 for v in maxv.split(",")),
+              f"max_vol={maxv}")
+    return True
+
+
 def run_session(driver, datadir: Path, work: Path, flow: str, gcode: Path,
-                rep, tag: str):
-    """One app session: empty -> Cube -> 流量测试 presets -> flow -> export."""
+                rep, tag: str, process_edit: bool = False,
+                second_flow: str | None = None,
+                second_gcode: Path | None = None):
+    """One app session: empty -> Cube -> 流量测试 presets -> flow -> export.
+
+    process_edit=True is the second #136 scenario: same filament (unchanged)
+    and same 流量测试 process, but First layer speed is set to 61 in both
+    flow tabs through Process -> Speed before slicing.  When second_flow is
+    given, the same modified process is sliced again after switching the
+    printer's Nozzle Flow -- exactly the user's fixed-process comparison."""
     app = None
     win = None
     try:
-        prepare_flow_cn(datadir)
+        if process_edit:
+            prepare_advanced_profile(datadir)
+        else:
+            prepare_flow_cn(datadir)
         app, win = launch_and_focus(
             driver, datadir, model=None, timeout_s=150.0,
             log_path=work / f"app_launch_{tag}.log")
@@ -91,9 +298,13 @@ def run_session(driver, datadir: Path, work: Path, flow: str, gcode: Path,
         time.sleep(4.0)
         rep.check(f"{tag} add cube", m7b._add_cube(driver, app, win))
         time.sleep(2.0)
-        rep.check(f"{tag} 流量测试预设 + {flow}",
-                  c8f.select_state(driver, win, rep, "FLOW", "FLOW",
-                                   flow, tag))
+        selected = c8f.select_state(driver, win, rep, "FLOW", "FLOW",
+                                    flow, tag)
+        rep.check(f"{tag} 流量测试预设 + {flow}", selected)
+        if process_edit:
+            rep.check(f"{tag} 工艺 First layer speed=61（两流道）",
+                      selected and verify_speed_tabs(
+                          driver, win, rep, tag, 61))
         if not slice_and_export(
                 driver, win, rep, gcode,
                 [work, OUT, ARTIFACTS / "pilot", HERE / "fixtures"],
@@ -102,20 +313,25 @@ def run_session(driver, datadir: Path, work: Path, flow: str, gcode: Path,
             return None
         rep.check(f"{tag} 切片并导出", True,
                   f"size={gcode.stat().st_size}")
-        fids, pid = c8f.gcode_ids(gcode)
-        rep.log(f"[INFO] {tag} ids={fids} print={pid}")
-        text = gcode.read_text(encoding="utf-8", errors="replace")
-        match = re.search(r"^; filament_max_volumetric_speed = (.*)$",
-                          text, re.M)
-        maxv = match.group(1).strip() if match else ""
-        rep.check(f"{tag} 流量测试预设生效",
-                  pid == PROC_CN
-                  and any("流量测试" in f for f in fids),
-                  f"print={pid} filament={fids}")
-        rep.check(f"{tag} max volumetric speed = 40（通用两页签）",
-                  bool(maxv) and all(v.strip() == "40"
-                                     for v in maxv.split(",")),
-                  f"max_vol={maxv}")
+        _check_export(rep, tag, gcode, process_edit)
+
+        if second_flow and second_gcode is not None:
+            tag2 = f"{tag}/{second_flow}"
+            rep.check(f"{tag2} 回到 Prepare 页",
+                      c8f.prepare_tab(driver, win))
+            rep.check(f"{tag2} 切到 {second_flow} 流",
+                      c8f.set_flow(driver, win, rep, second_flow))
+            if not slice_and_export(
+                    driver, win, rep, second_gcode,
+                    [work, OUT, ARTIFACTS / "pilot", HERE / "fixtures"],
+                    on_poll=lambda: c8f.confirm_grouping(
+                        driver, app, win, rep)):
+                rep.check(f"{tag2} 切片并导出", False,
+                          "second slice/export failed")
+                return gcode
+            rep.check(f"{tag2} 切片并导出", True,
+                      f"size={second_gcode.stat().st_size}")
+            _check_export(rep, tag2, second_gcode, process_edit)
         return gcode
     finally:
         if app is not None:
@@ -145,16 +361,27 @@ def main() -> int:
     ap.add_argument("--exe", default=None)
     ap.add_argument("--timeout", default=150.0, type=float)
     ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--only", choices=("all", "filament", "process"),
+                    default="all",
+                    help="dev helper: run one #136 scenario")
     args = ap.parse_args()
 
     dir_a = OUT / "session_a"
     dir_b = OUT / "session_b"
-    for path in (dir_a, dir_b):
-        if path.exists():
-            shutil.rmtree(path, ignore_errors=True)
-        path.mkdir(parents=True)
+    dir_c = OUT / "session_c"
+    dir_d = OUT / "session_d"
+    run_fil = args.only in ("all", "filament")
+    run_proc = args.only in ("all", "process")
+    for path, active in ((dir_a, run_fil), (dir_b, run_fil),
+                         (dir_c, run_proc), (dir_d, run_proc)):
+        if active:
+            if path.exists():
+                shutil.rmtree(path, ignore_errors=True)
+            path.mkdir(parents=True)
     g_a = dir_a / "m8g_standard.gcode"
     g_b = dir_b / "m8g_highflow.gcode"
+    g_c = dir_c / "m8g_proc_standard.gcode"
+    g_d = dir_d / "m8g_proc_highflow.gcode"
 
     rep = Reporter(OUT)
     rep.log("=== m8g macOS single-variable flow check ===")
@@ -163,20 +390,55 @@ def main() -> int:
     try:
         driver = get_driver()
         rep.check("driver available", True, type(driver).__name__)
-        a = run_session(driver, dir_a / "profile", dir_a, "Standard", g_a,
-                        rep, "A/Standard")
-        b = run_session(driver, dir_b / "profile", dir_b, "High Flow", g_b,
-                        rep, "B/High Flow")
-        if a is None or b is None:
-            return rep.save({"stage": "sessions"})
-        rc, report = compare(g_a, g_b)
-        mode, numeric = report_counts(report)
-        rep.log(f"[INFO] compare rc={rc} mode={mode} numeric={numeric}")
-        for line in report.splitlines()[:12]:
-            rep.log(f"[INFO]   {line}")
-        rep.check("#136 高流量模式字段有变化（mode >= 1）", mode >= 1,
-                  f"mode={mode}")
-        rep.check("#136 数值配置差异为 0", numeric == 0, f"numeric={numeric}")
+        if run_fil:
+            a = run_session(driver, dir_a / "profile", dir_a, "Standard", g_a,
+                            rep, "A/Standard")
+            b = run_session(driver, dir_b / "profile", dir_b, "High Flow", g_b,
+                            rep, "B/High Flow")
+            if a is None or b is None:
+                return rep.save({"stage": "sessions"})
+            rc, report = compare(g_a, g_b)
+            mode, numeric = report_counts(report)
+            rep.log(f"[INFO] filament compare rc={rc} mode={mode} "
+                    f"numeric={numeric}")
+            for line in report.splitlines()[:12]:
+                rep.log(f"[INFO]   {line}")
+            rep.check("#136 耗材场景 高流量模式字段有变化（mode >= 1）",
+                      mode >= 1, f"mode={mode}")
+            rep.check("#136 耗材场景 数值配置差异为 0", numeric == 0,
+                      f"numeric={numeric}")
+        if run_proc:
+            c = run_session(driver, dir_c / "profile", dir_c, "Standard", g_c,
+                            rep, "C/Standard-Proc", process_edit=True,
+                            second_flow="High Flow", second_gcode=g_d)
+            d = g_d if g_d.exists() else None
+            if c is None or d is None:
+                return rep.save({"stage": "process-sessions"})
+            rc, report = compare(g_c, g_d)
+            mode, numeric = report_counts(report)
+            rep.log(f"[INFO] process compare rc={rc} mode={mode} "
+                    f"numeric={numeric}")
+            for line in report.splitlines()[:12]:
+                rep.log(f"[INFO]   {line}")
+            rep.check("#136 工艺场景 高流量模式字段有变化（mode >= 1）",
+                      mode >= 1, f"mode={mode}")
+            rep.check("#136 工艺场景 数值配置差异为 0", numeric == 0,
+                      f"numeric={numeric}")
+            if run_fil:
+                # Same filament/process/Standard flow; the only process edit
+                # is First layer speed 60,60 -> 61,61.  The comparator must
+                # report exactly that one numeric config change.
+                rc2, rep2 = compare(g_a, g_c)
+                mode2, numeric2 = report_counts(rep2)
+                rep.log(f"[INFO] std-vs-proc compare rc={rc2} mode={mode2} "
+                        f"numeric={numeric2}")
+                for line in rep2.splitlines()[:12]:
+                    rep.log(f"[INFO]   {line}")
+                rep.check("#136 工艺场景 仅 First layer speed 单变量变化"
+                          "（numeric == 1）", numeric2 == 1,
+                          f"numeric={numeric2}")
+                rep.check("#136 工艺场景 Standard 模式字段不变（mode == 0）",
+                          mode2 == 0, f"mode={mode2}")
     except Exception as exc:  # noqa: BLE001
         rep.check("unexpected", False, f"{type(exc).__name__}: {exc}")
         traceback.print_exc()
