@@ -16,8 +16,12 @@
 #   fixture   -> fixtures/mixed_filament_test.3mf (slot 1 PETG, slot 2 PLA Silk)
 #   scene     -> Delete All + two cubes; the second one is remapped to PLA Silk
 #                via the object context menu Change Filament (m8d helper)
-#   preset    -> sidebar combo: slot 2 -> Generic/ABS, restore via
-#                Snapmaker/PLA Silk (self-drawn two-level menu, OCR clicks)
+#   preset    -> slot-2 combo -> Add/Remove filament -> System Filaments:
+#                Clear all, tick Generic ABS + Generic PETG for the
+#                high+low gate (single-type clears map to every slot, so
+#                the mix needs two types); restore with Generic PLA via
+#                the same dialog.  The inline vendor submenu is not
+#                synthetic-clickable on this build.
 #   gate      -> the Slice plate button is teal when enabled and grey when the
 #                gate disables it; teal_fraction() over the button rect is the
 #                pixel oracle (same intent as the Windows template match).
@@ -97,44 +101,14 @@ def banner_text(driver, win) -> str:
 
 
 def restore_pla_silk(driver, win, rep) -> str:
-    """Slot-2 combo -> Snapmaker -> scroll the type submenu -> PLA Silk."""
-    words = c8d.ocr_window(driver, win)
-    combo = next((w for w in words
-                  if 200 < w.rect.x < 400 and 400 <= w.rect.y <= 435), None)
-    if combo is None:
-        return "slot-2 combo not found"
-    driver.click(win.rect.x + combo.rect.center[0],
-                 win.rect.y + combo.rect.center[1])
-    time.sleep(1.2)
-    words = c8d.ocr_window(driver, win)
-    vendor = next((w for w in words
-                   if w.text.strip().lower() == "snapmaker"
-                   and 200 < w.rect.x < 490 and w.rect.y > 440), None)
-    if vendor is None:
-        return "no Snapmaker vendor entry"
-    driver.click(win.rect.x + vendor.rect.center[0],
-                 win.rect.y + vendor.rect.center[1])
-    time.sleep(1.0)
-    pops = [w for w in driver.windows_for_pid(win.pid)
-            if w.id != win.id and w.on_screen and w.layer != 0
-            and w.rect.area > 3000]
-    if not pops:
-        return "no type submenu window"
-    sub = max(pops, key=lambda w: w.rect.x)
-    for step in range(15):
-        words = c8d.ocr_window(driver, win)
-        silk = next((w for w in words
-                     if "silk" in w.text.lower() and w.rect.x > 450), None)
-        if silk is not None:
-            rep.log(f"[INFO] PLA Silk found after {step} scrolls @ "
-                    f"{silk.rect.to_xywh()}")
-            driver.click(win.rect.x + silk.rect.center[0],
-                         win.rect.y + silk.rect.center[1])
-            time.sleep(2.0)
-            return c8d.read_slot2(driver, win)
-        driver.wheel(sub.rect.center[0], sub.rect.center[1], -3)
-        time.sleep(0.4)
-    return "PLA Silk not found after scrolling"
+    """Restore slot 2 to a low-temperature preset.
+
+    The original Snapmaker/PLA Silk submenu cannot be expanded by synthetic
+    hover/click on this build (the same limitation as m8d).  Use the System
+    Filaments dialog and select Generic PLA: it has the same low-temperature
+    class, so the high+low mixing gate criterion is unchanged.
+    """
+    return c8d.select_slot2_preset(driver, win, rep, "PLA")
 
 
 def main() -> int:
@@ -215,11 +189,19 @@ def main() -> int:
         rep.log(f"[INFO] Slice button pill teal after low+low slice={teal_ok:.3f} "
                 f"(done state)")
 
-        # --- #111: slot 2 -> ABS -> gate blocks --------------------------
-        row_abs = c8d.select_slot2_preset(driver, win, rep, "ABS")
-        rep.log(f"[INFO] slot-2 row after ABS={row_abs!r}")
-        rep.check("slot2 -> Generic ABS", "abs" in row_abs.lower(), row_abs)
-        if "abs" not in row_abs.lower():
+        # --- #111: introduce ABS next to the low-temp filament ------------
+        # The System Filaments dialog maps a one-type selection to every
+        # slot; ticking ABS + PETG gives the high+low mix the gate needs.
+        row_abs = c8d.select_slot2_preset(
+            driver, win, rep, "ABS", also=("PETG",))
+        words = c8d.ocr_window(driver, win)
+        side = " ".join(w.text for w in words
+                        if w.rect.x < 430 and 380 < w.rect.y < 660).lower()
+        rep.log(f"[INFO] filaments after mixed selection={side[-220:]!r} "
+                f"(dialog row={row_abs!r})")
+        rep.check("高低温柔性共存（ABS + PETG）",
+                  "abs" in side and "petg" in side, side[-220:])
+        if not ("abs" in side and "petg" in side):
             return rep.save({"stage": "select-abs"})
         time.sleep(1.0)
         teal_blocked = slice_button_teal(driver, win)
@@ -256,8 +238,9 @@ def main() -> int:
         # --- restore PLA Silk -> gate lifts -------------------------------
         row_silk = restore_pla_silk(driver, win, rep)
         rep.log(f"[INFO] slot-2 row after restore={row_silk!r}")
-        rep.check("slot2 恢复 PLA Silk", "silk" in row_silk.lower(), row_silk)
-        if "silk" not in row_silk.lower():
+        rep.check("slot2 恢复低温耗材（Generic PLA）",
+                  "pla" in row_silk.lower(), row_silk)
+        if "pla" not in row_silk.lower():
             return rep.save({"stage": "restore-silk"})
         time.sleep(1.0)
         teal_restored = slice_button_teal(driver, win)

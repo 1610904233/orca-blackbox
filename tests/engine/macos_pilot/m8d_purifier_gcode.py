@@ -197,14 +197,16 @@ def read_slot2(driver, win) -> str:
 
 def select_slot2_preset(driver, win, rep, type_name: str,
                         vendor_name: str = "Generic",
-                        contains: bool = False) -> str:
-    """Set slot 2 to Generic <type> via the System Filaments dialog.
+                        contains: bool = False,
+                        also: tuple[str, ...] = ()) -> str:
+    """Set the project's filament set via the System Filaments dialog.
 
     The inline vendor submenu is not expandable with synthetic hover/click
     on this build (the popup closes instead), so open the combo and press
     Right: that opens the "System Filaments" selector.  Clear all, tick the
-    requested Generic type, Confirm.  ``vendor_name``/``contains`` are kept
-    for call compatibility; the dialog always uses the Generic vendor.
+    requested Generic type(s), Confirm.  With a single type the dialog maps
+    it to every slot; two types give the high+low mix m8c needs.
+    ``vendor_name``/``contains`` are kept for call compatibility.
     """
     y2 = slot2_row_y(driver, win)
     words = ocr_window(driver, win)
@@ -251,21 +253,25 @@ def select_slot2_preset(driver, win, rep, type_name: str,
                      win.rect.y + clear.rect.center[1])
         time.sleep(1.0)
         words = ocr_window(driver, win)
-    needle = f"generic {type_name}".lower()
-    target = next((w for w in words
-                   if w.text.strip().lower() == needle), None)
-    if target is None:
+    for idx, extra in enumerate((type_name,) + tuple(also)):
+        needle = f"generic {extra}".lower()
         target = next((w for w in words
-                       if needle in w.text.lower()), None)
-    if target is None:
-        rep.log(f"[INFO] dialog preset words="
-                f"{[(w.text, w.rect.to_xywh()) for w in words if w.rect.x > 150 and w.rect.y < 700][:30]}")
-        return f"no {needle} entry"
-    rep.log(f"[INFO] tick {target.text!r} @ {target.rect.to_xywh()}")
-    driver.click(win.rect.x + target.rect.x - 12,
-                 win.rect.y + target.rect.center[1])
-    time.sleep(0.9)
-    words = ocr_window(driver, win)
+                       if w.text.strip().lower() == needle), None)
+        if target is None:
+            target = next((w for w in words
+                           if needle in w.text.lower()), None)
+        if target is None:
+            rep.log(f"[INFO] dialog preset words="
+                    f"{[(w.text, w.rect.to_xywh()) for w in words if w.rect.x > 150 and w.rect.y < 700][:30]}")
+            return f"no {needle} entry"
+        rep.log(f"[INFO] tick {target.text!r} @ {target.rect.to_xywh()}")
+        # First type: the checkbox sits just left of the OCR box (m8d-proven).
+        # Extra types: click the label centre — the glyph offset differs
+        # between grid columns (m8c's second tick missed it at x-12).
+        cx = target.rect.x - 12 if idx == 0 else target.rect.center[0]
+        driver.click(win.rect.x + cx, win.rect.y + target.rect.center[1])
+        time.sleep(0.9)
+        words = ocr_window(driver, win)
     confirm = next((w for w in words if w.text.strip().lower() == "confirm"),
                    None)
     if confirm is None:
