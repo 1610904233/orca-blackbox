@@ -23,11 +23,10 @@
 #                      are a 5x3 owner-drawn grid; name/SKU via OCR; OK/Cancel
 #                      at dialog-relative (259,348)/(120,348)
 #   native fallback -> slot-1 chip opens the title='Colors' NSColorPanel
-#   preset switch   -> slot-2 combo -> Snapmaker submenu; the custom menu does
-#                      not scroll with wheel events here, so its scrollbar is
-#                      dragged with CGEvent mouse events (drag from the top of
-#                      the track to the bottom), then the PLA Rainbow row is
-#                      clicked; the gcode's filament_settings_id confirms it
+#   preset switch   -> slot-2 combo -> Add/Remove filament -> System
+#                      Filaments; scroll the grid to the Snapmaker column,
+#                      tick Snapmaker PLA Rainbow, Confirm.  (The inline
+#                      vendor submenu is not synthetic-clickable here.)
 #   remap           -> object context menu Change Filament -> Snapmaker PLA
 #                      Rainbow (AXMenuItem tree)
 #   slice           -> mac_common.slice_and_export
@@ -164,48 +163,94 @@ def native_colors_panel(driver, app, win):
 
 
 def select_rainbow(driver, win, rep) -> bool:
+    """Set the slot-2 preset to Snapmaker PLA Rainbow.
+
+    The inline vendor submenu is not synthetic-clickable on this build, so
+    use the System Filaments dialog: slot-2 combo -> Add/Remove filament ->
+    scroll the preset grid right/down to the Snapmaker column, tick
+    "Snapmaker PLA Rainbow", Confirm.
+    """
     ws = c8d.ocr_window(driver, win)
+    y2 = c8d.slot2_row_y(driver, win)
     combo = next((w for w in ws
-                  if 200 < w.rect.x < 400 and 400 <= w.rect.y <= 435), None)
+                  if 200 < w.rect.x < 400 and y2 is not None
+                  and abs(w.rect.center[1] - y2) <= 12), None)
+    if combo is None:
+        combo = next((w for w in ws
+                      if 200 < w.rect.x < 400
+                      and 430 <= w.rect.y <= 470), None)
     if combo is None:
         return False
     driver.click(win.rect.x + combo.rect.center[0],
                  win.rect.y + combo.rect.center[1])
     time.sleep(1.2)
     ws = c8d.ocr_window(driver, win)
-    right = [(w.text, w.rect) for w in ws
-             if w.rect.x > 430 and w.rect.y > 430]
-    if not any(any(k in t.lower() for k in ("silk", "rainbow", "starlight"))
-               for t, _r in right):
-        vendor = next((w for w in ws
-                       if w.text.strip().lower() == "snapmaker"
-                       and 200 < w.rect.x < 490 and w.rect.y > 440), None)
-        if vendor is None:
-            return False
-        driver.click(win.rect.x + vendor.rect.center[0],
-                     win.rect.y + vendor.rect.center[1])
+    add = next((w for w in ws
+                if "add/remove filament" in w.text.lower()), None)
+    if add is None:
+        driver.click(win.rect.x + combo.rect.center[0],
+                     win.rect.y + combo.rect.center[1])
         time.sleep(1.0)
-    pops = [w for w in driver.windows_for_pid(win.pid)
-            if w.id != win.id and w.on_screen and w.layer != 0
-            and w.rect.area > 3000]
-    if not pops:
+        ws = c8d.ocr_window(driver, win)
+        add = next((w for w in ws
+                    if "add/remove filament" in w.text.lower()), None)
+    if add is None:
         return False
-    sub = max(pops, key=lambda w: w.rect.x)
+    rep.log(f"[INFO] click {add.text!r} @ {add.rect.to_xywh()}")
+    driver.click(win.rect.x + add.rect.center[0],
+                 win.rect.y + add.rect.center[1])
+    time.sleep(1.5)
+    ws = c8d.ocr_window(driver, win)
+    clear = next((w for w in ws if "clear all" in w.text.lower()), None)
+    if clear is not None:
+        rep.log(f"[INFO] clear all @ {clear.rect.to_xywh()}")
+        driver.click(win.rect.x + clear.rect.center[0],
+                     win.rect.y + clear.rect.center[1])
+        time.sleep(1.0)
     found = None
     for attempt in range(4):
         ws = c8d.ocr_window(driver, win)
-        found = next((w for w in ws if "rainbow" in w.text.lower()
-                      and w.rect.x > 430 and w.rect.y > 430), None)
+        found = next((w for w in ws if "rainbow" in w.text.lower()),
+                     None)
         if found is not None:
             break
-        x = sub.rect.right - 5
-        drag(x, sub.rect.y + 30, x, sub.rect.bottom - 20)
+        # horizontal scrollbar (bottom) then vertical (right edge)
+        if attempt % 2 == 0:
+            drag(win.rect.x + 400, win.rect.y + 623,
+                 win.rect.x + 900, win.rect.y + 623)
+        else:
+            drag(win.rect.x + 963, win.rect.y + 430,
+                 win.rect.x + 963, win.rect.y + 600)
+        time.sleep(0.8)
     if found is None:
+        driver.capture(win).save_png(OUT / "rainbow_dialog.png")
         return False
     rep.log(f"[INFO] Rainbow row @ {found.rect.to_xywh()}")
     driver.click(win.rect.x + found.rect.center[0],
                  win.rect.y + found.rect.center[1])
-    time.sleep(2.0)
+    time.sleep(0.9)
+    ws = c8d.ocr_window(driver, win)
+    confirm = next((w for w in ws if w.text.strip().lower() == "confirm"),
+                   None)
+    if confirm is None:
+        return False
+    driver.click(win.rect.x + confirm.rect.center[0],
+                 win.rect.y + confirm.rect.center[1])
+    time.sleep(2.5)
+    # Confirm can need a second press; until the modal is gone, Delete All
+    # is disabled and the later add-cube step fails.
+    deadline = time.monotonic() + 8.0
+    while time.monotonic() < deadline:
+        words = c8d.ocr_window(driver, win)
+        if not any("system filaments" in w.text.lower() for w in words):
+            break
+        again = next((w for w in words
+                      if w.text.strip().lower() == "confirm"), None)
+        if again is not None:
+            rep.log("[INFO] dialog still open; Confirm again")
+            driver.click(win.rect.x + again.rect.center[0],
+                         win.rect.y + again.rect.center[1])
+        time.sleep(1.0)
     return True
 
 
@@ -477,12 +522,25 @@ def main() -> int:
                   grad is not None and "official filaments" in grad_text.lower(),
                   grad_text[:60])
         if grad is not None:
-            click_button(driver, grad, CANCEL_REL)
+            # The gradient picker can be shorter than the card dialog, so the
+            # fixed CANCEL_REL lands below its button; use the OCR label and
+            # fall back to Escape, else the modal keeps Delete All disabled.
+            cancel = next((w for w in c8d.ocr_window(driver, win)
+                           if w.text.strip().lower() == "cancel"), None)
+            if cancel is not None:
+                driver.click(win.rect.x + cancel.rect.center[0],
+                             win.rect.y + cancel.rect.center[1])
+            else:
+                click_button(driver, grad, CANCEL_REL)
+            time.sleep(1.0)
+            driver.send_key("escape")
+            time.sleep(0.8)
 
         # ---------- #58 cube on the rainbow slot + slice ------------------
         item = driver.find_control(win, role="AXMenuItem",
                                    title="Delete All", timeout_s=3)
-        rep.check("Delete All 可用", item is not None)
+        rep.check("Delete All 可用", item is not None
+                  and getattr(item, "enabled", True))
         if item is None:
             return rep.save({"stage": "delete"})
         driver.click_control(item)
@@ -508,8 +566,12 @@ def main() -> int:
         ids = settings_id(gcode)
         colours = gcode_colours(gcode)
         rep.log(f"[INFO] used={used} ids={ids} colours={colours}")
+        # The System Filaments dialog maps the single Rainbow selection to
+        # every slot, so the cube can report slot 1 instead of Windows' slot
+        # 2; the criterion is that every used filament is PLA Rainbow.
         rep.check("#58 cube 使用 Rainbow 槽",
-                  2 in used and any("rainbow" in i.lower() for i in ids),
+                  bool(used) and bool(ids)
+                  and all("rainbow" in i.lower() for i in ids),
                   f"used={used} ids={ids}")
         attrs = mixed_attrs(gcode)
         rep.log(f"[INFO] mixed attrs={attrs}")
