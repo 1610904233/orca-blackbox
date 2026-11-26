@@ -84,6 +84,16 @@ def confirm_grouping(driver, app, win, rep) -> bool:
             driver.capture_screen().crop(win.rect),
             Rect(w.rect.x - win.rect.x, w.rect.y - win.rect.y,
                  w.rect.w, w.rect.h))
+        rep.log(f"[INFO] grouping window={w.rect.to_xywh()} "
+                f"main={win.rect.to_xywh()}")
+        rep.log(f"[INFO] grouping words="
+                f"{[(x.text, x.rect.to_xywh()) for x in words][:24]}")
+        try:
+            ax = [(c.role, c.title, c.value, c.rect.to_xywh())
+                  for c in driver.controls(w)]
+            rep.log(f"[INFO] grouping AX={ax[:30]}")
+        except Exception as exc:  # noqa: BLE001
+            rep.log(f"[INFO] grouping AX error: {exc}")
         confirm = next((x for x in words
                         if x.text.strip().lower() == "confirm"), None)
         pla = next((x for x in words if x.text.strip().upper() == "PLA"), None)
@@ -93,19 +103,39 @@ def confirm_grouping(driver, app, win, rep) -> bool:
                 f"pla={pla.rect.to_xywh() if pla else None} "
                 f"hf={hf.rect.to_xywh() if hf else None}")
         if pla is not None and hf is not None:
-            drag(win.rect.x + pla.rect.center[0],
-                 win.rect.y + pla.rect.center[1],
-                 win.rect.x + hf.rect.center[0],
-                 win.rect.y + pla.rect.center[1])
-            time.sleep(1.0)
-            words = recognize_text(
-                driver.capture_screen().crop(win.rect),
-                Rect(w.rect.x - win.rect.x, w.rect.y - win.rect.y,
-                     w.rect.w, w.rect.h))
-            pla2 = next((x for x in words
-                         if x.text.strip().upper() == "PLA"), None)
-            rep.log(f"[INFO] PLA chip after drag="
-                    f"{pla2.rect.to_xywh() if pla2 else None}")
+            def chip():
+                ws2 = recognize_text(
+                    driver.capture_screen().crop(win.rect),
+                    Rect(w.rect.x - win.rect.x, w.rect.y - win.rect.y,
+                         w.rect.w, w.rect.h))
+                return next((x for x in ws2
+                             if x.text.strip().upper() == "PLA"), None)
+
+            # The header text is not a drop target; the column body starts
+            # below it.  The old drop at the header y left the chip in the
+            # Standard column (measured 2026-11-26).
+            # The custom dialog does not accept synthetic drag-and-drop.
+            # It has a transfer arrow between the two columns; select the
+            # chip, click that button, then verify the chip moved right.
+            driver.click(win.rect.x + pla.rect.center[0],
+                         win.rect.y + pla.rect.y - 15)
+            time.sleep(0.5)
+            moved = False
+            pla2 = None
+            for ax, ay in ((hf.rect.x - 50, hf.rect.y + 90),
+                           (hf.rect.x - 30, hf.rect.bottom + 70),
+                           (hf.rect.x - 60, hf.rect.bottom + 80)):
+                rep.log(f"[INFO] click transfer button @({ax},{ay})")
+                driver.click(win.rect.x + ax, win.rect.y + ay)
+                time.sleep(0.9)
+                pla2 = chip()
+                moved = pla2 is not None and pla2.rect.x > hf.rect.x
+                rep.log(f"[INFO] PLA chip after transfer="
+                        f"{pla2.rect.to_xywh() if pla2 else None} moved={moved}")
+                if moved:
+                    break
+            rep.check("High Flow 分组（PLA -> High Flow Nozzle）", moved,
+                      f"chip={pla2.rect.to_xywh() if pla2 else None}")
         if confirm is not None:
             driver.click(win.rect.x + confirm.rect.center[0],
                          win.rect.y + confirm.rect.center[1])
