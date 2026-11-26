@@ -226,9 +226,14 @@ def select_rainbow(driver, win, rep) -> bool:
         driver.capture(win).save_png(OUT / "rainbow_dialog.png")
         return False
     rep.log(f"[INFO] Rainbow row @ {found.rect.to_xywh()}")
+    # Hold the cursor on the row so the recording clearly shows which
+    # dual-colour/gradient preset is being selected.
+    driver.move(win.rect.x + found.rect.center[0],
+                win.rect.y + found.rect.center[1])
+    time.sleep(1.8)
     driver.click(win.rect.x + found.rect.center[0],
                  win.rect.y + found.rect.center[1])
-    time.sleep(0.9)
+    time.sleep(1.2)
     ws = c8d.ocr_window(driver, win)
     confirm = next((w for w in ws if w.text.strip().lower() == "confirm"),
                    None)
@@ -310,7 +315,7 @@ def remap_to_rainbow(driver, app, win, rep) -> str:
         return "no Change Filament"
     driver.click_control(item)
     time.sleep(1.2)
-    rainbow = None
+    rainbows = []
     for w in driver.windows_for_pid(app.pid):
         if not w.on_screen or w.id == win.id:
             continue
@@ -320,15 +325,33 @@ def remap_to_rainbow(driver, app, win, rep) -> str:
             for c in driver.controls(w):
                 if (c.role == "AXMenuItem"
                         and "rainbow" in (c.title or "").lower()):
-                    rainbow = c
-                    break
+                    rainbows.append(c)
         except Exception:
             pass
-        if rainbow is not None:
-            break
-    if rainbow is None:
+    if not rainbows:
         return "no Rainbow submenu row"
-    rep.log(f"[INFO] Change Filament -> {rainbow.title!r}")
+    rainbows.sort(key=lambda c: c.rect.y if c.rect else 0)
+    # Each menu row appears twice (two AX views of the same popup); keep one
+    # per rect before choosing slot 2's row.
+    uniq = []
+    seen = set()
+    for c in rainbows:
+        if c.rect is None:
+            continue
+        key = (c.rect.x, c.rect.y, c.rect.w, c.rect.h)
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(c)
+    rep.log(f"[INFO] rainbow rows="
+            f"{[(c.title, c.rect.to_xywh()) for c in uniq]}")
+    # The dialog mapped Rainbow to every slot, so the Change Filament menu
+    # has one row per slot.  The baseline and the expected UI state use
+    # slot 2 (the second unique row), not the first.
+    idx = 1 if len(uniq) >= 2 else 0
+    rainbow = uniq[idx]
+    rep.log(f"[INFO] Change Filament -> row {idx + 1}/{len(uniq)} "
+            f"{rainbow.title!r}")
     driver.click_control(rainbow)
     time.sleep(1.5)
     return "ok"
@@ -566,11 +589,11 @@ def main() -> int:
         ids = settings_id(gcode)
         colours = gcode_colours(gcode)
         rep.log(f"[INFO] used={used} ids={ids} colours={colours}")
-        # The System Filaments dialog maps the single Rainbow selection to
-        # every slot, so the cube can report slot 1 instead of Windows' slot
-        # 2; the criterion is that every used filament is PLA Rainbow.
-        rep.check("#58 cube 使用 Rainbow 槽",
-                  bool(used) and bool(ids)
+        # The dialog maps Rainbow to every slot, but the object must be
+        # assigned to slot 2 (the second Change Filament row), matching the
+        # baseline and the expected sidebar state.
+        rep.check("#58 cube 使用 2 号 Rainbow 槽",
+                  2 in used and bool(ids)
                   and all("rainbow" in i.lower() for i in ids),
                   f"used={used} ids={ids}")
         attrs = mixed_attrs(gcode)
