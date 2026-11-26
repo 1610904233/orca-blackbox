@@ -124,8 +124,10 @@ def classify(path: str) -> str:
 # --- git helpers ------------------------------------------------------------
 
 def _git(args: list[str], *, check: bool = False) -> list[str]:
-    proc = subprocess.run(["git", *args], cwd=str(ROOT),
-                          capture_output=True, text=True)
+    # core.quotePath=false keeps non-ASCII fixture names raw; otherwise git
+    # returns "\346..." quoted paths and the macOS-only prefix match fails.
+    proc = subprocess.run(["git", "-c", "core.quotePath=false", *args],
+                          cwd=str(ROOT), capture_output=True, text=True)
     if check and proc.returncode != 0:
         raise RuntimeError(
             f"git {' '.join(args)} failed ({proc.returncode}): "

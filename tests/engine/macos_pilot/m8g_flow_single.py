@@ -4,16 +4,17 @@
 #         m8g_flow_single, registered in cases.MACOS_BASELINE)
 #
 # Windows assertions:
-#   with the stock process and a stock-derived filament preset whose max
-#   volumetric speed is 21 in BOTH flow tabs, the Standard and High Flow
-#   slices must differ ONLY in the high-flow mode fields: numeric config
-#   differences = 0 and mode changes >= 1, using tools/compare_gcode.py.
+#   with the doc's default 流量测试 user presets (max volumetric speed 40 in
+#   BOTH flow tabs, pressure advance 1) and its gcode参数测试.3mf cube, the
+#   Standard and High Flow slices must differ ONLY in the high-flow mode
+#   fields: numeric config differences = 0 and mode changes >= 1, using
+#   tools/compare_gcode.py.
 #
 # macOS mapping:
-#   two separate app sessions: each launches a 0.4 U1 project with the stock
-#   0.24mm Standard process and a user preset derived from stock SnapSpeed
-#   (filament_max_volumetric_speed = [21, 21]), deletes the fixture object,
-#   adds a cube, sets the Nozzle Flow combo and exports a gcode.
+#   two separate app sessions: each copies default.zip's user presets
+#   BYTE-FOR-BYTE (no preset JSON is edited), starts an EMPTY project, adds
+#   the built-in Cube, selects the 流量测试 process/filament through the UI,
+#   sets the Nozzle Flow combo and exports a gcode.
 #   High Flow raises 'Custom Filament Grouping'; the PLA chip is moved with
 #   the middle transfer button (synthetic drag does not fire), then Confirm.
 #   compare -> tools/compare_gcode.py; parse the Chinese report counts.
@@ -52,79 +53,47 @@ OUT = ARTIFACTS / "pilot" / "m8g"
 COMPARE = HERE / "tools" / "compare_gcode.py"
 
 
-STOCK21 = "Snapmaker PLA SnapSpeed @U1 0.4 nozzle - FLOW-21"
+FLOW_CN = "Snapmaker PLA SnapSpeed @U1 - 流量测试"
+PROC_CN = "0.24mm Standard @Snapmaker U1 (0.4 nozzle) - 流量测试"
 
 
-def prepare_stock21(profile: Path, work: Path) -> Path:
-    """Seed the profile with a stock-derived SnapSpeed preset whose max
-    volumetric speed is 21 in BOTH flow tabs, and build the 0.4 project:
-    stock 0.24mm Standard process + stock SnapSpeed-derived filament.
-    """
-    stock_path = HERE / "resources" / "Snapmaker" / "filament" / \
-        "Snapmaker PLA SnapSpeed @U1 0.4 nozzle.json"
-    if not stock_path.exists():
-        stock_path = Path(
-            "/Applications/Snapmaker Orca.app/Contents/Resources/profiles/"
-            "Snapmaker/filament/Snapmaker PLA SnapSpeed @U1 0.4 nozzle.json")
-    stock = json.loads(stock_path.read_text())
-    stock["name"] = STOCK21
-    stock["from"] = "User"
-    stock["instantiation"] = "true"
-    stock["filament_max_volumetric_speed"] = ["21", "21"]
-    preset_dir = profile / "user" / "default" / "filament"
-    preset_dir.mkdir(parents=True, exist_ok=True)
-    (preset_dir / f"{STOCK21}.json").write_text(
-        json.dumps(stock, indent=4))
+def _profile_src(kind: str, name: str) -> Path:
+    path = HERE / "resources" / "Snapmaker" / kind / f"{name}.json"
+    if path.exists():
+        return path
+    return Path("/Applications/Snapmaker Orca.app/Contents/Resources/"
+                f"profiles/Snapmaker/{kind}/{name}.json")
 
-    project = work / "stock21.3mf"
-    fixture = HERE / "fixtures" / "mixed_filament_test.3mf"
-    with zipfile.ZipFile(fixture) as zin, \
-            zipfile.ZipFile(project, "w", zipfile.ZIP_DEFLATED) as zout:
-        for entry in zin.infolist():
-            data = zin.read(entry.filename)
-            if entry.filename == "Metadata/project_settings.config":
-                cfg = json.loads(data.decode())
-                n = len(cfg["filament_settings_id"])
-                cfg["printer_settings_id"] = "Snapmaker U1 (0.4 nozzle)"
-                cfg["printer_variant"] = "0.4"
-                cfg["nozzle_diameter"] = ["0.4"] * 4
-                cfg["print_compatible_printers"] = [
-                    "Snapmaker U1 (0.4 nozzle)"]
-                cfg["print_settings_id"] = (
-                    "0.24mm Standard @Snapmaker U1 (0.4 nozzle)")
-                cfg["filament_settings_id"] = [STOCK21] * n
-                cfg["filament_max_volumetric_speed"] = ["21"] * n
-                cfg["enable_pressure_advance"] = ["0"] * n
-                cfg["filament_ids"] = ["119531393501"] * n
-                cfg["filament_type"] = ["PLA"] * n
-                cfg["filament_vendor"] = ["Snapmaker"] * n
-                data = json.dumps(cfg, indent=4).encode()
-            zout.writestr(entry, data)
-    return project
+
+def prepare_flow_cn(profile: Path) -> None:
+    """Copy default.zip's user presets unchanged; no project/model is
+    loaded.  The test starts from an empty project + the built-in Cube and
+    selects the 流量测试 process/filament through the UI."""
+    src = HERE / "tests/engine/macos_pilot/fixtures/gcode_plan/default"
+    dst = profile / "user" / "default"
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(src, dst)
 
 
 def run_session(driver, datadir: Path, work: Path, flow: str, gcode: Path,
                 rep, tag: str):
-    """One app session: stock 0.24mm + FLOW-21 preset -> flow -> export."""
+    """One app session: empty -> Cube -> 流量测试 presets -> flow -> export."""
     app = None
     win = None
     try:
-        project = prepare_stock21(datadir, work)
+        prepare_flow_cn(datadir)
         app, win = launch_and_focus(
-            driver, datadir, model=project, timeout_s=150.0,
+            driver, datadir, model=None, timeout_s=150.0,
             log_path=work / f"app_launch_{tag}.log")
         rep.check(f"{tag} launch", True,
                   f"pid={app.pid} title={win.title!r}")
         time.sleep(4.0)
-        item = driver.find_control(win, role="AXMenuItem",
-                                   title="Delete All", timeout_s=3)
-        if item is not None:
-            driver.click_control(item)
-            time.sleep(2.5)
         rep.check(f"{tag} add cube", m7b._add_cube(driver, app, win))
         time.sleep(2.0)
-        rep.check(f"{tag} stock 0.24mm + FLOW-21 + {flow}",
-                  c8f.set_flow(driver, win, rep, flow))
+        rep.check(f"{tag} 流量测试预设 + {flow}",
+                  c8f.select_state(driver, win, rep, "FLOW", "FLOW",
+                                   flow, tag))
         if not slice_and_export(
                 driver, win, rep, gcode,
                 [work, OUT, ARTIFACTS / "pilot", HERE / "fixtures"],
@@ -139,12 +108,12 @@ def run_session(driver, datadir: Path, work: Path, flow: str, gcode: Path,
         match = re.search(r"^; filament_max_volumetric_speed = (.*)$",
                           text, re.M)
         maxv = match.group(1).strip() if match else ""
-        rep.check(f"{tag} stock 预设生效",
-                  pid == "0.24mm Standard @Snapmaker U1 (0.4 nozzle)"
-                  and any("flow-21" in f.lower() for f in fids),
+        rep.check(f"{tag} 流量测试预设生效",
+                  pid == PROC_CN
+                  and any("流量测试" in f for f in fids),
                   f"print={pid} filament={fids}")
-        rep.check(f"{tag} max volumetric speed = 21",
-                  bool(maxv) and all(v.strip() == "21"
+        rep.check(f"{tag} max volumetric speed = 40（通用两页签）",
+                  bool(maxv) and all(v.strip() == "40"
                                      for v in maxv.split(",")),
                   f"max_vol={maxv}")
         return gcode

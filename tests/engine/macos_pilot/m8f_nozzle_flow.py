@@ -61,7 +61,8 @@ import m8d_purifier_gcode as c8d  # noqa: E402
 OUT = ARTIFACTS / "pilot" / "m8f"
 COMPARE = HERE / "tools" / "compare_gcode.py"
 PROC_ROW = {"HF": 0, "STD": 1, "FLOW": 2}      # menu order at y=616/640/668
-FIL_ROW = {"FLOW": 0, "HF": 1, "STD": 2}       # variant order at y=474/500/526
+FIL_ROW = {"FLOW": 1, "HF": 1, "STD": 2}       # doc list: 标准=0, 流量=1,
+#                                                 高流量=2
 
 
 def ocr(driver, win):
