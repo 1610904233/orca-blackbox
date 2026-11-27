@@ -18,9 +18,10 @@
 # macOS mapping:
 #   fixture -> Delete All + built-in Cube; object context menu Change
 #              Filament -> Snapmaker PLA Silk.
-#   slot 1  -> sidebar preset combo (left column); vendor Snapmaker then
-#              Generic resets the type submenu to the top, where ABS is
-#              visible at (320,500).
+#   filaments -> System Filaments dialog (slot-2 combo -> Add/Remove
+#              filament): Clear all, tick Generic ABS + Generic PLA.  The
+#              library order maps slot 1=PLA (low) and slot 2=ABS (high); the
+#              cube's own main stays PLA Silk.
 #   paint   -> Color Painting toolbar (996,90); palette tile 1; dabs around
 #              the cube centre (814,396).
 #   gate    -> Slice pill teal fraction (m8c) + OCR banner.
@@ -78,41 +79,20 @@ def slot1_row(driver, win) -> str:
                     if 20 < w.rect.x < 230 and 395 <= w.rect.y <= 435).strip()
 
 
-def select_slot1_abs(driver, win, rep) -> str:
-    words = c8d.ocr_window(driver, win)
-    combo = next((w for w in words
-                  if 20 < w.rect.x < 230 and 395 <= w.rect.y <= 435), None)
-    if combo is None:
-        return "slot-1 combo not found"
-    driver.click(win.rect.x + combo.rect.center[0],
-                 win.rect.y + combo.rect.center[1])
-    time.sleep(1.2)
-    words = c8d.ocr_window(driver, win)
-    snap = next((w for w in words if w.text.strip().lower() == "snapmaker"
-                 and w.rect.y > 430), None)
-    if snap is None:
-        return "no Snapmaker vendor"
-    driver.click(win.rect.x + snap.rect.center[0],
-                 win.rect.y + snap.rect.center[1])
-    time.sleep(1.0)
-    words = c8d.ocr_window(driver, win)
-    gen = next((w for w in words if w.text.strip().lower() == "generic"
-                and w.rect.y > 430), None)
-    if gen is None:
-        return "no Generic vendor"
-    driver.click(win.rect.x + gen.rect.center[0],
-                 win.rect.y + gen.rect.center[1])
-    time.sleep(1.2)
-    words = c8d.ocr_window(driver, win)
-    abs_row = next((w for w in words if w.text.strip().upper() == "ABS"
-                    and w.rect.x > 250 and w.rect.y > 430), None)
-    rep.log(f"[INFO] ABS row={abs_row.rect.to_xywh() if abs_row else None}")
-    if abs_row is None:
-        return "ABS row not visible after vendor reset"
-    driver.click(win.rect.x + abs_row.rect.center[0],
-                 win.rect.y + abs_row.rect.center[1])
-    time.sleep(2.0)
-    return slot1_row(driver, win)
+def select_filament_set(driver, win, rep):
+    """Set the project filament set to Generic ABS via System Filaments.
+
+    The inline sidebar vendor/type submenu is not expandable with synthetic
+    hover/click on this build.  m8d's proven path is: slot-2 combo ->
+    Add/Remove filament -> System Filaments -> Clear all -> tick Generic ABS
+    + Generic PLA -> Confirm.  Two types give slot 1 PLA (low) and slot 2
+    ABS (high); the cube's own main stays PLA Silk.
+    """
+    result = c8d.select_slot2_preset(driver, win, rep, "ABS",
+                                     also=("PLA",))
+    row1 = slot1_row(driver, win)
+    rep.log(f"[INFO] System Filaments slot1={row1!r} slot2={result!r}")
+    return row1, result
 
 
 def selected_filament(driver, win) -> int | None:
@@ -139,9 +119,9 @@ def paint_auxiliary(driver, win, rep) -> tuple[bool, tuple, tuple]:
     time.sleep(2.0)
     frame = driver.capture(win)
     frame.save_png(OUT / "palette.png")
-    # The palette opens with the first filament selected; clicking the
-    # custom-drawn chips here is unreliable (the hit boxes are offset), so
-    # paint with the default selection and assert the gate + gcode instead.
+    # The palette opens with the active slot (5, Generic ABS) selected;
+    # clicking the custom-drawn chips is unreliable (hit boxes are offset),
+    # so paint with that ABS selection and assert the gate + gcode instead.
     rep.log(f"[INFO] selected on open={selected_filament(driver, win)}")
     before = driver.capture(win).pixel(MODEL_POINT[0], MODEL_POINT[1])
     for dx, dy in ((0, 0), (-6, 0), (6, 0), (0, -6), (0, 6)):
@@ -275,9 +255,13 @@ def main() -> int:
         time.sleep(2.0)
         rep.check("主材 = PLA Silk",
                   c8d.change_filament_to_silk(driver, app, win, rep) == "ok")
-        row1 = select_slot1_abs(driver, win, rep)
-        rep.check("slot1 = Generic ABS", "abs" in row1.lower(), row1)
-        if "abs" not in row1.lower():
+        row1, slot2 = select_filament_set(driver, win, rep)
+        rep.log(f"[INFO] slot1 row={row1!r} slot2 row={slot2!r}")
+        abs_ok = ("pla" in row1.lower() and "abs" in slot2.lower()
+                  and "not visible" not in (row1 + slot2).lower())
+        rep.check("#125 耗材槽 = Generic PLA + Generic ABS（高/低温）",
+                  abs_ok, f"slot1={row1} slot2={slot2}")
+        if not abs_ok:
             return rep.save({"stage": "abs"})
         driver.capture(win).save_png(OUT / "abs.png")
 
