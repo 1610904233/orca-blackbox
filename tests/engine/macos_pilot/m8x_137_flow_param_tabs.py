@@ -17,7 +17,8 @@
 #   empty boot -> right-click cube.  Adding the cube auto-slices and a
 #   'Warning' sheet asks to close the generated gcode; Yes returns to an
 #   unsliced Untitled project, then the Prepare tab is clicked.
-#   presets -> m8g/m8f's proven menu walk (STD-TEST process/filament).
+#   presets -> doc default.zip's prepared 标准测试 process/filament (the
+#              same flow-marked values the Windows STD-TEST package carries).
 #   editor  -> slot-2 row menu (196,418) -> Edit (198,446); its color panel
 #              ('Colors') is closed first.  Tab text OCRs as
 #              '[Standard flow] [High flow]'; left/right thirds are the tabs.
@@ -61,7 +62,7 @@ PREP = Rect(55, 31, 115, 29)
 EDITOR_FIRST_TEMP = (972, 667)     # screen coords (AX field centres)
 EDITOR_OTHER_TEMP = (1216, 667)
 EDITOR_IDLE = (872, 403)
-SPEED_FILTER = (180, 690, 330, 950)  # window-relative AX field area on Speed
+SPEED_FILTER = (180, 600, 330, 950)  # window-relative AX field area on Speed
 
 
 def ocr_window(driver, win):
@@ -121,9 +122,18 @@ def ensure_prepare(driver, app, win, rep) -> bool:
 
 
 def open_editor(driver, app, win):
-    driver.click(win.rect.x + 196, win.rect.y + 418)
+    # The filament row's right-side round button opens Edit/Delete/Merge;
+    # clicking the name itself only focuses the preset combo in this build.
+    driver.click(win.rect.x + 399, win.rect.y + 418)
     time.sleep(1.0)
-    driver.click(win.rect.x + 198, win.rect.y + 446)
+    words = recognize_text(driver.capture_screen().crop(win.rect))
+    edit_word = next((w for w in words if w.text.strip().lower() == "edit"
+                      and w.rect.y > 420 and w.rect.x > 350), None)
+    if edit_word is not None:
+        driver.click(win.rect.x + edit_word.rect.center[0],
+                     win.rect.y + edit_word.rect.center[1])
+    else:
+        driver.click(win.rect.x + 198, win.rect.y + 446)
     time.sleep(2.5)
     return next((w for w in driver.windows_for_pid(app.pid)
                  if w.on_screen
@@ -187,6 +197,7 @@ def main() -> int:
 
     if args.datadir.exists():
         shutil.rmtree(args.datadir, ignore_errors=True)
+    c8f.prepare_doc_presets(args.datadir)
 
     rep = Reporter(OUT)
     rep.log("=== m8x_137 macOS Standard/High Flow parameter tabs ===")
@@ -210,9 +221,9 @@ def main() -> int:
         rep.check("Prepare ready", ensure_prepare(driver, app, win, rep))
         driver.capture(win).save_png(OUT / "prepare.png")
 
-        # --- A: STD-TEST flow packs ---------------------------------------
+        # --- A: doc 标准测试 flow pack -------------------------------------
         ok = c8f.select_state(driver, win, rep, "STD", "STD", "Standard", "137")
-        rep.check("#137 工艺/耗材预设 = STD-TEST 流量包", ok)
+        rep.check("#137 工艺/耗材预设 = 标准测试包（doc default.zip）", ok)
         if not ok:
             # a late Warning can appear right after the menus; clear + retry
             ensure_prepare(driver, app, win, rep)
@@ -299,16 +310,36 @@ def main() -> int:
         # --- E: process sidebar Advanced -> Speed -------------------------
         words = ocr_window(driver, win)
         adv = next((w for w in words if w.text.strip().lower() == "advanced"
-                    and w.rect.y > 500), None)
+                    and w.rect.y > 400), None)
         rep.check("#137 找到 Advanced 开关", adv is not None)
         if adv is None:
             return rep.save({"stage": "advanced"})
-        driver.click(win.rect.x + adv.rect.right + 10,
-                     win.rect.y + adv.rect.center[1])
+        # The simple sidebar puts the switch inside the OCR word's right
+        # edge; the wide layout puts it just outside.  Try both and look for
+        # the Speed tab that Advanced reveals.
+        speed_word = None
+        for dx in (-12, 10, -24):
+            driver.click(win.rect.x + adv.rect.right + dx,
+                         win.rect.y + adv.rect.center[1])
+            time.sleep(1.2)
+            words = ocr_window(driver, win)
+            # At 420px the tab bar OCR merges the middle labels, e.g.
+            # 'Strength Speed Support Multimaterial'; accept any word
+            # containing Speed and click the fixed Speed tab x.
+            speed_word = next((w for w in words
+                               if "speed" in w.text.lower()
+                               and 500 < w.rect.y < 580), None)
+            if speed_word is not None:
+                break
+        rep.check("#137 Advanced 打开后出现 Speed 页签", speed_word is not None)
+        if speed_word is None:
+            return rep.save({"stage": "speed-tab"})
+        speed_x = (speed_word.rect.center[0]
+                   if speed_word.text.strip().lower() == "speed" else 164)
+        driver.click(win.rect.x + speed_x,
+                     win.rect.y + speed_word.rect.center[1])
         time.sleep(2.0)
         driver.capture(win).save_png(OUT / "advanced_on.png")
-        driver.click(win.rect.x + 164, win.rect.y + 603)   # Speed tab
-        time.sleep(2.0)
         words = ocr_window(driver, win)
         flows = [w for w in words if "flow" in w.text.lower()
                  and w.rect.y > 500]
@@ -394,9 +425,9 @@ def main() -> int:
         # restore the Advanced switch
         words = ocr_window(driver, win)
         adv = next((w for w in words if w.text.strip().lower() == "advanced"
-                    and w.rect.y > 500), None)
+                    and w.rect.y > 400), None)
         if adv is not None:
-            driver.click(win.rect.x + adv.rect.right + 10,
+            driver.click(win.rect.x + adv.rect.right - 12,
                          win.rect.y + adv.rect.center[1])
             time.sleep(1.5)
         rep.check("app alive", app.alive())
