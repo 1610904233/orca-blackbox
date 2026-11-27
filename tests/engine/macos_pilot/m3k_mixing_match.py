@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-# m3k_mixing_match.py — macOS port: Feishu #10/#15/#27/#95/#107 manual-mode
-# colour matching in the mixing dialog.
+# m3k_mixing_match.py — macOS port: Feishu #95/#107 manual-mode colour
+# matching in the mixing dialog.
 # feishu: baseline#95 baseline#107  (macOS port; corresponds to the enabled
 #         Windows m3k_mixing_match, registered in cases.MACOS_BASELINE)
+# The Windows case's step labels #10/#15/#27 are not Feishu baseline numbers;
+# Feishu #10/#15 are unrelated detector cases (mac status 不适用).
 #
 # Windows assertions:
 #   #10 switch the Match Mode combo from Auto to Manual (text-confirmed)
@@ -170,7 +172,7 @@ def main() -> int:
         click_word(driver, win, manual, "Manual")
         time.sleep(1.0)
         words = dlg_words(driver, win, dlg)
-        rep.check("#10 已切到 Manual",
+        rep.check("匹配模式已切到 Manual",
                   "manual" in " ".join(w.text for w in words).lower()
                   and find(words, "match mode") is not None,
                   f"mode words={[w.text for w in words if 100 < w.rect.y < 140]}")
@@ -185,10 +187,10 @@ def main() -> int:
         words = dlg_words(driver, win, dlg)
         after = sat_share(driver.capture(win))
         rep.log(f"[INFO] Matched preview saturation after={after:.3f}")
-        rep.check("#15 Matched 视图渲染（饱和色块增加）",
+        rep.check("匹配后视图渲染（饱和色块增加）",
                   after > 0.10 and after - before > 0.03,
                   f"{before:.3f} -> {after:.3f}")
-        rep.check("#15 Color Mapping 列表/警告出现",
+        rep.check("Color Mapping 列表/警告出现",
                   find(words, "color mapping") is not None
                   and (find(words, "mix ratios") is not None
                        or find(words, "→") is not None),
@@ -201,7 +203,7 @@ def main() -> int:
         click_word(driver, win, confirm, "Confirm")
         time.sleep(2.0)
         gone = mixing_window(driver, app, win) is None
-        rep.check("#27 Confirm 关闭对话框", gone)
+        rep.check("Confirm 关闭对话框", gone)
         rep.check("app alive", app.alive())
 
         alive_before = app.alive()
