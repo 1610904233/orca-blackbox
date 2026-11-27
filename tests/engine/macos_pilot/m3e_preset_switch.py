@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-# m3e_preset_switch.py — macOS port: Feishu #159/#166/#182 print-preset
-# switch -> gcode header follows.
-# feishu: baseline#159 baseline#166 baseline#182  (macOS port; corresponds to
-#         the enabled Windows m3e_preset_switch, registered in
-#         cases.MACOS_BASELINE)
+# m3e_preset_switch.py — macOS port: Feishu #166 print-preset switch ->
+# gcode header follows.
+# feishu: baseline#166  (macOS port; corresponds to the enabled Windows
+#         m3e_preset_switch, registered in cases.MACOS_BASELINE)
+#
+# The Windows case is also mapped to #159 (login -> local print / pause /
+# logout device chain) and #182 (Prepare -> compare process presets).  This
+# macOS local sandbox only performs the #166 preset switch; #159/#182 are
+# separate scenarios and are not claimed here.
 #
 # Windows assertions:
 #   slice+export with the default print preset (0.40 Standard for the U1 0.8
@@ -179,7 +183,7 @@ def main() -> int:
                 rep.check("close", close_app(driver, app, win))
             except Exception as exc:  # noqa: BLE001
                 rep.check("close", False, f"{type(exc).__name__}: {exc}")
-        exit_code = rep.save({"covered": ["#159", "#166", "#182"]})
+        exit_code = rep.save({"covered": ["#166"]})
     return exit_code
 
 
