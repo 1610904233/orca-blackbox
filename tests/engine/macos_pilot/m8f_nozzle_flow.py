@@ -13,15 +13,15 @@
 #
 # Windows assertions:
 #   #133 the nozzle panel defaults are Diameter '0.4mm' and Flow 'Standard'
-#   #135 (STD-TEST process + STD-TEST filament + Standard flow) and
-#        (HF-TEST process + HF-TEST filament + High Flow) slice to gcodes
-#        whose EFFECTIVE per-flow values are identical and whose mode fields
-#        differ, proving the two-index preset values are read by mode
+#   #135 (doc 标准测试 process + 标准测试 filament + Standard flow) and
+#        (doc 高流量测试 process + 高流量测试 filament + High Flow) slice to
+#        gcodes whose EFFECTIVE per-flow values are identical and whose mode
+#        fields differ, proving the two-index preset values are read by mode
 #
 # macOS mapping:
-#   preset menus -> process combo: User-presets rows (HF-TEST, STD-TEST,
-#                   FLOW-TEST) at y=616/640/668; filament combo -> hover
-#                   'Custom' -> variant rows (FLOW, HF, STD) at y=474/500/526
+#   preset menus -> process combo: doc User-presets rows (标准测试, 高流量测试,
+#                   流量测试) at y=550/576/602; filament combo -> hover
+#                   'Custom' -> doc rows (标准测试, 流量测试, 高流量测试)
 #   flow combo   -> Nozzle Flow at (308,288); menu Standard (310,324) /
 #                   High Flow (312,349)
 #   readback     -> the exported gcode carries print_settings_id and
@@ -60,9 +60,12 @@ import m8d_purifier_gcode as c8d  # noqa: E402
 
 OUT = ARTIFACTS / "pilot" / "m8f"
 COMPARE = HERE / "tools" / "compare_gcode.py"
-PROC_ROW = {"HF": 0, "STD": 1, "FLOW": 2}      # user rows at y=550/576/602
-FIL_ROW = {"FLOW": 1, "HF": 1, "STD": 2}       # doc list: 标准=0, 流量=1,
-#                                                 高流量=2
+# The gcode test plan's prepared user presets (doc default.zip), not the
+# Windows test's ASCII STD-TEST/HF-TEST copies.  User process rows appear at
+# y=550/576/602 in the order 标准测试 / 高流量测试 / 流量测试; the filament
+# Custom list is 标准测试 / 流量测试 / 高流量测试.
+PROC_ROW = {"STD": 0, "HF": 1, "FLOW": 2}
+FIL_ROW = {"STD": 0, "FLOW": 1, "HF": 2}
 
 
 def ocr(driver, win):
@@ -145,6 +148,22 @@ def confirm_grouping(driver, app, win, rep) -> bool:
     return False
 
 
+def prepare_doc_presets(datadir: Path) -> None:
+    """Seed the gcode test plan's prepared user presets (default.zip).
+
+    The repo fixture is the doc's default user folder: PLA SnapSpeed
+    标准测试 / 流量测试 / 高流量测试 and the matching 0.20mm/0.24mm process
+    presets.  Copying it before launch prevents the driver from seeding the
+    Windows test's hand-made STD-TEST/HF-TEST packages.
+    """
+    src = HERE / "tests/engine/macos_pilot/fixtures/gcode_plan/default"
+    dst = datadir / "user" / "default"
+    if dst.exists():
+        shutil.rmtree(dst)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src, dst)
+
+
 def prepare_tab(driver, win) -> bool:
     """The app jumps to Preview after a slice; preset edits and Slice need
     the Prepare page (the Preview Slice button stays grey)."""
@@ -163,6 +182,213 @@ def click_word(driver, win, word):
     driver.click(win.rect.x + word.rect.center[0],
                  win.rect.y + word.rect.center[1])
     time.sleep(1.2)
+
+
+NOZZLE_TABS_RE = re.compile(r"nozzle\s*([1-4])$", re.I)
+DIA_RE = re.compile(r"0\.[0-9]mm", re.I)
+
+
+def _panel_dia(words):
+    return next((w for w in words
+                if DIA_RE.search(w.text) and w.rect.x < 200
+                and 260 < w.rect.y < 315), None)
+
+
+def _panel_flow(words):
+    return next((w for w in words
+                if _norm_combo(w.text) in ("standard", "high flow")
+                and w.rect.x > 200 and 260 < w.rect.y < 315), None)
+
+
+def _dismiss_diameter_dialog(driver, win) -> bool:
+    """The first diameter change shows 'Set Nozzle Diameter' (syncs all
+    nozzles).  Tick 'Don't show this again' once in the sandbox profile and
+    press OK; later changes have no dialog."""
+    ws = ocr(driver, win)
+    ok = next((w for w in ws if w.text.strip().lower() == "ok"), None)
+    if ok is None:
+        return False
+    dont = next((w for w in ws if "don't show this again" in w.text.lower()),
+                None)
+    if dont is not None:
+        driver.click(win.rect.x + dont.rect.x - 15,
+                     win.rect.y + dont.rect.center[1])
+        time.sleep(0.4)
+    driver.click(win.rect.x + ok.rect.center[0],
+                 win.rect.y + ok.rect.center[1])
+    time.sleep(0.9)
+    return True
+
+
+def check_nozzle_panel(driver, win, rep) -> bool:
+    """#133: four nozzle tabs, every tab defaults to 0.4mm/Standard; the
+    diameter list is 0.2/0.4/0.6/0.8; flow at 0.4mm is Standard + High Flow;
+    flow at 0.2/0.6/0.8 is Standard only.  Restores Nozzle 1 to 0.4mm/
+    Standard for the #135 slices."""
+    ws = ocr(driver, win)
+    tabs = [w for w in ws if NOZZLE_TABS_RE.match(w.text.strip())
+            and 220 < w.rect.y < 280]
+    tabs.sort(key=lambda w: w.rect.x)
+    rep.log(f"[INFO] nozzle tabs={[(w.text, w.rect.to_xywh()) for w in tabs]}")
+    rep.check("#133 四个喷嘴 Tab", len(tabs) >= 4,
+              f"tabs={[w.text for w in tabs]}")
+    if len(tabs) < 4:
+        return False
+    ok = True
+    for tab in tabs[:4]:
+        click_word(driver, win, tab)
+        time.sleep(0.8)
+        ws = ocr(driver, win)
+        dia = _panel_dia(ws)
+        flow = _panel_flow(ws)
+        good = (dia is not None and "0.4mm" in dia.text
+                and flow is not None
+                and _norm_combo(flow.text) == "standard")
+        rep.check(f"#133 {tab.text} 默认 0.4mm/Standard", good,
+                  f"dia={dia.text if dia else None} "
+                  f"flow={flow.text if flow else None}")
+        ok = ok and good
+
+    # Nozzle 1: diameter list, then 0.4 flow list.
+    click_word(driver, win, tabs[0])
+    time.sleep(0.8)
+    ws = ocr(driver, win)
+    dia = _panel_dia(ws)
+    if dia is None:
+        rep.check("#133 直径下拉", False, "diameter value missing")
+        return False
+    click_word(driver, win, dia)
+    time.sleep(0.7)
+    ws = ocr(driver, win)
+    dia_opts = {w.text.strip().lower() for w in ws
+                if re.fullmatch(r"0\.[0-9]mm", w.text.strip())
+                and w.rect.y > 300 and w.rect.x < 300}
+    want = {"0.2mm", "0.4mm", "0.6mm", "0.8mm"}
+    rep.check("#133 0.4mm 直径选项 0.2/0.4/0.6/0.8",
+              want <= dia_opts, f"opts={sorted(dia_opts)}")
+    # Close the diameter popup without changing the current 0.4mm.
+    driver.send_key("escape")
+    time.sleep(0.8)
+
+    ws = ocr(driver, win)
+    flow = _panel_flow(ws)
+    if flow is None:
+        rep.check("#133 流量下拉", False, "flow value missing")
+        return False
+    click_word(driver, win, flow)
+    time.sleep(0.7)
+    ws = ocr(driver, win)
+    rep.log(f"[INFO] 0.4 flow popup words="
+            f"{[(w.text, w.rect.to_xywh()) for w in ws if 280 < w.rect.y < 390]}")
+    flow_opts = {_norm_combo(w.text) for w in ws
+                 if 300 < w.rect.y < 400 and w.rect.x > 200
+                 and _norm_combo(w.text) in ("standard", "high flow")}
+    rep.check("#133 0.4mm 流量选项 标准/高流量",
+              {"standard", "high flow"} <= flow_opts,
+              f"opts={sorted(flow_opts)}")
+    opt_std = next((w for w in ws if _norm_combo(w.text) == "standard"
+                    and 300 < w.rect.y < 400 and w.rect.x > 200), None)
+    if opt_std is not None:
+        click_word(driver, win, opt_std)
+    else:
+        driver.send_key("escape")
+    time.sleep(0.8)
+
+    for target in ("0.2mm", "0.6mm", "0.8mm"):
+        ws = ocr(driver, win)
+        dia = _panel_dia(ws)
+        if dia is None:
+            rep.check(f"#133 {target} 直径下拉", False, "missing")
+            ok = False
+            continue
+        click_word(driver, win, dia)
+        time.sleep(0.7)
+        ws = ocr(driver, win)
+        opt = next((w for w in ws if w.text.strip().lower() == target.lower()
+                    and w.rect.y > 300 and w.rect.x < 300), None)
+        if opt is None:
+            rep.check(f"#133 {target} 直径选项", False,
+                      f"words={[(w.text, w.rect.y) for w in ws if w.rect.y > 300][:8]}")
+            driver.send_key("escape")
+            ok = False
+            continue
+        click_word(driver, win, opt)
+        time.sleep(0.8)
+        dialog = _dismiss_diameter_dialog(driver, win)
+        rep.log(f"[INFO] {target} sync dialog={dialog}")
+        ws = ocr(driver, win)
+        dia = _panel_dia(ws)
+        flow = _panel_flow(ws)
+        rep.check(f"#133 {target} 已选", dia is not None
+                  and target.lower() in dia.text.lower(),
+                  f"dia={dia.text if dia else None}")
+        rep.check(f"#133 {target} 流量默认标准",
+                  flow is not None and _norm_combo(flow.text) == "standard",
+                  f"flow={flow.text if flow else None}")
+        if flow is not None:
+            click_word(driver, win, flow)
+            time.sleep(0.7)
+            ws = ocr(driver, win)
+            fopts = [(w.text, w.rect.to_xywh()) for w in ws
+                     if 300 < w.rect.y < 400 and w.rect.x > 200
+                     and _norm_combo(w.text) in ("standard", "high flow")]
+            rep.log(f"[INFO] {target} flow popup words="
+                    f"{[(w.text, w.rect.to_xywh()) for w in ws if 280 < w.rect.y < 390]}")
+            high = any(_norm_combo(w.text) == "high flow" for w, _r in fopts)
+            std = any(_norm_combo(w.text) == "standard" for w, _r in fopts)
+            # A disabled/single-value combo may not open; the visible value
+            # must still be Standard and High Flow must not be offered.
+            only_std = (std and not high) if fopts else (
+                flow is not None and _norm_combo(flow.text) == "standard"
+                and not high)
+            rep.check(f"#133 {target} 流量仅标准", only_std,
+                      f"opts={fopts} flow={flow.text if flow else None}")
+            ostd = next((w for w in ws if _norm_combo(w.text) == "standard"
+                         and 300 < w.rect.y < 400 and w.rect.x > 200), None)
+            if ostd is not None:
+                click_word(driver, win, ostd)
+            else:
+                driver.send_key("escape")
+            time.sleep(0.8)
+            ok = ok and only_std
+        # restore 0.4mm
+        ws = ocr(driver, win)
+        dia = _panel_dia(ws)
+        if dia is not None and "0.4mm" not in dia.text:
+            click_word(driver, win, dia)
+            time.sleep(0.7)
+            ws = ocr(driver, win)
+            opt4 = next((w for w in ws if w.text.strip().lower() == "0.4mm"
+                         and w.rect.y > 300 and w.rect.x < 300), None)
+            if opt4 is not None:
+                click_word(driver, win, opt4)
+            else:
+                driver.send_key("escape")
+            time.sleep(0.8)
+            _dismiss_diameter_dialog(driver, win)
+        ws = ocr(driver, win)
+        flow = _panel_flow(ws)
+        if flow is not None and _norm_combo(flow.text) != "standard":
+            click_word(driver, win, flow)
+            time.sleep(0.7)
+            ws = ocr(driver, win)
+            ostd = next((w for w in ws if _norm_combo(w.text) == "standard"
+                         and 300 < w.rect.y < 400 and w.rect.x > 200), None)
+            if ostd is not None:
+                click_word(driver, win, ostd)
+            else:
+                driver.send_key("escape")
+            time.sleep(0.8)
+
+    ws = ocr(driver, win)
+    dia = _panel_dia(ws)
+    flow = _panel_flow(ws)
+    final_ok = (dia is not None and "0.4mm" in dia.text
+                and flow is not None and _norm_combo(flow.text) == "standard")
+    rep.check("#133 恢复 Nozzle1 0.4mm/Standard", final_ok,
+              f"dia={dia.text if dia else None} "
+              f"flow={flow.text if flow else None}")
+    return ok and final_ok
 
 
 def select_process(driver, win, rep, which: str) -> bool:
@@ -359,6 +585,7 @@ def main() -> int:
         if path.exists():
             shutil.rmtree(path, ignore_errors=True)
     work.mkdir(parents=True)
+    prepare_doc_presets(args.datadir)
     g_a = work / "m8f_std.gcode"
     g_b = work / "m8f_hf.gcode"
 
@@ -387,12 +614,13 @@ def main() -> int:
                   " ".join(w.text for w in ws if "0.4" in w.text)[:60])
         rep.check("#133 喷嘴默认 Flow=Standard", "standard" in text,
                   " ".join(w.text for w in ws if "standard" in w.text.lower())[:60])
+        rep.check("#133 喷嘴面板完整检查", check_nozzle_panel(driver, win, rep))
         rep.check("添加 cube", m7b._add_cube(driver, app, win))
         time.sleep(2.0)
         driver.capture(win).save_png(OUT / "cube.png")
 
-        # -------- A: STD-TEST + Standard flow ------------------------------
-        rep.check("A 选择 STD-TEST 包 + Standard",
+        # -------- A: doc 标准测试 + Standard flow --------------------------
+        rep.check("A 选择标准测试包 + Standard",
                   select_state(driver, win, rep, "STD", "STD", "Standard", "A"))
         if not slice_and_export(driver, win, rep, g_a,
                                 [work, OUT, ARTIFACTS / "pilot",
@@ -401,14 +629,14 @@ def main() -> int:
             return rep.save({"stage": "slice-a"})
         fids_a, pid_a = gcode_ids(g_a)
         rep.log(f"[INFO] A ids={fids_a} print={pid_a}")
-        rep.check("#135 STD 预设已生效",
-                  pid_a is not None and pid_a.endswith("- STD-TEST")
-                  and any("std-test" in f.lower() for f in fids_a),
+        rep.check("#135 标准测试预设已生效",
+                  pid_a is not None and pid_a.endswith("- 标准测试")
+                  and any("标准测试" in f for f in fids_a),
                   f"print={pid_a} filament={fids_a}")
 
-        # -------- B: HF-TEST + High Flow -----------------------------------
+        # -------- B: doc 高流量测试 + High Flow ----------------------------
         rep.check("回到 Prepare 页", prepare_tab(driver, win))
-        rep.check("B 选择 HF-TEST 包 + High Flow",
+        rep.check("B 选择高流量测试包 + High Flow",
                   select_state(driver, win, rep, "HF", "HF", "High Flow", "B"))
         rep.log(f"[INFO] grouping dialog before slice="
                 f"{confirm_grouping(driver, app, win, rep)}")
@@ -424,9 +652,9 @@ def main() -> int:
             return rep.save({"stage": "slice-b"})
         fids_b, pid_b = gcode_ids(g_b)
         rep.log(f"[INFO] B ids={fids_b} print={pid_b}")
-        rep.check("#135 HF 预设已生效",
-                  pid_b is not None and pid_b.endswith("- HF-TEST")
-                  and any("hf-test" in f.lower() for f in fids_b),
+        rep.check("#135 高流量测试预设已生效",
+                  pid_b is not None and pid_b.endswith("- 高流量测试")
+                  and any("高流量测试" in f for f in fids_b),
                   f"print={pid_b} filament={fids_b}")
 
         rc, report = compare(g_a, g_b)
