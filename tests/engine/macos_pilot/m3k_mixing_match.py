@@ -198,12 +198,58 @@ def main() -> int:
         confirm = find(words, "confirm")
         rep.check("Confirm 可点击", confirm is not None,
                   confirm.text if confirm else "missing")
-        if confirm is None:
-            return rep.save({"stage": "confirm"})
-        click_word(driver, win, confirm, "Confirm")
+        # #95 manual matched view is complete.  #107 must be an AUTO-mode
+        # match (Feishu precondition), so switch this same dialog back to
+        # Auto, match again, then Confirm and check the mapping result.
+        mode = (find(words, "manual") or find(words, "auto"))
+        rep.check("#107 当前模式可切换", mode is not None,
+                  mode.text if mode else "missing")
+        if mode is None:
+            return rep.save({"stage": "auto-mode"})
+        click_word(driver, win, mode, "Mode combo")
+        time.sleep(1.0)
+        words = dlg_words(driver, win, dlg)
+        auto_opt = find(words, "auto")
+        rep.check("#107 下拉出现 Auto", auto_opt is not None,
+                  f"words={[w.text for w in words if 140 < w.rect.y < 200][:6]}")
+        if auto_opt is None:
+            return rep.save({"stage": "auto-option"})
+        click_word(driver, win, auto_opt, "Auto")
+        time.sleep(1.0)
+        words = dlg_words(driver, win, dlg)
+        rep.check("#107 Match Mode = Auto",
+                  find(words, "auto") is not None
+                  and find(words, "manual") is None,
+                  f"mode words={[w.text for w in words if 100 < w.rect.y < 140]}")
+        start2 = find(words, "start matching")
+        rep.check("#107 Start Matching 可点击", start2 is not None)
+        if start2 is None:
+            return rep.save({"stage": "start-auto"})
+        click_word(driver, win, start2, "Start Matching (auto)")
+        time.sleep(6.0)
+        driver.capture(win).save_png(OUT / "matched_auto.png")
+        words = dlg_words(driver, win, dlg)
+        after2 = sat_share(driver.capture(win))
+        rep.log(f"[INFO] #107 auto matched saturation={after2:.3f}")
+        rep.check("#107 自动匹配后视图渲染",
+                  after2 > 0.10 and find(words, "color mapping") is not None,
+                  f"sat={after2:.3f}")
+        confirm2 = find(words, "confirm")
+        rep.check("#107 Confirm 可点击", confirm2 is not None)
+        if confirm2 is None:
+            return rep.save({"stage": "confirm-auto"})
+        click_word(driver, win, confirm2, "Confirm (auto)")
         time.sleep(2.0)
-        gone = mixing_window(driver, app, win) is None
-        rep.check("Confirm 关闭对话框", gone)
+        gone2 = mixing_window(driver, app, win) is None
+        rep.check("#107 Confirm 关闭对话框", gone2)
+        if not gone2:
+            return rep.save({"stage": "confirm-auto-close"})
+        words = recognize_text(driver.capture(win))
+        text = " ".join(w.text for w in words).lower()
+        rep.check("#107 颜色映射结果生效（Color Mixing 混色耗材）",
+                  "color mixing" in text
+                  and ("50%" in text or "mixed" in text or "mix" in text),
+                  text[:220])
         rep.check("app alive", app.alive())
 
         alive_before = app.alive()
