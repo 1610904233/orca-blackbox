@@ -5,8 +5,8 @@
 #         m8x_123_softening_temp, registered in cases.MACOS_BASELINE)
 #
 # Windows assertions:
-#   A) vitrification 45 -> strong cooling (MODE=1 + ALARM_TEMP=45 in the old
-#      case text; the 2.4.2 template actually writes ALARM_TEMP=48 — the
+#   A) vitrification 50 -> strong cooling (MODE=1; the old case text has
+#      ALARM_TEMP=45, but the 2.4.2 template writes ALARM_TEMP=48 — the
 #      Windows 2.4.2 check confirmed 48, so this is the current baseline)
 #   B) vitrification 80 -> keep-warm (MODE=3 + DESIRE_TEMP=45, no ALARM)
 #   A != B: the softening temperature really flips the classifier/gcode
@@ -121,7 +121,7 @@ def main() -> int:
     work.mkdir(parents=True)
     model = work / "m8x_123_mixed.3mf"
     shutil.copy2(DEFAULT_MODEL, model)
-    g_a = work / "m8x_123_vitr45.gcode"
+    g_a = work / "m8x_123_vitr50.gcode"
     g_b = work / "m8x_123_vitr80.gcode"
 
     rep = Reporter(OUT)
@@ -160,14 +160,14 @@ def main() -> int:
 
         roots = [work, OUT, ARTIFACTS / "pilot", HERE / "fixtures"]
 
-        # ---------- A: softening 45 -> strong cooling ----------------------
+        # ---------- A: softening 50 -> strong cooling ----------------------
         dlg = open_material_settings(driver, app, win)
         rep.check("A 打开 Material settings", dlg is not None,
                   dlg.rect.to_xywh() if dlg else "")
         if dlg is None:
             return rep.save({"stage": "dialog-a"})
-        val = set_softening(driver, dlg, "45", rep)
-        rep.check("A 软化温度设为 45", val == "45", f"readback={val!r}")
+        val = set_softening(driver, dlg, "50", rep)
+        rep.check("A 软化温度设为 50", val == "50", f"readback={val!r}")
         rep.check("A 关闭编辑器", close_dialog(driver, app, win, dlg))
         if not slice_and_export(driver, win, rep, g_a, roots):
             rep.check("A 切片并导出", False, "slice/export failed")
@@ -175,8 +175,8 @@ def main() -> int:
         vitr_a = vitr_line(g_a)
         pa = mac_gcode.purifier_params(g_a.read_bytes())
         rep.log(f"[INFO] A vitr={vitr_a} purifier={pa}")
-        rep.check("A 软化温度进入 gcode（槽 1 = 45）",
-                  vitr_a is not None and vitr_a.split(",")[0].strip() == "45",
+        rep.check("A 软化温度进入 gcode（槽 1 = 50）",
+                  vitr_a is not None and vitr_a.split(",")[0].strip() == "50",
                   f"vitr={vitr_a}")
         rep.check("A 强冷 MODE=1", bool(pa) and pa.get("MODE") == "1",
                   f"params={pa}")
